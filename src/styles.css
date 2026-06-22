@@ -88,7 +88,7 @@ main {
   gap: 16px;
 }
 
-.dashboard-logo {
+.mvst-logo {
   flex: 0 0 auto;
   width: clamp(74px, 16vw, 112px);
   height: clamp(74px, 16vw, 112px);
@@ -515,7 +515,7 @@ main {
     gap: 12px;
   }
 
-  .dashboard-logo {
+  .mvst-logo {
     width: 72px;
     height: 72px;
   }
