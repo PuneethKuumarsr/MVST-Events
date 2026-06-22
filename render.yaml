@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: mvstevents
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_DEVELOPER_MODE
+        value: false
