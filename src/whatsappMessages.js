@@ -1,12 +1,12 @@
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
 const ICONS = {
-  foldedHands: '\u{1F64F}',
-  calendar: '\u{1F4C5}',
-  moneyBag: '\u{1F4B0}',
-  gift: '\u{1F381}',
-  diya: '\u{1FA94}',
-  check: '\u2705',
-  yellowCircle: '\u{1F7E1}',
+  foldedHands: '🙏',
+  calendar: '📅',
+  moneyBag: '💰',
+  gift: '🎁',
+  diya: '🪔',
+  check: '✅',
+  yellowCircle: '🟡',
 };
 
 const EVENT_TEMPLATES = {
@@ -73,7 +73,7 @@ function templateFor(participant) {
 }
 
 function bulletLines(items) {
-  return items.map((item) => '\u2022 ' + item);
+  return items.map((item) => '• ' + item);
 }
 
 export function buildWelcomeMessage(participant) {

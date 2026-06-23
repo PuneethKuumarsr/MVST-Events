@@ -257,10 +257,12 @@ function formatCurrency(value) {
   }).format(value || 0);
 }
 
-function cleanPhone(value) {
-  const digits = String(value || '').replace(/\D/g, '');
-  if (digits.length === 10) return `91${digits}`;
-  return digits;
+function normalizeIndianMobileNumber(rawMobile) {
+  const digits = String(rawMobile || '').replace(/D/g, '');
+  const normalizedDigits = digits.startsWith('0') ? digits.replace(/^0+/, '') : digits;
+  if (normalizedDigits.length === 10) return `91${normalizedDigits}`;
+  if (normalizedDigits.length === 12 && normalizedDigits.startsWith('91')) return normalizedDigits;
+  return normalizedDigits;
 }
 
 function participantDisplayName(participant) {
@@ -302,10 +304,10 @@ function makeWhatsAppMessage(participant, kind) {
 }
 
 function makeWhatsAppUrl(participant, kind) {
-  const mobile = cleanPhone(participant.mobileNumber);
+  const normalizedMobile = normalizeIndianMobileNumber(participant.mobileNumber);
   const message = normalizeWhatsAppMessage(makeWhatsAppMessage(participant, kind));
   const encodedText = encodeURIComponent(message);
-  const url = `https://wa.me/91${mobile}?text=${encodedText}`;
+  const url = `https://wa.me/${normalizedMobile}?text=${encodedText}`;
   return url;
 }
 

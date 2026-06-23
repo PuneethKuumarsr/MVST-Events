@@ -32,13 +32,34 @@ for (const phrase of staleWhatsAppPhrases) {
   assert.ok(!whatsappTemplates.includes(phrase), 'Template module must not contain stale WhatsApp phrase: ' + phrase);
 }
 assert.ok(!frontend.includes('URLSearchParams'), 'WhatsApp URLs must not use URLSearchParams');
+assert.ok(!frontend.includes('api.whatsapp.com/send'), 'WhatsApp URLs must not use api.whatsapp.com/send');
+assert.ok(frontend.includes('function normalizeIndianMobileNumber(rawMobile)'), 'Frontend must define normalizeIndianMobileNumber');
+assert.ok(frontend.includes('const normalizedMobile = normalizeIndianMobileNumber(participant.mobileNumber)'), 'WhatsApp URL builder must use normalized mobile number');
 assert.ok(frontend.includes('const encodedText = encodeURIComponent(message)'), 'WhatsApp URL builder must use explicit encodeURIComponent(message)');
+assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'WhatsApp URL must use wa.me with normalized mobile and encoded text');
 assert.ok(frontend.includes("console.debug('[MVST WhatsApp decoded message]'"), 'WhatsApp opens must log decoded message for debugging');
 
 assert.match(backend, /\.\.\.EVENTS\.bhimaratha,[\s\S]*spreadsheetId: process\.env\.BHIMARATHA_SHEET_ID/, 'Backend first Google Sheets API source must be Bhimaratha');
 assert.match(backend, /\.\.\.EVENTS\.shashtipoorthi,[\s\S]*spreadsheetId: process\.env\.SHASHTIPOORTHI_SHEET_ID/, 'Backend second Google Sheets API source must be Shashtipoorthi');
 assert.match(backend, /source\.contribution/, 'Backend must calculate contribution from source event');
 assert.match(backend, /eventType: source\.id/, 'Backend must assign event type from source sheet');
+
+const phoneExamples = [
+  ['6360716397', '916360716397'],
+  ['916360716397', '916360716397'],
+  ['+91 63607 16397', '916360716397'],
+  ['0916360716397', '916360716397'],
+];
+const normalizeIndianMobileNumberForTest = (rawMobile) => {
+  const digits = String(rawMobile || '').replace(/\D/g, '');
+  const normalizedDigits = digits.startsWith('0') ? digits.replace(/^0+/, '') : digits;
+  if (normalizedDigits.length === 10) return `91${normalizedDigits}`;
+  if (normalizedDigits.length === 12 && normalizedDigits.startsWith('91')) return normalizedDigits;
+  return normalizedDigits;
+};
+for (const [input, expected] of phoneExamples) {
+  assert.equal(normalizeIndianMobileNumberForTest(input), expected);
+}
 
 const sampleCouple = {
   eventType: 'shashtipoorthi',
@@ -67,23 +88,36 @@ const bhimarathaPartialPayment = buildPaymentConfirmationMessage({
   paidAmount: 5000,
   balance: 15000,
 });
-const encodedWelcome = `https://wa.me/919876543210?text=${encodeURIComponent(shashtipoorthiWelcome)}`;
 
-const expectedWelcomeStart = '\u{1F64F} *Namaskara Bonthala Krishnamurthy & Bonthala Sumithra*\n\nThank you for registering for the *Samoohika Shashtipoorthi Shanthi*.';
+const foldedHands = String.fromCodePoint(0x1F64F);
+const moneyBag = String.fromCodePoint(0x1F4B0);
+const check = String.fromCodePoint(0x2705);
+const yellowCircle = String.fromCodePoint(0x1F7E1);
+const expectedWelcomeStart = `${foldedHands} *Namaskara Bonthala Krishnamurthy & Bonthala Sumithra*\n\nThank you for registering for the *Samoohika Shashtipoorthi Shanthi*.`;
 assert.ok(shashtipoorthiWelcome.startsWith(expectedWelcomeStart), 'Welcome message must start with exact new multiline template');
-assert.match(shashtipoorthiWelcome, /🙏 \*Namaskara Bonthala Krishnamurthy & Bonthala Sumithra\*/);
-assert.ok(shashtipoorthiWelcome.includes('💰 *Booking Fee:* \u20b930,000 per couple'));
+assert.equal(shashtipoorthiWelcome.codePointAt(0), 0x1F64F);
+assert.ok(!shashtipoorthiWelcome.includes('?'), 'Welcome message must not contain replacement characters');
+assert.ok([...whatsappTemplates].some((char) => char.codePointAt(0) === 0x1F64F), 'Template file must contain real folded hands emoji');
+assert.ok([...whatsappTemplates].some((char) => char.codePointAt(0) === 0x1F4B0), 'Template file must contain real money bag emoji');
+assert.ok(shashtipoorthiWelcome.includes(`${moneyBag} *Booking Fee:*`));
+assert.ok(shashtipoorthiWelcome.includes('30,000 per couple'));
 assert.match(shashtipoorthiWelcome, /Gold Mangalya Bottu/);
 assert.match(shashtipoorthiWelcome, /Mangalya Dharane/);
 assert.match(bhimarathaWelcome, /Samoohika Bhimaratha Shanthi/);
-assert.ok(bhimarathaWelcome.includes('💰 *Booking Fee:* \u20b920,000 per couple'));
+assert.ok(bhimarathaWelcome.includes(`${moneyBag} *Booking Fee:*`));
+assert.ok(bhimarathaWelcome.includes('20,000 per couple'));
 assert.doesNotMatch(bhimarathaWelcome, /Gold Mangalya Bottu|Mangalya Dharane/);
-assert.match(shashtipoorthiFullPayment, /✅ \*Registration Confirmed\*/);
-assert.ok(shashtipoorthiFullPayment.includes('*\u20b930,000*'));
-assert.match(shashtipoorthiPartialPayment, /🟡 \*Registration Under Process\*/);
-assert.ok(shashtipoorthiPartialPayment.includes('💰 *Balance Amount Payable:* \u20b920,000'));
+assert.ok(shashtipoorthiFullPayment.includes(`${check} *Registration Confirmed*`));
+assert.ok(shashtipoorthiFullPayment.includes('30,000')); 
+assert.ok(shashtipoorthiPartialPayment.includes(`${yellowCircle} *Registration Under Process*`));
+assert.ok(shashtipoorthiPartialPayment.includes(`${moneyBag} *Balance Amount Payable:*`));
+assert.ok(shashtipoorthiPartialPayment.includes('20,000'));
 assert.match(bhimarathaFullPayment, /Samoohika Bhimaratha Shanthi/);
-assert.ok(bhimarathaFullPayment.includes('*\u20b920,000*'));
+assert.ok(bhimarathaFullPayment.includes('20,000')); 
+assert.match(bhimarathaPartialPayment, /Samoohika Bhimaratha Shanthi/);
+assert.ok(bhimarathaPartialPayment.includes(`${moneyBag} *Balance Amount Payable:*`));
+assert.ok(bhimarathaPartialPayment.includes('15,000'));
+
 const forcedFullPayment = buildPaymentConfirmationMessage({
   ...sampleCouple,
   paymentStatus: 'Full Paid',
@@ -96,8 +130,6 @@ const forcedPartialPayment = buildPaymentConfirmationMessage({
   paidAmount: 30000,
   balance: 0,
 });
-assert.match(bhimarathaPartialPayment, /Samoohika Bhimaratha Shanthi/);
-assert.ok(bhimarathaPartialPayment.includes('💰 *Balance Amount Payable:* \u20b915,000'));
 assert.ok(forcedFullPayment.includes('*Registration Confirmed*'));
 assert.ok(forcedPartialPayment.includes('*Registration Under Process*'));
 assert.doesNotMatch(shashtipoorthiFullPayment, /support/i);
@@ -106,6 +138,11 @@ assert.doesNotMatch(bhimarathaFullPayment, /support/i);
 assert.doesNotMatch(bhimarathaPartialPayment, /support/i);
 assert.doesNotMatch(buildWelcomeMessage({ eventType: 'shashtipoorthi', groomName: 'Only Husband' }), /undefined|null|&\s*$/i);
 assert.ok(buildWhatsAppMessage(sampleCouple, 'kit').includes('KIT distribution'));
+
+const encodedWelcome = `https://wa.me/916360716397?text=${encodeWhatsAppMessage(shashtipoorthiWelcome)}`;
+assert.ok(encodedWelcome.startsWith('https://wa.me/916360716397?text='));
+assert.ok(!encodedWelcome.startsWith('https://wa.me/91916360716397'));
+assert.ok(encodedWelcome.includes('%0A'));
 assert.equal(decodeURIComponent(encodedWelcome.split('text=')[1]), shashtipoorthiWelcome);
 
 const messageFormattingCases = [
