@@ -2,6 +2,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { google } from 'googleapis';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +13,7 @@ const DEFAULT_RANGE = 'Form Responses 1!A:Z';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '..', 'dist');
+const indexPath = path.join(distPath, 'index.html');
 const ADMIN_FIELDS = {
   paidAmount: ['Paid Amount'],
   paymentStatus: ['Payment Status'],
@@ -434,7 +436,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV === 'production') {
+if (fs.existsSync(indexPath)) {
   app.use(
     express.static(distPath, {
       setHeaders(res, filePath) {
@@ -454,7 +456,7 @@ if (process.env.NODE_ENV === 'production') {
   );
   app.get(/.*/, (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(path.join(distPath, 'index.html'));
+    res.sendFile(indexPath);
   });
 }
 
