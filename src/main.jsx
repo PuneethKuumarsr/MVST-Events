@@ -16,6 +16,7 @@ import {
   IndianRupee,
   MessageCircle,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   Sparkles,
@@ -314,6 +315,7 @@ function useParticipants() {
   const [error, setError] = useState('');
   const [isLive, setIsLive] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [writeEnabled, setWriteEnabled] = useState(false);
 
   async function loadFromBackend(forceRefresh = false) {
     const response = await fetch('/api/registrations' + (forceRefresh ? '/refresh' : ''), {
@@ -374,6 +376,24 @@ function useParticipants() {
     isLive,
     isRefreshing,
     lastRefreshedAt,
+    writeEnabled,
+    saveRegistration: async (id, updates) => {
+      const response = await fetch(`/api/registrations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `Google Sheets update returned ${response.status}`);
+      }
+      setRows(payload.rows || []);
+      setLastRefreshedAt(payload.refreshedAt || new Date().toISOString());
+      setWriteEnabled(Boolean(payload.writeEnabled));
+      setStatus(payload.message || 'Saved to Google Sheet');
+      setIsLive(true);
+      return payload;
+    },
     refresh: () => load(true),
   };
 }
@@ -396,7 +416,107 @@ function StatusPill({ children, tone }) {
   return <span className={`pill ${tone || ''}`}>{children}</span>;
 }
 
-function ParticipantCard({ participant }) {
+function AdminEditPanel({ participant, writeEnabled, onSave }) {
+  const [form, setForm] = useState({
+    paidAmount: String(participant.paidAmount || 0),
+    paymentStatus: participant.paymentStatus || 'Pending',
+    treasurerVerified: Boolean(participant.treasurerVerified),
+    kitIssued: Boolean(participant.kitIssued),
+    remarks: participant.remarks || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setForm({
+      paidAmount: String(participant.paidAmount || 0),
+      paymentStatus: participant.paymentStatus || 'Pending',
+      treasurerVerified: Boolean(participant.treasurerVerified),
+      kitIssued: Boolean(participant.kitIssued),
+      remarks: participant.remarks || '',
+    });
+    setMessage('');
+  }, [participant]);
+
+  async function handleSave() {
+    if (!writeEnabled || !participant.id) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await onSave(participant.id, {
+        paidAmount: form.paidAmount,
+        paymentStatus: form.paymentStatus,
+        treasurerVerified: form.treasurerVerified,
+        kitIssued: form.kitIssued,
+        remarks: form.remarks,
+      });
+      setMessage('Saved to Google Sheet');
+    } catch (error) {
+      setMessage(error.message || 'Unable to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!writeEnabled) {
+    return <div className="readonly-panel">Read-only mode</div>;
+  }
+
+  return (
+    <div className="admin-panel">
+      <label>
+        <span>Paid Amount</span>
+        <input
+          type="number"
+          min="0"
+          value={form.paidAmount}
+          onChange={(event) => setForm({ ...form, paidAmount: event.target.value })}
+        />
+      </label>
+      <label>
+        <span>Payment Status</span>
+        <select
+          value={form.paymentStatus}
+          onChange={(event) => setForm({ ...form, paymentStatus: event.target.value })}
+        >
+          <option>Full Paid</option>
+          <option>Part Paid</option>
+          <option>Pending</option>
+        </select>
+      </label>
+      <label className="checkbox-field">
+        <input
+          type="checkbox"
+          checked={form.treasurerVerified}
+          onChange={(event) => setForm({ ...form, treasurerVerified: event.target.checked })}
+        />
+        Treasurer Verified
+      </label>
+      <label className="checkbox-field">
+        <input
+          type="checkbox"
+          checked={form.kitIssued}
+          onChange={(event) => setForm({ ...form, kitIssued: event.target.checked })}
+        />
+        KIT Issued
+      </label>
+      <label className="remarks-field">
+        <span>Remarks</span>
+        <textarea
+          value={form.remarks}
+          onChange={(event) => setForm({ ...form, remarks: event.target.value })}
+          rows="2"
+        />
+      </label>
+      <button className="save-button" type="button" onClick={handleSave} disabled={saving}>
+        <Save size={16} /> {saving ? 'Saving' : 'Save'}
+      </button>
+      {message ? <span className="save-message">{message}</span> : null}
+    </div>
+  );
+}
+
+function ParticipantCard({ participant, writeEnabled, onSave }) {
   const event = EVENTS[participant.eventType];
   const paymentTone =
     participant.paymentStatus === 'Full Paid'
@@ -412,7 +532,7 @@ function ParticipantCard({ participant }) {
           <p className="event-label">{event.shortLabel}</p>
           <h3>{participant.groomName || 'Groom'} & {participant.brideName || 'Bride'}</h3>
           <span className="source-badge">Source: {participant.sourceLabel}</span>
-          <p className="muted">{participant.mobileNumber || 'No mobile'} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {participant.gothra || 'Gothra not entered'}</p>
+          <p className="muted">{participant.mobileNumber || 'No mobile'} - {participant.gothra || 'Gothra not entered'}</p>
         </div>
         <StatusPill tone={paymentTone}>{participant.paymentStatus}</StatusPill>
       </div>
@@ -445,6 +565,8 @@ function ParticipantCard({ participant }) {
         <p><span>Address</span>{participant.address || 'Not entered'}</p>
         <p><span>Remarks</span>{participant.remarks || 'No remarks'}</p>
       </div>
+
+      <AdminEditPanel participant={participant} writeEnabled={writeEnabled} onSave={onSave} />
 
       <div className="links-row">
         <a className={!participant.paymentScreenshot ? 'disabled' : ''} href={participant.paymentScreenshot || undefined} target="_blank" rel="noreferrer">
@@ -488,7 +610,7 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 }
 
 function App() {
-  const { rows, status, error, isLive, isRefreshing, refresh } = useParticipants();
+  const { rows, status, error, isLive, isRefreshing, writeEnabled, saveRegistration, refresh } = useParticipants();
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -552,7 +674,7 @@ function App() {
           <p>Phase 1 dashboard for Samoohika Shanthi registrations, payments, verification, KIT issue, and WhatsApp follow-up.</p>
           <div className="hero-meta">
             <span><CalendarDays size={17} /> {EVENT_DATE}</span>
-            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> Data Source: Google Sheets</span>
+            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
           </div>
         </div>
       </section>
@@ -656,6 +778,8 @@ function App() {
               <ParticipantCard
                 key={`${participant.eventType}-${participant.mobileNumber}-${participant.timestamp}-${index}`}
                 participant={participant}
+                writeEnabled={writeEnabled}
+                onSave={saveRegistration}
               />
             ))
           ) : (

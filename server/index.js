@@ -12,6 +12,13 @@ const DEFAULT_RANGE = 'Form Responses 1!A:Z';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '..', 'dist');
+const ADMIN_FIELDS = {
+  paidAmount: ['Paid Amount'],
+  paymentStatus: ['Payment Status'],
+  treasurerVerified: ['Treasurer Verified'],
+  kitIssued: ['KIT Issued', 'Kit Issued'],
+  remarks: ['Remarks'],
+};
 
 const EVENTS = {
   shashtipoorthi: {
@@ -45,6 +52,7 @@ let cache = {
   rows: [],
   refreshedAt: null,
   source: null,
+  writeEnabled: false,
 };
 
 function parseCsv(text) {
@@ -95,6 +103,14 @@ function getCell(row, headerMap, labels) {
   return '';
 }
 
+function getColumnIndex(headerMap, labels) {
+  for (const label of labels) {
+    const index = headerMap[normalizeKey(label)];
+    if (index !== undefined) return index;
+  }
+  return null;
+}
+
 function numberFrom(value) {
   const parsed = Number(String(value || '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -106,6 +122,36 @@ function boolFrom(value) {
   );
 }
 
+function hasGoogleConfig() {
+  return Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+      process.env.GOOGLE_PRIVATE_KEY &&
+      process.env.BHIMARATHA_SHEET_ID &&
+      process.env.SHASHTIPOORTHI_SHEET_ID,
+  );
+}
+
+function getSheetName(range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE) {
+  return String(range).split('!')[0].replace(/^'|'$/g, '');
+}
+
+function columnLetter(index) {
+  let column = '';
+  let number = index + 1;
+  while (number > 0) {
+    const remainder = (number - 1) % 26;
+    column = String.fromCharCode(65 + remainder) + column;
+    number = Math.floor((number - 1) / 26);
+  }
+  return column;
+}
+
+function buildAdminColumnMap(headerMap) {
+  return Object.fromEntries(
+    Object.entries(ADMIN_FIELDS).map(([field, labels]) => [field, getColumnIndex(headerMap, labels)]),
+  );
+}
+
 function normalizeRows(values, source) {
   if (!values || values.length < 2) return [];
   const headers = values[0];
@@ -113,17 +159,22 @@ function normalizeRows(values, source) {
     map[normalizeKey(header)] = index;
     return map;
   }, {});
+  const adminColumns = buildAdminColumnMap(headerMap);
 
   return values
     .slice(1)
-    .map((row) => {
+    .map((row, index) => {
+      const rowNumber = index + 2;
       const paidAmount = numberFrom(getCell(row, headerMap, ['Paid Amount']));
       const contribution = source.contribution;
       const balance = Math.max(contribution - paidAmount, 0);
-      const paymentStatus =
+      const calculatedStatus =
         paidAmount >= contribution ? 'Full Paid' : paidAmount > 0 ? 'Part Paid' : 'Pending';
+      const sheetPaymentStatus = getCell(row, headerMap, ['Payment Status']);
 
       return {
+        id: `${source.id}:${rowNumber}`,
+        rowNumber,
         eventType: source.id,
         sourceLabel: source.sourceLabel,
         timestamp: getCell(row, headerMap, ['Timestamp']),
@@ -144,19 +195,20 @@ function normalizeRows(values, source) {
           'Payment Screenshot',
         ]),
         paidAmount,
-        paymentStatus,
+        paymentStatus: sheetPaymentStatus || calculatedStatus,
         treasurerVerified: boolFrom(getCell(row, headerMap, ['Treasurer Verified'])),
         kitIssued: boolFrom(getCell(row, headerMap, ['KIT Issued', 'Kit Issued'])),
         remarks: getCell(row, headerMap, ['Remarks']),
         contribution,
         balance,
+        adminColumns,
       };
     })
     .filter((row) => row.groomName || row.brideName || row.mobileNumber);
 }
 
 function parseSheetCsv(csv, source) {
-  return normalizeRows(parseCsv(csv), source);
+  return normalizeRows(parseCsv(csv), source).map(({ adminColumns, ...row }) => row);
 }
 
 function requireConfig() {
@@ -175,7 +227,7 @@ function createSheetsClient() {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 
   return google.sheets({ version: 'v4', auth });
@@ -195,7 +247,7 @@ async function loadFromGoogleApi() {
     }),
   );
 
-  return { rows: results.flat(), source: 'google-api' };
+  return { rows: results.flat(), source: 'google-api', writeEnabled: true };
 }
 
 async function loadFromCsvFallback() {
@@ -207,7 +259,11 @@ async function loadFromCsvFallback() {
     }),
   );
 
-  return { rows: results.flat(), source: 'public-csv' };
+  return { rows: results.flat(), source: 'public-csv', writeEnabled: false };
+}
+
+function publicRows(rows) {
+  return rows.map(({ adminColumns, ...row }) => row);
 }
 
 async function loadRegistrations() {
@@ -222,9 +278,82 @@ async function loadRegistrations() {
     rows: result.rows,
     refreshedAt: new Date().toISOString(),
     source: result.source,
+    writeEnabled: result.writeEnabled,
   };
 
   return cache;
+}
+
+function sourceForEvent(eventType) {
+  return SHEETS.find((sheet) => sheet.id === eventType);
+}
+
+function normalizePatchValue(field, value) {
+  if (field === 'paidAmount') return String(numberFrom(value));
+  if (field === 'treasurerVerified' || field === 'kitIssued') return value ? 'Yes' : 'No';
+  return String(value ?? '');
+}
+
+async function updateRegistration(registrationId, updates) {
+  if (!hasGoogleConfig()) {
+    const error = new Error('Read-only mode. Google Sheets credentials are not configured.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (!cache.refreshedAt || cache.source !== 'google-api') await loadFromGoogleApi().then((result) => {
+    cache = {
+      rows: result.rows,
+      refreshedAt: new Date().toISOString(),
+      source: result.source,
+      writeEnabled: result.writeEnabled,
+    };
+  });
+
+  const currentRow = cache.rows.find((row) => row.id === registrationId);
+  if (!currentRow) {
+    const error = new Error('Registration row not found. Refresh data and try again.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const source = sourceForEvent(currentRow.eventType);
+  if (!source?.spreadsheetId) {
+    const error = new Error('Registration source sheet is not configured for write-back.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const data = Object.entries(updates || {})
+    .filter(([field]) => Object.prototype.hasOwnProperty.call(ADMIN_FIELDS, field))
+    .map(([field, value]) => {
+      const columnIndex = currentRow.adminColumns?.[field];
+      if (columnIndex === null || columnIndex === undefined) return null;
+      const column = columnLetter(columnIndex);
+      const sheetName = getSheetName();
+      return {
+        range: `'${sheetName}'!${column}${currentRow.rowNumber}`,
+        values: [[normalizePatchValue(field, value)]],
+      };
+    })
+    .filter(Boolean);
+
+  if (!data.length) {
+    const error = new Error('No editable admin columns were provided.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const sheets = createSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: source.spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data,
+    },
+  });
+
+  return loadRegistrations();
 }
 
 const app = express();
@@ -238,12 +367,21 @@ app.get('/api/health', (req, res) => {
 app.get('/api/registrations', async (req, res) => {
   try {
     if (!cache.refreshedAt) await loadRegistrations();
-    res.json({ ok: true, rows: cache.rows, refreshedAt: cache.refreshedAt, source: cache.source });
+    res.json({
+      ok: true,
+      rows: publicRows(cache.rows),
+      refreshedAt: cache.refreshedAt,
+      source: cache.source,
+      writeEnabled: cache.writeEnabled,
+      mode: cache.writeEnabled ? 'read-write' : 'read-only',
+    });
   } catch (error) {
     res.status(500).json({
       ok: false,
-      rows: cache.rows,
+      rows: publicRows(cache.rows),
       refreshedAt: cache.refreshedAt,
+      writeEnabled: false,
+      mode: 'read-only',
       error: error.message,
     });
   }
@@ -252,12 +390,45 @@ app.get('/api/registrations', async (req, res) => {
 app.post('/api/registrations/refresh', async (req, res) => {
   try {
     const next = await loadRegistrations();
-    res.json({ ok: true, rows: next.rows, refreshedAt: next.refreshedAt, source: next.source });
+    res.json({
+      ok: true,
+      rows: publicRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      mode: next.writeEnabled ? 'read-write' : 'read-only',
+    });
   } catch (error) {
     res.status(500).json({
       ok: false,
-      rows: cache.rows,
+      rows: publicRows(cache.rows),
       refreshedAt: cache.refreshedAt,
+      writeEnabled: false,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/registrations/:id', async (req, res) => {
+  try {
+    const next = await updateRegistration(req.params.id, req.body);
+    res.json({
+      ok: true,
+      message: 'Saved to Google Sheet',
+      rows: publicRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      mode: 'read-write',
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      ok: false,
+      rows: publicRows(cache.rows),
+      refreshedAt: cache.refreshedAt,
+      writeEnabled: false,
+      mode: 'read-only',
       error: error.message,
     });
   }
