@@ -57,6 +57,11 @@ let cache = {
   writeEnabled: false,
 };
 
+function withCacheBust(url) {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}t=${Date.now()}`;
+}
+
 function parseCsv(text) {
   const rows = [];
   let field = '';
@@ -255,13 +260,19 @@ async function loadFromGoogleApi() {
 async function loadFromCsvFallback() {
   const results = await Promise.all(
     SHEETS.map(async (source) => {
-      const response = await fetch(source.csvUrl);
+      const response = await fetch(withCacheBust(source.csvUrl), { cache: 'no-store' });
       if (!response.ok) throw new Error(`CSV sheet ${source.id} returned ${response.status}`);
       return parseSheetCsv(await response.text(), source);
     }),
   );
 
-  return { rows: results.flat(), source: 'public-csv', writeEnabled: false };
+  return {
+    rows: results.flat(),
+    source: 'public-csv',
+    writeEnabled: false,
+    notice:
+      'Google public CSV may take a few minutes to update. For instant updates, enable Google Sheets API service account.',
+  };
 }
 
 function publicRows(rows) {
@@ -281,6 +292,7 @@ async function loadRegistrations() {
     refreshedAt: new Date().toISOString(),
     source: result.source,
     writeEnabled: result.writeEnabled,
+    notice: result.notice || null,
   };
 
   return cache;
@@ -375,6 +387,7 @@ app.get('/api/registrations', async (req, res) => {
       refreshedAt: cache.refreshedAt,
       source: cache.source,
       writeEnabled: cache.writeEnabled,
+      notice: cache.notice,
       mode: cache.writeEnabled ? 'read-write' : 'read-only',
     });
   } catch (error) {
@@ -383,6 +396,7 @@ app.get('/api/registrations', async (req, res) => {
       rows: publicRows(cache.rows),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
+      notice: cache.notice,
       mode: 'read-only',
       error: error.message,
     });
@@ -398,6 +412,7 @@ app.post('/api/registrations/refresh', async (req, res) => {
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
+      notice: next.notice,
       mode: next.writeEnabled ? 'read-write' : 'read-only',
     });
   } catch (error) {
@@ -406,6 +421,7 @@ app.post('/api/registrations/refresh', async (req, res) => {
       rows: publicRows(cache.rows),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
+      notice: cache.notice,
       mode: 'read-only',
       error: error.message,
     });
@@ -422,6 +438,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
+      notice: next.notice,
       mode: 'read-write',
     });
   } catch (error) {
@@ -430,6 +447,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
       rows: publicRows(cache.rows),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
+      notice: cache.notice,
       mode: 'read-only',
       error: error.message,
     });

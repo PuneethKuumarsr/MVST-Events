@@ -288,10 +288,21 @@ function linkLabel(url) {
   return url ? 'Open' : 'Missing';
 }
 
+function withCacheBust(url) {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}t=${Date.now()}`;
+}
+
+function sourceText(source, writeEnabled) {
+  if (source === 'google-api') return writeEnabled ? 'Google Sheets API' : 'Google Sheets';
+  if (source === 'public-csv') return 'Google public CSV';
+  return 'Google Sheets';
+}
+
 async function loadCsvFallback() {
   const results = await Promise.all(
     SHEETS.map(async (sheet) => {
-      const response = await fetch(sheet.url);
+      const response = await fetch(withCacheBust(sheet.url), { cache: 'no-store' });
       if (!response.ok) throw new Error(`Public CSV sheet ${sheet.id} returned ${response.status}`);
       const text = await response.text();
       return parseSheetCsv(text, sheet);
@@ -315,11 +326,13 @@ function useParticipants() {
   const [error, setError] = useState('');
   const [isLive, setIsLive] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dataSource, setDataSource] = useState('');
   const [writeEnabled, setWriteEnabled] = useState(false);
 
   async function loadFromBackend(forceRefresh = false) {
     const response = await fetch('/api/registrations' + (forceRefresh ? '/refresh' : ''), {
       method: forceRefresh ? 'POST' : 'GET',
+      cache: 'no-store',
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
@@ -328,31 +341,46 @@ function useParticipants() {
     return payload;
   }
 
+  function applyPayload(payload) {
+    const refreshedAt = payload.refreshedAt || new Date().toISOString();
+    const nextSource = sourceText(payload.source, payload.writeEnabled);
+    setRows(payload.rows || []);
+    setLastRefreshedAt(refreshedAt);
+    setDataSource(nextSource);
+    setWriteEnabled(Boolean(payload.writeEnabled));
+    setStatus(`Data Source: ${nextSource}. Last refreshed: ${formatRefreshTime(refreshedAt)}`);
+    setError(payload.notice || '');
+    setIsLive(true);
+  }
+
   async function load(forceRefresh = false, aliveRef = { current: true }) {
     setIsRefreshing(true);
+    setStatus('Refreshing Google Sheets data...');
+    setRows([]);
     setError('');
     try {
       const payload = await loadFromBackend(forceRefresh);
       if (!aliveRef.current) return;
-      setRows(payload.rows || []);
-      setLastRefreshedAt(payload.refreshedAt || new Date().toISOString());
-      setStatus(`Live Google Sheets API data. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
-      setIsLive(true);
+      applyPayload(payload);
     } catch (backendError) {
       try {
         const fallbackRows = await loadCsvFallback();
         if (!aliveRef.current) return;
-        setRows(fallbackRows.length ? fallbackRows : SAMPLE_ROWS);
         const fallbackRefreshedAt = new Date().toISOString();
+        setRows(fallbackRows.length ? fallbackRows : SAMPLE_ROWS);
         setLastRefreshedAt(fallbackRefreshedAt);
-        setStatus(`Live Google Sheets Data Connected. Last refreshed: ${formatRefreshTime(fallbackRefreshedAt)}`);
-        setError(DEVELOPER_MODE ? `Google Sheets API failed: ${backendError.message}. Using CSV fallback.` : '');
+        setDataSource('Google public CSV');
+        setWriteEnabled(false);
+        setStatus(`Data Source: Google public CSV. Last refreshed: ${formatRefreshTime(fallbackRefreshedAt)}`);
+        setError('Google public CSV may take a few minutes to update. For instant updates, enable Google Sheets API service account.');
         setIsLive(false);
       } catch (fallbackError) {
         if (!aliveRef.current) return;
         setRows(SAMPLE_ROWS);
         setLastRefreshedAt(null);
-        setStatus(DEVELOPER_MODE ? 'Sample data mode. Google Sheets API and CSV fallback are unavailable.' : 'Data Source: Google Sheets');
+        setDataSource('Sample data');
+        setStatus('Data Source: Sample data');
+        setWriteEnabled(false);
         setError(DEVELOPER_MODE ? `Google Sheets access failed: ${backendError.message}. CSV fallback failed: ${fallbackError.message}` : '');
         setIsLive(false);
       }
@@ -376,22 +404,21 @@ function useParticipants() {
     isLive,
     isRefreshing,
     lastRefreshedAt,
+    dataSource,
     writeEnabled,
     saveRegistration: async (id, updates) => {
       const response = await fetch(`/api/registrations/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
+        cache: 'no-store',
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || `Google Sheets update returned ${response.status}`);
       }
-      setRows(payload.rows || []);
-      setLastRefreshedAt(payload.refreshedAt || new Date().toISOString());
-      setWriteEnabled(Boolean(payload.writeEnabled));
-      setStatus(payload.message || 'Saved to Google Sheet');
-      setIsLive(true);
+      applyPayload(payload);
+      setStatus(`${payload.message || 'Saved to Google Sheet'}. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
       return payload;
     },
     refresh: () => load(true),
@@ -610,7 +637,7 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 }
 
 function App() {
-  const { rows, status, error, isLive, isRefreshing, writeEnabled, saveRegistration, refresh } = useParticipants();
+  const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -674,7 +701,7 @@ function App() {
           <p>Phase 1 dashboard for Samoohika Shanthi registrations, payments, verification, KIT issue, and WhatsApp follow-up.</p>
           <div className="hero-meta">
             <span><CalendarDays size={17} /> {EVENT_DATE}</span>
-            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
+            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {dataSource || 'Google Sheets'} Â· {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
           </div>
         </div>
       </section>
