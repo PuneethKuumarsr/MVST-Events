@@ -730,3 +730,148 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+.bulk-whatsapp-panel {
+  margin: 12px 0 16px;
+}
+
+.bulk-actions,
+.bulk-queue-controls,
+.bulk-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bulk-actions button,
+.bulk-preview-head button,
+.bulk-queue-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.bulk-actions button,
+.bulk-queue-controls button {
+  background: var(--maroon);
+  color: #fff8e8;
+}
+
+.bulk-preview-head button {
+  background: rgba(255, 250, 240, 0.84);
+  color: var(--maroon);
+}
+
+.bulk-queue-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.bulk-preview {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.bulk-preview-head {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.bulk-preview-head p,
+.bulk-preview-head h3,
+.bulk-empty {
+  margin: 0;
+}
+
+.bulk-preview-head p {
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.bulk-preview-head h3 {
+  color: var(--maroon-deep);
+  font-size: 1.05rem;
+}
+
+.bulk-preview-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.bulk-preview-list div {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(120px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.bulk-preview-list div.active {
+  border-color: rgba(31, 139, 88, 0.34);
+  background: rgba(31, 139, 88, 0.08);
+}
+
+.bulk-preview-list strong {
+  color: var(--maroon-deep);
+}
+
+.bulk-queue-controls {
+  justify-content: space-between;
+  margin-top: 12px;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.bulk-empty {
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+@media (max-width: 620px) {
+  .bulk-actions button,
+  .bulk-preview-head button,
+  .bulk-queue-controls button {
+    width: 100%;
+  }
+
+  .bulk-preview-list div {
+    grid-template-columns: 1fr;
+  }
+}
+
+.app-footer {
+  width: min(1120px, calc(100% - 28px));
+  margin: 18px auto 28px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .app-footer {
+    width: min(100% - 20px, 1120px);
+  }
+}

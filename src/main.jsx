@@ -22,6 +22,7 @@ import {
   Sparkles,
   UsersRound,
 } from 'lucide-react';
+import { buildWhatsAppMessage, normalizeWhatsAppMessage } from './whatsappMessages.js';
 import './styles.css';
 
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
@@ -262,26 +263,57 @@ function cleanPhone(value) {
   return digits;
 }
 
+function participantDisplayName(participant) {
+  const groom = String(participant.groomName || '').trim() || 'Respected Sir';
+  const bride = String(participant.brideName || '').trim();
+  return bride ? `${groom} & ${bride}` : groom;
+}
+
+function eventDisplayName(eventType) {
+  return EVENTS[eventType]?.shortLabel || eventType || 'Event';
+}
+
+function paymentMessageType(participant) {
+  if (participant.paymentStatus === 'Full Paid') return 'Full Payment';
+  if (participant.paymentStatus === 'Part Paid') return 'Partial Payment';
+  return null;
+}
+
+function buildBulkQueue(rows, queueType) {
+  const sourceRows =
+    queueType === 'welcome'
+      ? rows
+      : rows.filter((row) => ['Full Paid', 'Part Paid'].includes(row.paymentStatus));
+
+  return sourceRows.map((participant) => {
+    const messageType = queueType === 'welcome' ? 'Welcome' : paymentMessageType(participant);
+    return {
+      participant,
+      messageKind: queueType === 'welcome' ? 'welcome' : 'confirmation',
+      messageType,
+      name: participantDisplayName(participant),
+      mobileNumber: participant.mobileNumber || 'Missing',
+      eventType: eventDisplayName(participant.eventType),
+    };
+  });
+}
+function makeWhatsAppMessage(participant, kind) {
+  return buildWhatsAppMessage(participant, kind);
+}
+
 function makeWhatsAppUrl(participant, kind) {
-  const event = EVENTS[participant.eventType];
-  const name = `${participant.groomName || 'Respected Sir'} & ${
-    participant.brideName || 'Madam'
-  }`;
-  const balanceLine =
-    participant.balance > 0
-      ? `Balance payable: ${formatCurrency(participant.balance)}.`
-      : 'Your contribution is fully received.';
+  const mobile = cleanPhone(participant.mobileNumber);
+  const message = normalizeWhatsAppMessage(makeWhatsAppMessage(participant, kind));
+  const encodedText = encodeURIComponent(message);
+  const url = `https://wa.me/91${mobile}?text=${encodedText}`;
+  return url;
+}
 
-  const messages = {
-    welcome: `Namaskara ${name}. Thank you for registering for ${event.label} by Mane Manege Vasavi Seva Trust (R) on ${EVENT_DATE}. Contribution: ${formatCurrency(event.contribution)} per couple. KIT includes: ${event.includes.join(', ')}. Rituals: ${event.rituals}.`,
-    confirmation: `Namaskara ${name}. We have received ${formatCurrency(participant.paidAmount)} towards ${event.label}. ${balanceLine} Thank you for your support to Mane Manege Vasavi Seva Trust (R).`,
-    balance: `Namaskara ${name}. This is a gentle reminder for ${event.label} on ${EVENT_DATE}. Contribution: ${formatCurrency(event.contribution)}. Received: ${formatCurrency(participant.paidAmount)}. Balance payable: ${formatCurrency(participant.balance)}.`,
-    kit: `Namaskara ${name}. KIT distribution for ${event.label} includes all applicable items for your event: ${event.includes.join(', ')}. Please keep your registration details handy. Mane Manege Vasavi Seva Trust (R).`,
-  };
-
-  return `https://wa.me/${cleanPhone(participant.mobileNumber)}?text=${encodeURIComponent(
-    messages[kind],
-  )}`;
+function debugWhatsAppMessage(participant, kind) {
+  const url = makeWhatsAppUrl(participant, kind);
+  const decodedMessage = decodeURIComponent(url.split('text=')[1] || '');
+  console.debug('[MVST WhatsApp decoded message]', decodedMessage);
+  return url;
 }
 
 function linkLabel(url) {
@@ -605,16 +637,16 @@ function ParticipantCard({ participant, writeEnabled, onSave }) {
       </div>
 
       <div className="whatsapp-grid">
-        <a href={makeWhatsAppUrl(participant, 'welcome')} target="_blank" rel="noreferrer">
+        <a href={makeWhatsAppUrl(participant, 'welcome')} onClick={() => debugWhatsAppMessage(participant, 'welcome')} target="_blank" rel="noreferrer">
           <MessageCircle size={16} /> Welcome
         </a>
-        <a href={makeWhatsAppUrl(participant, 'confirmation')} target="_blank" rel="noreferrer">
+        <a href={makeWhatsAppUrl(participant, 'confirmation')} onClick={() => debugWhatsAppMessage(participant, 'confirmation')} target="_blank" rel="noreferrer">
           <BadgeCheck size={16} /> Payment
         </a>
-        <a href={makeWhatsAppUrl(participant, 'balance')} target="_blank" rel="noreferrer">
+        <a href={makeWhatsAppUrl(participant, 'balance')} onClick={() => debugWhatsAppMessage(participant, 'balance')} target="_blank" rel="noreferrer">
           <IndianRupee size={16} /> Balance
         </a>
-        <a href={makeWhatsAppUrl(participant, 'kit')} target="_blank" rel="noreferrer">
+        <a href={makeWhatsAppUrl(participant, 'kit')} onClick={() => debugWhatsAppMessage(participant, 'kit')} target="_blank" rel="noreferrer">
           <Gift size={16} /> KIT
         </a>
       </div>
@@ -643,6 +675,10 @@ function App() {
   const [paymentFilter, setPaymentFilter] = useState('All');
   const [verifiedFilter, setVerifiedFilter] = useState('All');
   const [kitFilter, setKitFilter] = useState('All');
+  const [bulkQueue, setBulkQueue] = useState([]);
+  const [bulkQueueType, setBulkQueueType] = useState('');
+  const [bulkQueueStarted, setBulkQueueStarted] = useState(false);
+  const [bulkQueueIndex, setBulkQueueIndex] = useState(0);
 
   const summary = useMemo(() => {
     const expected = rows.reduce((sum, row) => sum + row.contribution, 0);
@@ -684,6 +720,44 @@ function App() {
       );
   }, [rows, activeEvent, query, paymentFilter, verifiedFilter, kitFilter]);
 
+  const currentBulkItem = bulkQueue[bulkQueueIndex];
+  const hasNextBulkItem = bulkQueueStarted && bulkQueueIndex < bulkQueue.length - 1;
+
+  function prepareBulkQueue(queueType) {
+    setBulkQueue(buildBulkQueue(rows, queueType));
+    setBulkQueueType(queueType);
+    setBulkQueueStarted(false);
+    setBulkQueueIndex(0);
+  }
+
+  function clearBulkQueue() {
+    setBulkQueue([]);
+    setBulkQueueType('');
+    setBulkQueueStarted(false);
+    setBulkQueueIndex(0);
+  }
+
+  function openBulkItem(index) {
+    const item = bulkQueue[index];
+    if (!item) return;
+    const url = debugWhatsAppMessage(item.participant, item.messageKind);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  function confirmBulkQueue() {
+    if (!bulkQueue.length) return;
+    setBulkQueueStarted(true);
+    setBulkQueueIndex(0);
+    openBulkItem(0);
+  }
+
+  function openNextBulkMessage() {
+    const nextIndex = bulkQueueIndex + 1;
+    if (nextIndex >= bulkQueue.length) return;
+    setBulkQueueIndex(nextIndex);
+    openBulkItem(nextIndex);
+  }
+
   return (
     <main>
       <section className="hero-band">
@@ -701,7 +775,7 @@ function App() {
           <p>Phase 1 dashboard for Samoohika Shanthi registrations, payments, verification, KIT issue, and WhatsApp follow-up.</p>
           <div className="hero-meta">
             <span><CalendarDays size={17} /> {EVENT_DATE}</span>
-            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {dataSource || 'Google Sheets'} Â· {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
+            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {dataSource || 'Google Sheets'} {' \u00b7 '} {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
           </div>
         </div>
       </section>
@@ -799,6 +873,63 @@ function App() {
           <span>{formatCurrency(EVENTS[activeEvent].contribution)} per couple</span>
         </div>
 
+        <div className="bulk-whatsapp-panel">
+          <div className="bulk-actions">
+            <button type="button" onClick={() => prepareBulkQueue('welcome')}>
+              <MessageCircle size={16} /> Bulk Welcome Messages
+            </button>
+            <button type="button" onClick={() => prepareBulkQueue('payment')}>
+              <BadgeCheck size={16} /> Bulk Payment Messages
+            </button>
+          </div>
+
+          {bulkQueueType ? (
+            <div className="bulk-preview">
+              <div className="bulk-preview-head">
+                <div>
+                  <p>{bulkQueueType === 'welcome' ? 'Bulk Welcome Messages' : 'Bulk Payment Messages'}</p>
+                  <h3>Total count: {bulkQueue.length}</h3>
+                </div>
+                <button type="button" onClick={clearBulkQueue}>Close</button>
+              </div>
+
+              {bulkQueue.length ? (
+                <>
+                  <div className="bulk-preview-list">
+                    {bulkQueue.map((item, index) => (
+                      <div className={bulkQueueStarted && index === bulkQueueIndex ? 'active' : ''} key={`${item.participant.eventType}-${item.participant.mobileNumber}-${item.participant.timestamp}-${index}`}>
+                        <strong>{item.name}</strong>
+                        <span>{item.mobileNumber}</span>
+                        <span>{item.eventType}</span>
+                        <span>{item.messageType}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bulk-queue-controls">
+                    {!bulkQueueStarted ? (
+                      <button type="button" onClick={confirmBulkQueue}>
+                        Confirm
+                      </button>
+                    ) : (
+                      <>
+                        <span>
+                          Opened {bulkQueueIndex + 1} of {bulkQueue.length}: {currentBulkItem?.name}
+                        </span>
+                        <button type="button" onClick={openNextBulkMessage} disabled={!hasNextBulkItem}>
+                          Next Message
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="bulk-empty">No eligible participants found. Pending payments are skipped.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+
         <div className="participants-list">
           {filteredRows.length ? (
             filteredRows.map((participant, index) => (
@@ -822,6 +953,7 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
+
 
 
 
