@@ -435,8 +435,25 @@ app.patch('/api/registrations/:id', async (req, res) => {
 });
 
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-store');
+          return;
+        }
+
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          return;
+        }
+
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+      },
+    }),
+  );
   app.get(/.*/, (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
