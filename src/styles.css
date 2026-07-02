@@ -536,7 +536,6 @@ main {
     height: 72px;
   }
 
-  .stats-grid,
   .controls,
   .money-grid,
   .detail-grid,
@@ -544,12 +543,35 @@ main {
     grid-template-columns: 1fr;
   }
 
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .stat-card {
-    min-height: 86px;
+    min-height: 74px;
+    gap: 8px;
+    padding: 11px;
+  }
+
+  .stat-icon {
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .stat-card p {
+    margin-bottom: 4px;
+    font-size: 0.76rem;
+    line-height: 1.18;
+  }
+
+  .stat-card strong {
+    font-size: 1.12rem;
   }
 
   .tabs {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .event-note,
