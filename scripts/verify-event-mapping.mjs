@@ -61,6 +61,57 @@ for (const [input, expected] of phoneExamples) {
   assert.equal(normalizeIndianMobileNumberForTest(input), expected);
 }
 
+assert.ok(frontend.includes('WhatsApp Check / Mobile Issues'), 'Dashboard must show WhatsApp Check / Mobile Issues section');
+assert.ok(frontend.includes('Export Mobile Issues'), 'Dashboard must show Export Mobile Issues button');
+assert.ok(frontend.includes('Welcome Sent'), 'Dashboard must show Welcome Sent summary/status');
+assert.ok(frontend.includes('Welcome Pending'), 'Dashboard must show Welcome Pending summary');
+assert.ok(frontend.includes('Payment Sent'), 'Dashboard must show Payment Sent summary/status');
+assert.ok(frontend.includes('Payment Pending'), 'Dashboard must show Payment Pending summary');
+assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome Sent Date');
+assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
+assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');
+assert.ok(frontend.includes('Duplicate mobile number'), 'Mobile report must flag duplicate mobile numbers');
+assert.ok(frontend.includes('New Registrations'), 'Dashboard must show New Registrations section');
+assert.ok(frontend.includes('Awaiting treasurer payment confirmation'), 'New Registrations section must explain treasurer confirmation status');
+assert.ok(frontend.includes('newRegistrationRows'), 'Frontend must keep unverified registrations in a separate list');
+assert.ok(frontend.includes('.filter((row) => row.treasurerVerified)'), 'Regular participant tabs must show only treasurer-verified registrations');
+assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
+assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
+assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
+assert.ok(frontend.includes('Generate Receipt'), 'Dashboard must show Generate Receipt button');
+assert.ok(frontend.includes('Download Receipt'), 'Dashboard must show Download Receipt button');
+assert.ok(frontend.includes('Bulk Generate Receipts'), 'Dashboard must show Bulk Generate Receipts button');
+assert.ok(frontend.includes('SP26'), 'Frontend must define Shashtipoorthi SP26 receipt prefix');
+assert.ok(frontend.includes('BS26'), 'Frontend must define Bhimaratha BS26 receipt prefix');
+assert.ok(frontend.includes('shastipoorthi-receipt.jpeg'), 'Frontend must use original Shashtipoorthi receipt template');
+assert.ok(frontend.includes('bhimaratha-receipt.jpeg'), 'Frontend must use original Bhimaratha receipt template');
+assert.ok(frontend.includes("toDataURL('image/jpeg'"), 'Receipt output must be generated as JPG');
+assert.ok(backend.includes("seatNo: ['Seat No']"), 'Backend must allow Seat No write-back');
+assert.ok(backend.includes("receiptNo: ['Receipt No']"), 'Backend must allow Receipt No write-back');
+assert.ok(backend.includes("receiptGenerated: ['Receipt Generated']"), 'Backend must allow Receipt Generated write-back');
+assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Backend range must include receipt columns beyond Z');
+
+const mobileValidationForTest = (rawMobile) => {
+  const digits = String(rawMobile || '').replace(/\D/g, '');
+  if (!digits) return 'Missing Mobile';
+  if (digits.length < 10) return 'Invalid';
+  if (digits.length === 10) return 'OK';
+  if (digits.length === 11 && digits.startsWith('0')) return 'OK after removing 0';
+  if (digits.length === 12 && digits.startsWith('91')) return 'OK';
+  return 'Invalid';
+};
+const mobileValidationExamples = [
+  ['', 'Missing Mobile'],
+  ['12345', 'Invalid'],
+  ['1234567890', 'OK'],
+  ['911234567890', 'OK'],
+  ['01234567890', 'OK after removing 0'],
+  ['9112345678909', 'Invalid'],
+];
+for (const [input, expected] of mobileValidationExamples) {
+  assert.equal(mobileValidationForTest(input), expected);
+}
+
 const sampleCouple = {
   eventType: 'shashtipoorthi',
   groomName: 'Bonthala Krishnamurthy',

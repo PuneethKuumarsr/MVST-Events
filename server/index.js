@@ -9,17 +9,26 @@ import { fileURLToPath } from 'node:url';
 dotenv.config();
 
 const PORT = Number(process.env.PORT || 4000);
-const DEFAULT_RANGE = 'Form Responses 1!A:Z';
+const DEFAULT_RANGE = 'Form Responses 1!A:AZ';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.resolve(__dirname, '..', 'dist');
+const projectRoot = path.resolve(__dirname, '..');
+const distPath = path.join(projectRoot, 'dist');
 const indexPath = path.join(distPath, 'index.html');
+const serviceAccountPath = path.join(projectRoot, 'service-account.json');
 const ADMIN_FIELDS = {
   paidAmount: ['Paid Amount'],
   paymentStatus: ['Payment Status'],
   treasurerVerified: ['Treasurer Verified'],
   kitIssued: ['KIT Issued', 'Kit Issued'],
   remarks: ['Remarks'],
+  welcomeSent: ['Welcome Sent'],
+  welcomeSentDate: ['Welcome Sent Date'],
+  paymentSent: ['Payment Sent'],
+  paymentSentDate: ['Payment Sent Date'],
+  seatNo: ['Seat No'],
+  receiptNo: ['Receipt No'],
+  receiptGenerated: ['Receipt Generated'],
 };
 
 const EVENTS = {
@@ -129,15 +138,34 @@ function boolFrom(value) {
   );
 }
 
+function readServiceAccountFile() {
+  try {
+    if (!fs.existsSync(serviceAccountPath)) return null;
+    const raw = fs.readFileSync(serviceAccountPath, 'utf8').trim();
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (error) {
+    return null;
+  }
+}
+
+function getGoogleCredentials() {
+  const fileCredentials = readServiceAccountFile();
+  return {
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || fileCredentials?.client_email || '',
+    key: process.env.GOOGLE_PRIVATE_KEY || fileCredentials?.private_key || '',
+  };
+}
+
 function hasGoogleConfig() {
+  const credentials = getGoogleCredentials();
   return Boolean(
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_PRIVATE_KEY &&
+    credentials.email &&
+      credentials.key &&
       process.env.BHIMARATHA_SHEET_ID &&
       process.env.SHASHTIPOORTHI_SHEET_ID,
   );
 }
-
 function getSheetName(range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE) {
   return String(range).split('!')[0].replace(/^'|'$/g, '');
 }
@@ -206,6 +234,13 @@ function normalizeRows(values, source) {
         treasurerVerified: boolFrom(getCell(row, headerMap, ['Treasurer Verified'])),
         kitIssued: boolFrom(getCell(row, headerMap, ['KIT Issued', 'Kit Issued'])),
         remarks: getCell(row, headerMap, ['Remarks']),
+        welcomeSent: boolFrom(getCell(row, headerMap, ['Welcome Sent'])),
+        welcomeSentDate: getCell(row, headerMap, ['Welcome Sent Date']),
+        paymentSent: boolFrom(getCell(row, headerMap, ['Payment Sent'])),
+        paymentSentDate: getCell(row, headerMap, ['Payment Sent Date']),
+        seatNo: getCell(row, headerMap, ['Seat No']),
+        receiptNo: getCell(row, headerMap, ['Receipt No']),
+        receiptGenerated: boolFrom(getCell(row, headerMap, ['Receipt Generated'])),
         contribution,
         balance,
         adminColumns,
@@ -220,26 +255,27 @@ function parseSheetCsv(csv, source) {
 
 function requireConfig() {
   const missing = [];
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
-  if (!process.env.GOOGLE_PRIVATE_KEY) missing.push('GOOGLE_PRIVATE_KEY');
+  const credentials = getGoogleCredentials();
+  if (!credentials.email) missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL or service-account.json client_email');
+  if (!credentials.key) missing.push('GOOGLE_PRIVATE_KEY or service-account.json private_key');
   if (!process.env.BHIMARATHA_SHEET_ID) missing.push('BHIMARATHA_SHEET_ID');
   if (!process.env.SHASHTIPOORTHI_SHEET_ID) missing.push('SHASHTIPOORTHI_SHEET_ID');
   if (missing.length) {
     throw new Error(`Missing Google Sheets configuration: ${missing.join(', ')}`);
   }
+  return credentials;
 }
 
 function createSheetsClient() {
-  requireConfig();
+  const credentials = requireConfig();
   const auth = new google.auth.JWT({
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    email: credentials.email,
+    key: credentials.key.replace(/\\n/g, '\n'),
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 
   return google.sheets({ version: 'v4', auth });
 }
-
 async function loadFromGoogleApi() {
   const sheets = createSheetsClient();
   const range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE;
@@ -304,7 +340,7 @@ function sourceForEvent(eventType) {
 
 function normalizePatchValue(field, value) {
   if (field === 'paidAmount') return String(numberFrom(value));
-  if (field === 'treasurerVerified' || field === 'kitIssued') return value ? 'Yes' : 'No';
+  if (field === 'treasurerVerified' || field === 'kitIssued' || field === 'welcomeSent' || field === 'paymentSent' || field === 'receiptGenerated') return value ? 'Yes' : 'No';
   return String(value ?? '');
 }
 
