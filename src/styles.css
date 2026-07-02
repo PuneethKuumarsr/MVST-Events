@@ -193,6 +193,21 @@ main {
   padding: 16px;
 }
 
+.stat-card.clickable {
+  width: 100%;
+  border: 1px solid var(--line);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.stat-card.clickable:hover,
+.stat-card.clickable:focus-visible {
+  border-color: rgba(187, 135, 46, 0.55);
+  transform: translateY(-1px);
+  outline: none;
+}
+
 .stat-icon {
   display: grid;
   place-items: center;

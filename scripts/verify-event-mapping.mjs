@@ -75,6 +75,11 @@ assert.ok(frontend.includes('New Registrations'), 'Dashboard must show New Regis
 assert.ok(frontend.includes('Awaiting treasurer payment confirmation'), 'New Registrations section must explain treasurer confirmation status');
 assert.ok(frontend.includes('newRegistrationRows'), 'Frontend must keep unverified registrations in a separate list');
 assert.ok(frontend.includes('.filter((row) => row.treasurerVerified)'), 'Regular participant tabs must show only treasurer-verified registrations');
+assert.ok(frontend.includes('Form Timestamp'), 'Participant cards must show form timestamp for cross verification');
+assert.ok(frontend.includes('scrollToSection'), 'Dashboard summary cards must support jump navigation');
+assert.ok(frontend.includes('id="new-registrations-dashboard"'), 'New Registrations section must have a jump target');
+assert.ok(frontend.includes('id="participant-management-dashboard"'), 'Participant Management section must have a jump target');
+assert.ok(frontend.includes('onClick={goToPaymentPending}'), 'Pending summary cards must jump to pending participants');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');

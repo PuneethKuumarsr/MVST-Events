@@ -662,9 +662,9 @@ function useParticipants() {
   };
 }
 
-function StatCard({ icon: Icon, label, value, tone }) {
-  return (
-    <article className={`stat-card ${tone || ''}`}>
+function StatCard({ icon: Icon, label, value, tone, onClick }) {
+  const content = (
+    <>
       <div className="stat-icon">
         <Icon size={20} />
       </div>
@@ -672,8 +672,23 @@ function StatCard({ icon: Icon, label, value, tone }) {
         <p>{label}</p>
         <strong>{value}</strong>
       </div>
-    </article>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button className={'stat-card ' + (tone || '') + ' clickable'} type="button" onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return <article className={'stat-card ' + (tone || '')}>{content}</article>;
+}
+
+function scrollToSection(sectionId) {
+  const target = document.getElementById(sectionId);
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function StatusPill({ children, tone }) {
@@ -939,6 +954,7 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
       </div>
 
       <div className="detail-grid delivery-status-row">
+        <p><span>Form Timestamp</span>{participant.timestamp || 'Not entered'}</p>
         <p><span>Welcome Sent Date</span>{participant.welcomeSentDate || 'Not marked'}</p>
         <p><span>Payment Sent Date</span>{participant.paymentSentDate || 'Not marked'}</p>
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
@@ -1145,6 +1161,24 @@ function App() {
     }
   }
 
+  function goToNewRegistrations() {
+    scrollToSection('new-registrations-dashboard');
+  }
+
+  function goToPaymentPending() {
+    setPaymentFilter('Pending');
+    setVerifiedFilter('All');
+    setKitFilter('All');
+    scrollToSection('participant-management-dashboard');
+  }
+
+  function goToParticipantManagement() {
+    setPaymentFilter('All');
+    setVerifiedFilter('All');
+    setKitFilter('All');
+    scrollToSection('participant-management-dashboard');
+  }
+
   async function generateBulkReceipts() {
     if (!writeEnabled) {
       setBulkReceiptMessage('Read-only mode');
@@ -1235,20 +1269,20 @@ function App() {
           <StatCard icon={HeartHandshake} label="Bhimaratha" value={summary.bhimaratha} />
           <StatCard icon={CheckCircle2} label="Full Paid" value={summary.fullPaid} tone="success" />
           <StatCard icon={CircleDollarSign} label="Part Paid" value={summary.partPaid} tone="warning" />
-          <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" />
-          <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} />
-          <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" />
-          <StatCard icon={HeartHandshake} label="New Shashtipoorthi" value={summary.newShashtipoorthi} tone="warning" />
-          <StatCard icon={HeartHandshake} label="New Bhimaratha" value={summary.newBhimaratha} tone="warning" />
+          <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
+          <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
+          <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" onClick={goToNewRegistrations} />
+          <StatCard icon={HeartHandshake} label="New Shashtipoorthi" value={summary.newShashtipoorthi} tone="warning" onClick={goToNewRegistrations} />
+          <StatCard icon={HeartHandshake} label="New Bhimaratha" value={summary.newBhimaratha} tone="warning" onClick={goToNewRegistrations} />
           <StatCard icon={Gift} label="KIT Issued" value={summary.kitIssued} />
           <StatCard icon={MessageCircle} label="Welcome Sent" value={summary.welcomeSent} tone="success" />
-          <StatCard icon={MessageCircle} label="Welcome Pending" value={summary.welcomePending} tone="warning" />
-          <StatCard icon={BadgeCheck} label="Payment Sent" value={summary.paymentSent} tone="success" />
-          <StatCard icon={BadgeCheck} label="Payment Pending" value={summary.paymentPending} tone="warning" />
+          <StatCard icon={MessageCircle} label="Welcome Pending" value={summary.welcomePending} tone="warning" onClick={goToParticipantManagement} />
+          <StatCard icon={BadgeCheck} label="Payment Sent" value={summary.paymentSent} tone="success" onClick={goToParticipantManagement} />
+          <StatCard icon={BadgeCheck} label="Payment Pending" value={summary.paymentPending} tone="warning" onClick={goToPaymentPending} />
           <StatCard icon={FileText} label="Shashtipoorthi Receipts Generated" value={summary.shashtipoorthiReceiptsGenerated} tone="success" />
-          <StatCard icon={FileText} label="Shashtipoorthi Receipts Pending" value={summary.shashtipoorthiReceiptsPending} tone="warning" />
-          <StatCard icon={FileText} label="Bhimaratha Receipts Generated" value={summary.bhimarathaReceiptsGenerated} tone="success" />
-          <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" />
+          <StatCard icon={FileText} label="Shashtipoorthi Receipts Pending" value={summary.shashtipoorthiReceiptsPending} tone="warning" onClick={goToParticipantManagement} />
+          <StatCard icon={FileText} label="Bhimaratha Receipts Generated" value={summary.bhimarathaReceiptsGenerated} tone="success" onClick={goToParticipantManagement} />
+          <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" onClick={goToParticipantManagement} />
           <StatCard icon={IndianRupee} label="Expected collection" value={formatCurrency(summary.expected)} />
           <StatCard icon={IndianRupee} label="Received collection" value={formatCurrency(summary.received)} tone="success" />
           <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" />
@@ -1297,7 +1331,7 @@ function App() {
         </div>
       </section>
 
-      <section className="management-section new-registrations-section">
+      <section className="management-section new-registrations-section" id="new-registrations-dashboard">
         <div className="section-heading">
           <div>
             <p>New Registrations</p>
@@ -1330,7 +1364,7 @@ function App() {
         </div>
       </section>
 
-      <section className="management-section">
+      <section className="management-section" id="participant-management-dashboard">
         <div className="section-heading">
           <div>
             <p>Participant Management</p>
