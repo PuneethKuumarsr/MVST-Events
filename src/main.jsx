@@ -1242,6 +1242,7 @@ function MangalyaDonorsSection({ donorState }) {
   const [bulkIndex, setBulkIndex] = useState(0);
   const [bulkMessage, setBulkMessage] = useState('');
   const [savingBulk, setSavingBulk] = useState(false);
+  const [bulkOpened, setBulkOpened] = useState(false);
 
   const summary = useMemo(() => ({
     uniqueDonors: donors.length,
@@ -1259,6 +1260,7 @@ function MangalyaDonorsSection({ donorState }) {
     setBulkStarted(false);
     setBulkIndex(0);
     setBulkMessage('');
+    setBulkOpened(false);
   }
 
   function clearBulkQueue() {
@@ -1266,6 +1268,7 @@ function MangalyaDonorsSection({ donorState }) {
     setBulkStarted(false);
     setBulkIndex(0);
     setBulkMessage('');
+    setBulkOpened(false);
   }
 
   function openBulkDonor(index) {
@@ -1274,19 +1277,20 @@ function MangalyaDonorsSection({ donorState }) {
     setBulkMessage('');
     console.debug('[MVST Mangalya donor WhatsApp decoded message]', buildMangalyaDonorAppealMessage(donor));
     window.open(makeMangalyaDonorWhatsAppUrl(donor), '_blank', 'noopener,noreferrer');
+    setBulkStarted(true);
+    setBulkOpened(true);
   }
 
-  function confirmBulkQueue() {
+  function openCurrentBulkDonor() {
     if (!bulkQueue.length) return;
-    setBulkStarted(true);
-    setBulkIndex(0);
-    openBulkDonor(0);
+    openBulkDonor(bulkIndex);
   }
 
   function openNextBulkDonor() {
     const nextIndex = bulkIndex + 1;
     if (nextIndex >= bulkQueue.length) return;
     setBulkIndex(nextIndex);
+    setBulkOpened(false);
     openBulkDonor(nextIndex);
   }
 
@@ -1335,7 +1339,7 @@ function MangalyaDonorsSection({ donorState }) {
       <div className="bulk-whatsapp-panel donor-bulk-panel">
         <div className="bulk-actions">
           <button type="button" onClick={prepareBulkQueue}>
-            <MessageCircle size={16} /> Bulk Mangalya Donor WhatsApp
+            <MessageCircle size={16} /> Preview All WhatsApp Messages
           </button>
         </div>
 
@@ -1352,29 +1356,46 @@ function MangalyaDonorsSection({ donorState }) {
               <>
                 <div className="bulk-preview-list donor-bulk-list">
                   {bulkQueue.map((donor, index) => (
-                    <div className={bulkStarted && index === bulkIndex ? 'active' : ''} key={donor.id}>
+                    <button
+                      className={index === bulkIndex ? 'active' : ''}
+                      key={donor.id}
+                      onClick={() => {
+                        setBulkIndex(index);
+                        setBulkOpened(false);
+                        setBulkMessage('');
+                      }}
+                      type="button"
+                    >
                       <strong>{donor.donorName || 'Unnamed donor'}</strong>
                       <span>{donor.contactNo}</span>
                       <span>{donor.quantitySponsored} {donorBottuWord(donor.quantitySponsored)}</span>
                       <span>{donor.whatsAppSent ? 'Already Sent' : 'Appeal'}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
+                {currentBulkDonor ? (
+                  <div className="donor-current-preview">
+                    <div>
+                      <p>Current Message Preview</p>
+                      <strong>{currentBulkDonor.donorName || 'Unnamed donor'} - {currentBulkDonor.contactNo}</strong>
+                    </div>
+                    <textarea readOnly rows="10" value={buildMangalyaDonorAppealMessage(currentBulkDonor)} />
+                  </div>
+                ) : null}
                 <div className="bulk-queue-controls">
-                  {!bulkStarted ? (
-                    <button type="button" onClick={confirmBulkQueue}>Confirm</button>
-                  ) : (
-                    <>
-                      <span>Opened {bulkIndex + 1} of {bulkQueue.length}: {currentBulkDonor?.donorName}</span>
-                      <button type="button" onClick={markBulkDonorAsSent} disabled={!writeEnabled || savingBulk}>
-                        {savingBulk ? 'Saving' : 'Mark as Sent'}
-                      </button>
-                      <button type="button" onClick={openNextBulkDonor} disabled={!hasNextBulkDonor}>
-                        Next Message
-                      </button>
-                      {bulkMessage ? <small>{bulkMessage}</small> : null}
-                    </>
-                  )}
+                  <span>
+                    {bulkOpened ? 'Opened' : 'Ready'} {bulkIndex + 1} of {bulkQueue.length}: {currentBulkDonor?.donorName}
+                  </span>
+                  <button type="button" onClick={openCurrentBulkDonor}>
+                    {bulkOpened ? 'Reopen WhatsApp' : 'Open WhatsApp'}
+                  </button>
+                  <button type="button" onClick={markBulkDonorAsSent} disabled={!writeEnabled || savingBulk || !bulkOpened}>
+                    {savingBulk ? 'Saving' : 'Mark as Sent'}
+                  </button>
+                  <button type="button" onClick={openNextBulkDonor} disabled={!hasNextBulkDonor}>
+                    Next WhatsApp
+                  </button>
+                  {bulkMessage ? <small>{bulkMessage}</small> : null}
                 </div>
               </>
             ) : (
