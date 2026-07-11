@@ -95,6 +95,17 @@ assert.ok(backend.includes("seatNo: ['Seat No']"), 'Backend must allow Seat No w
 assert.ok(backend.includes("receiptNo: ['Receipt No']"), 'Backend must allow Receipt No write-back');
 assert.ok(backend.includes("receiptGenerated: ['Receipt Generated']"), 'Backend must allow Receipt Generated write-back');
 assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Backend range must include receipt columns beyond Z');
+assert.ok(frontend.includes('Mangalya Donors 2026'), 'Dashboard must show Mangalya Donors 2026 section');
+assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya donor WhatsApp appeal dynamically');
+assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must create Mangalya donor WhatsApp URLs');
+assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya donor WhatsApp URL must use wa.me and encodeURIComponent');
+assert.ok(frontend.includes('Add Mobile Number'), 'Donor dashboard must allow missing mobile numbers to be added');
+assert.ok(frontend.includes('Bulk Mangalya Donor WhatsApp'), 'Donor dashboard must include a bulk WhatsApp queue');
+assert.ok(backend.includes("const DONOR_RANGE = process.env.MANGALYA_DONORS_RANGE || \"'Donors 2026'!A:H\""), 'Backend must use private Mangalya donors sheet range');
+assert.ok(backend.includes("app.get('/api/mangalya-donors'"), 'Backend must expose Mangalya donor read endpoint');
+assert.ok(backend.includes("app.patch('/api/mangalya-donors/:id'"), 'Backend must expose Mangalya donor write-back endpoint');
+assert.ok(backend.includes('MANGALYA_DONORS_SHEET_ID'), 'Backend must read donor sheet ID from environment only');
+assert.ok(!frontend.includes('MANGALYA_DONORS_SHEET_ID'), 'Frontend must not reference the private donor sheet ID');
 
 const mobileValidationForTest = (rawMobile) => {
   const digits = String(rawMobile || '').replace(/\D/g, '');

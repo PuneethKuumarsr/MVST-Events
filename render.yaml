@@ -11,3 +11,7 @@ services:
         value: production
       - key: VITE_DEVELOPER_MODE
         value: false
+      - key: MANGALYA_DONORS_SHEET_ID
+        sync: false
+      - key: MANGALYA_DONORS_RANGE
+        value: "'Donors 2026'!A:H"

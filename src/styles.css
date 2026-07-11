@@ -179,7 +179,8 @@ main {
 }
 
 .stat-card,
-.participant-card {
+.participant-card,
+.donor-card {
   background: rgba(255, 250, 240, 0.9);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -348,7 +349,8 @@ main {
   padding-bottom: 32px;
 }
 
-.participant-card {
+.participant-card,
+.donor-card {
   padding: 16px;
 }
 
@@ -635,6 +637,10 @@ main {
 .refresh-button:disabled {
   cursor: wait;
   opacity: 0.72;
+}
+
+.refresh-button.compact {
+  min-width: 150px;
 }
 
 .error-strip {
@@ -1151,5 +1157,138 @@ main {
 
   .sent-action-panel button {
     justify-content: center;
+  }
+}
+
+.mangalya-donors-section {
+  padding-top: 18px;
+}
+
+.donor-stats-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.donor-warning {
+  margin: 0 0 12px;
+  border: 1px solid rgba(163, 55, 55, 0.18);
+  border-radius: 8px;
+  background: rgba(163, 55, 55, 0.08);
+  color: var(--red);
+  padding: 10px 12px;
+  font-weight: 850;
+}
+
+.donor-detail-grid {
+  margin-bottom: 10px;
+}
+
+.donor-mobile-edit {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 243, 212, 0.54);
+  padding: 12px;
+}
+
+.donor-mobile-edit label {
+  display: grid;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.donor-mobile-edit input {
+  min-height: 38px;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--maroon-deep);
+  padding: 8px 10px;
+  outline: 0;
+}
+
+.donor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.donor-actions button,
+.donor-mobile-edit button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--maroon);
+  color: #fff8e8;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.donor-actions button:first-child {
+  background: rgba(255, 250, 240, 0.84);
+  color: var(--maroon);
+}
+
+.donor-actions button:disabled,
+.donor-mobile-edit button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.donor-message-preview {
+  margin: 12px 0 0;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--maroon-deep);
+  padding: 12px;
+  font: 0.9rem/1.55 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.donor-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--green);
+  font-weight: 850;
+}
+
+.donor-bulk-panel {
+  margin-top: 12px;
+}
+
+.donor-bulk-list div {
+  grid-template-columns: minmax(170px, 1.2fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
+}
+
+@media (max-width: 900px) {
+  .donor-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .donor-mobile-edit,
+  .donor-bulk-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .donor-actions button,
+  .donor-mobile-edit button {
+    width: 100%;
   }
 }

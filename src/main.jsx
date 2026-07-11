@@ -521,6 +521,51 @@ function deliveryDateStamp() {
   });
 }
 
+function donorBottuWord(quantitySponsored) {
+  return Number(quantitySponsored) === 1 ? 'Bottu' : 'Bottus';
+}
+
+function buildMangalyaDonorAppealMessage(donor) {
+  const quantitySponsored = Number(donor.quantitySponsored || 0) || 1;
+  const bottuWord = donorBottuWord(quantitySponsored);
+  return `🙏 Namaskara ${donor.donorName || 'Respected Donor'} Avare,
+
+We hope you and your family are doing well by the grace of Vasavi Matha.
+
+Last year, you generously sponsored ${quantitySponsored} Gold Mangalya ${bottuWord} for our Samoohika Shashtipoorthi Shanthi. We sincerely thank you for your valuable support.
+
+This year, Mane Manege Vasavi Seva Trust (R) is once again organizing:
+
+🪔 4th Samoohika Shashtipoorthi Shanthi
+🪔 2nd Samoohika Bhimaratha Shanthi
+
+📅 Date: Sunday, 02-Aug-2026
+📍 Venue: Shubh Convention, JP Nagar, Bengaluru
+
+💛 Mangalya Bottu Sponsorship: ₹15,000 per Bottu
+
+With folded hands, we request your continued support by sponsoring Gold Mangalya Bottu(s) once again this year.
+
+Your generosity will help us continue this noble tradition and bless many deserving senior couples.
+
+Kindly reply to this message or contact us if you wish to continue your support.
+
+🙏 Thank you for your continued trust and generosity.
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function makeMangalyaDonorWhatsAppUrl(donor) {
+  const normalizedMobile = normalizeIndianMobileNumber(donor.contactNo);
+  const message = buildMangalyaDonorAppealMessage(donor);
+  const encodedText = encodeURIComponent(message);
+  return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
+}
+
+function donorMobileIsValid(donor) {
+  return mobileValidationStatus(donor.contactNo).status === 'ok';
+}
+
 function linkLabel(url) {
   return url ? 'Open' : 'Missing';
 }
@@ -659,6 +704,77 @@ function useParticipants() {
       return payload;
     },
     refresh: () => load(true),
+  };
+}
+
+function useMangalyaDonors() {
+  const [donors, setDonors] = useState([]);
+  const [status, setStatus] = useState('Loading Mangalya donors...');
+  const [error, setError] = useState('');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
+  const [writeEnabled, setWriteEnabled] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  function applyPayload(payload) {
+    const refreshedAt = payload.refreshedAt || new Date().toISOString();
+    setDonors(payload.rows || []);
+    setLastRefreshedAt(refreshedAt);
+    setWriteEnabled(Boolean(payload.writeEnabled));
+    setStatus(`Private Google Sheet. Last refreshed: ${formatRefreshTime(refreshedAt)}`);
+    setError(payload.notice || '');
+  }
+
+  async function load(forceRefresh = false, aliveRef = { current: true }) {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/mangalya-donors' + (forceRefresh ? '/refresh' : ''), {
+        method: forceRefresh ? 'POST' : 'GET',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `Mangalya donor API returned ${response.status}`);
+      if (!aliveRef.current) return;
+      applyPayload(payload);
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setError(loadError.message || 'Unable to load Mangalya donors');
+      setWriteEnabled(false);
+    } finally {
+      if (aliveRef.current) setIsRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    const aliveRef = { current: true };
+    load(false, aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  return {
+    donors,
+    status,
+    error,
+    lastRefreshedAt,
+    writeEnabled,
+    isRefreshing,
+    refresh: () => load(true),
+    saveDonor: async (id, updates) => {
+      const response = await fetch(`/api/mangalya-donors/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `Mangalya donor update returned ${response.status}`);
+      }
+      applyPayload(payload);
+      return payload;
+    },
   };
 }
 
@@ -1008,6 +1124,287 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
   );
 }
 
+function MangalyaDonorCard({ donor, writeEnabled, onSave }) {
+  const [mobileValue, setMobileValue] = useState(donor.contactNo || '');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const validation = mobileValidationStatus(donor.contactNo);
+  const canOpenWhatsApp = validation.status === 'ok';
+
+  useEffect(() => {
+    setMobileValue(donor.contactNo || '');
+    setMessage('');
+    setOpened(false);
+  }, [donor]);
+
+  async function saveMobileNumber() {
+    if (!writeEnabled || !donor.id) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await onSave(donor.id, { contactNo: mobileValue });
+      setMessage('Mobile number saved to Google Sheet');
+    } catch (error) {
+      setMessage(error.message || 'Unable to save mobile number');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openWhatsApp() {
+    if (!canOpenWhatsApp) return;
+    const url = makeMangalyaDonorWhatsAppUrl(donor);
+    console.debug('[MVST Mangalya donor WhatsApp decoded message]', buildMangalyaDonorAppealMessage(donor));
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setOpened(true);
+    setMessage('');
+  }
+
+  async function markAsSent() {
+    if (!writeEnabled || !donor.id) return;
+    if (!window.confirm('Mark this Mangalya donor WhatsApp appeal as sent?')) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await onSave(donor.id, { whatsAppSent: true, sentDate: deliveryDateStamp() });
+      setMessage('Saved to Google Sheet');
+    } catch (error) {
+      setMessage(error.message || 'Unable to mark as sent');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <article className="donor-card">
+      <div className="participant-top">
+        <div>
+          <p className="event-label">Mangalya Donor</p>
+          <h3>{donor.donorName || 'Unnamed donor'}</h3>
+          <p className="muted">{donor.contactNo || 'Mobile number missing'}</p>
+        </div>
+        <StatusPill tone={donor.whatsAppSent ? 'success' : 'warning'}>
+          WhatsApp {donor.whatsAppSent ? 'Sent' : 'Pending'}
+        </StatusPill>
+      </div>
+
+      <div className="detail-grid donor-detail-grid">
+        <p><span>Quantity Sponsored in 2025</span>{donor.quantitySponsored || 0}</p>
+        <p><span>Remarks</span>{donor.remarks || 'No remarks'}</p>
+        <p><span>Sent Date</span>{donor.sentDate || 'Not marked'}</p>
+        <p><span>Mobile Check</span>{validation.issue}</p>
+      </div>
+
+      {!donor.contactNo ? (
+        <div className="donor-mobile-edit">
+          <label>
+            <span>Add Mobile Number</span>
+            <input
+              value={mobileValue}
+              onChange={(event) => setMobileValue(event.target.value)}
+              placeholder="10 digit mobile number"
+            />
+          </label>
+          <button type="button" onClick={saveMobileNumber} disabled={!writeEnabled || saving}>
+            {saving ? 'Saving' : 'Save Number'}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="donor-actions">
+        <button type="button" onClick={() => setPreviewOpen(!previewOpen)}>
+          Preview Message
+        </button>
+        <button type="button" onClick={openWhatsApp} disabled={!canOpenWhatsApp}>
+          Open WhatsApp
+        </button>
+        <button type="button" onClick={markAsSent} disabled={!writeEnabled || saving}>
+          Mark as Sent
+        </button>
+      </div>
+
+      {previewOpen ? (
+        <pre className="donor-message-preview">{buildMangalyaDonorAppealMessage(donor)}</pre>
+      ) : null}
+      {opened ? <small className="donor-note">WhatsApp opened. Please send manually, then mark as sent.</small> : null}
+      {message ? <small className="donor-note">{message}</small> : null}
+      {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
+    </article>
+  );
+}
+
+function MangalyaDonorsSection({ donorState }) {
+  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const [bulkQueue, setBulkQueue] = useState([]);
+  const [bulkStarted, setBulkStarted] = useState(false);
+  const [bulkIndex, setBulkIndex] = useState(0);
+  const [bulkMessage, setBulkMessage] = useState('');
+  const [savingBulk, setSavingBulk] = useState(false);
+
+  const summary = useMemo(() => ({
+    uniqueDonors: donors.length,
+    totalBottus: donors.reduce((sum, donor) => sum + (Number(donor.quantitySponsored) || 0), 0),
+    whatsAppSent: donors.filter((donor) => donor.whatsAppSent).length,
+    whatsAppPending: donors.filter((donor) => !donor.whatsAppSent).length,
+    missingMobile: donors.filter((donor) => !String(donor.contactNo || '').trim()).length,
+  }), [donors]);
+
+  const currentBulkDonor = bulkQueue[bulkIndex];
+  const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
+
+  function prepareBulkQueue() {
+    setBulkQueue(donors.filter((donor) => donorMobileIsValid(donor) && !donor.whatsAppSent));
+    setBulkStarted(false);
+    setBulkIndex(0);
+    setBulkMessage('');
+  }
+
+  function clearBulkQueue() {
+    setBulkQueue([]);
+    setBulkStarted(false);
+    setBulkIndex(0);
+    setBulkMessage('');
+  }
+
+  function openBulkDonor(index) {
+    const donor = bulkQueue[index];
+    if (!donor) return;
+    setBulkMessage('');
+    console.debug('[MVST Mangalya donor WhatsApp decoded message]', buildMangalyaDonorAppealMessage(donor));
+    window.open(makeMangalyaDonorWhatsAppUrl(donor), '_blank', 'noopener,noreferrer');
+  }
+
+  function confirmBulkQueue() {
+    if (!bulkQueue.length) return;
+    setBulkStarted(true);
+    setBulkIndex(0);
+    openBulkDonor(0);
+  }
+
+  function openNextBulkDonor() {
+    const nextIndex = bulkIndex + 1;
+    if (nextIndex >= bulkQueue.length) return;
+    setBulkIndex(nextIndex);
+    openBulkDonor(nextIndex);
+  }
+
+  async function markBulkDonorAsSent() {
+    if (!writeEnabled || !currentBulkDonor?.id) return;
+    if (!window.confirm('Mark this Mangalya donor WhatsApp appeal as sent?')) return;
+    setSavingBulk(true);
+    setBulkMessage('');
+    try {
+      await saveDonor(currentBulkDonor.id, { whatsAppSent: true, sentDate: deliveryDateStamp() });
+      setBulkMessage('Saved to Google Sheet');
+    } catch (saveError) {
+      setBulkMessage(saveError.message || 'Unable to mark as sent');
+    } finally {
+      setSavingBulk(false);
+    }
+  }
+
+  return (
+    <section className="management-section mangalya-donors-section">
+      <div className="section-heading">
+        <div>
+          <p>Mangalya Donors 2026</p>
+          <h2>Gold Mangalya Bottu donor follow-up</h2>
+        </div>
+        <button className="refresh-button compact" type="button" onClick={refresh} disabled={isRefreshing}>
+          <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
+          {isRefreshing ? 'Refreshing' : 'Refresh Donors'}
+        </button>
+      </div>
+
+      <div className="event-note">
+        <b>{status}</b>
+        <span>{writeEnabled ? 'Private Google Sheet connected' : 'Read-only mode'}</span>
+      </div>
+      {error ? <div className="donor-warning">{error}</div> : null}
+
+      <div className="stats-grid donor-stats-grid">
+        <StatCard icon={UsersRound} label="Total unique donors" value={summary.uniqueDonors} />
+        <StatCard icon={Gift} label="Total Bottus sponsored in 2025" value={summary.totalBottus} />
+        <StatCard icon={MessageCircle} label="WhatsApp Sent" value={summary.whatsAppSent} tone="success" />
+        <StatCard icon={MessageCircle} label="WhatsApp Pending" value={summary.whatsAppPending} tone="warning" />
+        <StatCard icon={AlertTriangle} label="Missing Mobile Numbers" value={summary.missingMobile} tone="danger" />
+      </div>
+
+      <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <div className="bulk-actions">
+          <button type="button" onClick={prepareBulkQueue}>
+            <MessageCircle size={16} /> Bulk Mangalya Donor WhatsApp
+          </button>
+        </div>
+
+        {bulkQueue.length || bulkStarted ? (
+          <div className="bulk-preview">
+            <div className="bulk-preview-head">
+              <div>
+                <p>Mangalya Donor WhatsApp Queue</p>
+                <h3>Total count: {bulkQueue.length}</h3>
+              </div>
+              <button type="button" onClick={clearBulkQueue}>Close</button>
+            </div>
+            {bulkQueue.length ? (
+              <>
+                <div className="bulk-preview-list donor-bulk-list">
+                  {bulkQueue.map((donor, index) => (
+                    <div className={bulkStarted && index === bulkIndex ? 'active' : ''} key={donor.id}>
+                      <strong>{donor.donorName || 'Unnamed donor'}</strong>
+                      <span>{donor.contactNo}</span>
+                      <span>{donor.quantitySponsored} {donorBottuWord(donor.quantitySponsored)}</span>
+                      <span>{donor.whatsAppSent ? 'Already Sent' : 'Appeal'}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="bulk-queue-controls">
+                  {!bulkStarted ? (
+                    <button type="button" onClick={confirmBulkQueue}>Confirm</button>
+                  ) : (
+                    <>
+                      <span>Opened {bulkIndex + 1} of {bulkQueue.length}: {currentBulkDonor?.donorName}</span>
+                      <button type="button" onClick={markBulkDonorAsSent} disabled={!writeEnabled || savingBulk}>
+                        {savingBulk ? 'Saving' : 'Mark as Sent'}
+                      </button>
+                      <button type="button" onClick={openNextBulkDonor} disabled={!hasNextBulkDonor}>
+                        Next Message
+                      </button>
+                      {bulkMessage ? <small>{bulkMessage}</small> : null}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="bulk-empty">No eligible donors found. Missing mobile numbers and already-sent donors are skipped.</p>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="participants-list donor-list">
+        {donors.length ? (
+          donors.map((donor) => (
+            <MangalyaDonorCard
+              key={donor.id}
+              donor={donor}
+              writeEnabled={writeEnabled}
+              onSave={saveDonor}
+            />
+          ))
+        ) : (
+          <div className="empty-state">
+            <Gift size={28} />
+            <p>No Mangalya donors loaded yet.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SelectField({ icon: Icon, label, value, onChange, children }) {
   return (
     <label className="select-field">
@@ -1024,6 +1421,7 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
+  const donorState = useMangalyaDonors();
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -1330,6 +1728,8 @@ function App() {
           </div>
         </div>
       </section>
+
+      <MangalyaDonorsSection donorState={donorState} />
 
       <section className="management-section new-registrations-section" id="new-registrations-dashboard">
         <div className="section-heading">

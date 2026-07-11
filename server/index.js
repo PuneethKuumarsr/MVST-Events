@@ -30,6 +30,12 @@ const ADMIN_FIELDS = {
   receiptNo: ['Receipt No'],
   receiptGenerated: ['Receipt Generated'],
 };
+const DONOR_FIELDS = {
+  contactNo: ['Contact No'],
+  whatsAppSent: ['WhatsApp Sent'],
+  sentDate: ['Sent Date'],
+};
+const DONOR_RANGE = process.env.MANGALYA_DONORS_RANGE || "'Donors 2026'!A:H";
 
 const EVENTS = {
   shashtipoorthi: {
@@ -60,6 +66,13 @@ const SHEETS = [
 ];
 
 let cache = {
+  rows: [],
+  refreshedAt: null,
+  source: null,
+  writeEnabled: false,
+};
+
+let donorCache = {
   rows: [],
   refreshedAt: null,
   source: null,
@@ -166,6 +179,16 @@ function hasGoogleConfig() {
       process.env.SHASHTIPOORTHI_SHEET_ID,
   );
 }
+
+function hasGoogleCredentials() {
+  const credentials = getGoogleCredentials();
+  return Boolean(credentials.email && credentials.key);
+}
+
+function hasDonorConfig() {
+  return Boolean(hasGoogleCredentials() && process.env.MANGALYA_DONORS_SHEET_ID);
+}
+
 function getSheetName(range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE) {
   return String(range).split('!')[0].replace(/^'|'$/g, '');
 }
@@ -184,6 +207,12 @@ function columnLetter(index) {
 function buildAdminColumnMap(headerMap) {
   return Object.fromEntries(
     Object.entries(ADMIN_FIELDS).map(([field, labels]) => [field, getColumnIndex(headerMap, labels)]),
+  );
+}
+
+function buildDonorColumnMap(headerMap) {
+  return Object.fromEntries(
+    Object.entries(DONOR_FIELDS).map(([field, labels]) => [field, getColumnIndex(headerMap, labels)]),
   );
 }
 
@@ -253,6 +282,36 @@ function parseSheetCsv(csv, source) {
   return normalizeRows(parseCsv(csv), source).map(({ adminColumns, ...row }) => row);
 }
 
+function normalizeDonorRows(values) {
+  if (!values || values.length < 2) return [];
+  const headers = values[0];
+  const headerMap = headers.reduce((map, header, index) => {
+    map[normalizeKey(header)] = index;
+    return map;
+  }, {});
+  const adminColumns = buildDonorColumnMap(headerMap);
+
+  return values
+    .slice(1)
+    .map((row, index) => {
+      const rowNumber = index + 2;
+      return {
+        id: `mangalya:${rowNumber}`,
+        rowNumber,
+        slNo: getCell(row, headerMap, ['Sl No', 'Sl. No.']),
+        donorName: getCell(row, headerMap, ['Mangalya Donor']),
+        contactNo: getCell(row, headerMap, ['Contact No']),
+        quantitySponsored: numberFrom(getCell(row, headerMap, ['Quantity Sponsored'])),
+        lastSponsoredYear: getCell(row, headerMap, ['Last Sponsored Year']),
+        remarks: getCell(row, headerMap, ['Remarks']),
+        whatsAppSent: boolFrom(getCell(row, headerMap, ['WhatsApp Sent'])),
+        sentDate: getCell(row, headerMap, ['Sent Date']),
+        adminColumns,
+      };
+    })
+    .filter((row) => row.donorName || row.contactNo);
+}
+
 function requireConfig() {
   const missing = [];
   const credentials = getGoogleCredentials();
@@ -266,8 +325,19 @@ function requireConfig() {
   return credentials;
 }
 
-function createSheetsClient() {
-  const credentials = requireConfig();
+function requireGoogleCredentials() {
+  const missing = [];
+  const credentials = getGoogleCredentials();
+  if (!credentials.email) missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL or service-account.json client_email');
+  if (!credentials.key) missing.push('GOOGLE_PRIVATE_KEY or service-account.json private_key');
+  if (missing.length) {
+    throw new Error(`Missing Google Sheets credentials: ${missing.join(', ')}`);
+  }
+  return credentials;
+}
+
+function createSheetsClient({ requireRegistrationSheets = true } = {}) {
+  const credentials = requireRegistrationSheets ? requireConfig() : requireGoogleCredentials();
   const auth = new google.auth.JWT({
     email: credentials.email,
     key: credentials.key.replace(/\\n/g, '\n'),
@@ -276,6 +346,7 @@ function createSheetsClient() {
 
   return google.sheets({ version: 'v4', auth });
 }
+
 async function loadFromGoogleApi() {
   const sheets = createSheetsClient();
   const range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE;
@@ -315,6 +386,10 @@ function publicRows(rows) {
   return rows.map(({ adminColumns, ...row }) => row);
 }
 
+function publicDonorRows(rows) {
+  return rows.map(({ adminColumns, ...row }) => row);
+}
+
 async function loadRegistrations() {
   let result;
   try {
@@ -332,6 +407,35 @@ async function loadRegistrations() {
   };
 
   return cache;
+}
+
+async function loadMangalyaDonors() {
+  if (!hasDonorConfig()) {
+    donorCache = {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'not-configured',
+      writeEnabled: false,
+      notice: 'Mangalya donor sheet is not configured.',
+    };
+    return donorCache;
+  }
+
+  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.MANGALYA_DONORS_SHEET_ID,
+    range: DONOR_RANGE,
+  });
+
+  donorCache = {
+    rows: normalizeDonorRows(response.data.values),
+    refreshedAt: new Date().toISOString(),
+    source: 'google-api',
+    writeEnabled: true,
+    notice: null,
+  };
+
+  return donorCache;
 }
 
 function sourceForEvent(eventType) {
@@ -404,6 +508,59 @@ async function updateRegistration(registrationId, updates) {
   });
 
   return loadRegistrations();
+}
+
+function normalizeDonorPatchValue(field, value) {
+  if (field === 'whatsAppSent') return value ? 'Yes' : 'No';
+  return String(value ?? '');
+}
+
+async function updateMangalyaDonor(donorId, updates) {
+  if (!hasDonorConfig()) {
+    const error = new Error('Mangalya donor sheet is not configured for write-back.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (!donorCache.refreshedAt || donorCache.source !== 'google-api') await loadMangalyaDonors();
+
+  const currentRow = donorCache.rows.find((row) => row.id === donorId);
+  if (!currentRow) {
+    const error = new Error('Donor row not found. Refresh data and try again.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const data = Object.entries(updates || {})
+    .filter(([field]) => Object.prototype.hasOwnProperty.call(DONOR_FIELDS, field))
+    .map(([field, value]) => {
+      const columnIndex = currentRow.adminColumns?.[field];
+      if (columnIndex === null || columnIndex === undefined) return null;
+      const column = columnLetter(columnIndex);
+      const sheetName = getSheetName(DONOR_RANGE);
+      return {
+        range: `'${sheetName}'!${column}${currentRow.rowNumber}`,
+        values: [[normalizeDonorPatchValue(field, value)]],
+      };
+    })
+    .filter(Boolean);
+
+  if (!data.length) {
+    const error = new Error('No editable donor columns were provided.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: process.env.MANGALYA_DONORS_SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data,
+    },
+  });
+
+  return loadMangalyaDonors();
 }
 
 const app = express();
@@ -484,6 +641,82 @@ app.patch('/api/registrations/:id', async (req, res) => {
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
       notice: cache.notice,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/mangalya-donors', async (req, res) => {
+  try {
+    if (!donorCache.refreshedAt) await loadMangalyaDonors();
+    res.json({
+      ok: true,
+      rows: publicDonorRows(donorCache.rows),
+      refreshedAt: donorCache.refreshedAt,
+      source: donorCache.source,
+      writeEnabled: donorCache.writeEnabled,
+      notice: donorCache.notice,
+      mode: donorCache.writeEnabled ? 'read-write' : 'read-only',
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: publicDonorRows(donorCache.rows),
+      refreshedAt: donorCache.refreshedAt,
+      writeEnabled: false,
+      notice: donorCache.notice,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/mangalya-donors/refresh', async (req, res) => {
+  try {
+    const next = await loadMangalyaDonors();
+    res.json({
+      ok: true,
+      rows: publicDonorRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      notice: next.notice,
+      mode: next.writeEnabled ? 'read-write' : 'read-only',
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: publicDonorRows(donorCache.rows),
+      refreshedAt: donorCache.refreshedAt,
+      writeEnabled: false,
+      notice: donorCache.notice,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/mangalya-donors/:id', async (req, res) => {
+  try {
+    const next = await updateMangalyaDonor(req.params.id, req.body);
+    res.json({
+      ok: true,
+      message: 'Saved to Google Sheet',
+      rows: publicDonorRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      notice: next.notice,
+      mode: 'read-write',
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      ok: false,
+      rows: publicDonorRows(donorCache.rows),
+      refreshedAt: donorCache.refreshedAt,
+      writeEnabled: false,
+      notice: donorCache.notice,
       mode: 'read-only',
       error: error.message,
     });
