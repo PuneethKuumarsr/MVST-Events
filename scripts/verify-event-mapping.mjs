@@ -103,6 +103,8 @@ assert.ok(frontend.includes('Add Mobile Number'), 'Donor dashboard must allow mi
 assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Donor dashboard must include a preview-all WhatsApp queue');
 assert.ok(frontend.includes('Current Message Preview'), 'Donor dashboard must preview the selected bulk WhatsApp message');
 assert.ok(frontend.includes('Next WhatsApp'), 'Donor dashboard must open donor WhatsApp messages one by one');
+assert.ok(frontend.includes("setDonorFilter('missing-mobile')"), 'Missing Mobile Numbers donor card must filter to missing mobile donors');
+assert.ok(frontend.includes('Show All Donors'), 'Donor dashboard must allow returning from filtered donor views');
 assert.ok(backend.includes("const DONOR_RANGE = process.env.MANGALYA_DONORS_RANGE || \"'Donors 2026'!A:H\""), 'Backend must use private Mangalya donors sheet range');
 assert.ok(backend.includes("app.get('/api/mangalya-donors'"), 'Backend must expose Mangalya donor read endpoint');
 assert.ok(backend.includes("app.patch('/api/mangalya-donors/:id'"), 'Backend must expose Mangalya donor write-back endpoint');

@@ -1184,6 +1184,31 @@ main {
   font-weight: 850;
 }
 
+.donor-filter-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(187, 135, 46, 0.12);
+  padding: 10px 12px;
+  color: var(--maroon-deep);
+  font-weight: 850;
+}
+
+.donor-filter-strip button {
+  min-height: 36px;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--maroon);
+  padding: 7px 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
 .donor-detail-grid {
   margin-bottom: 10px;
 }
@@ -1329,7 +1354,13 @@ main {
   }
 
   .donor-actions button,
-  .donor-mobile-edit button {
+  .donor-mobile-edit button,
+  .donor-filter-strip button {
     width: 100%;
+  }
+
+  .donor-filter-strip {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

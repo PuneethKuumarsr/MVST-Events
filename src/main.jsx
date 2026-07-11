@@ -1243,6 +1243,7 @@ function MangalyaDonorsSection({ donorState }) {
   const [bulkMessage, setBulkMessage] = useState('');
   const [savingBulk, setSavingBulk] = useState(false);
   const [bulkOpened, setBulkOpened] = useState(false);
+  const [donorFilter, setDonorFilter] = useState('all');
 
   const summary = useMemo(() => ({
     uniqueDonors: donors.length,
@@ -1254,6 +1255,18 @@ function MangalyaDonorsSection({ donorState }) {
 
   const currentBulkDonor = bulkQueue[bulkIndex];
   const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
+  const visibleDonors = useMemo(() => {
+    if (donorFilter === 'missing-mobile') {
+      return donors.filter((donor) => !String(donor.contactNo || '').trim());
+    }
+    if (donorFilter === 'whatsapp-pending') {
+      return donors.filter((donor) => !donor.whatsAppSent);
+    }
+    if (donorFilter === 'whatsapp-sent') {
+      return donors.filter((donor) => donor.whatsAppSent);
+    }
+    return donors;
+  }, [donors, donorFilter]);
 
   function prepareBulkQueue() {
     setBulkQueue(donors.filter((donor) => donorMobileIsValid(donor) && !donor.whatsAppSent));
@@ -1329,12 +1342,21 @@ function MangalyaDonorsSection({ donorState }) {
       {error ? <div className="donor-warning">{error}</div> : null}
 
       <div className="stats-grid donor-stats-grid">
-        <StatCard icon={UsersRound} label="Total unique donors" value={summary.uniqueDonors} />
+        <StatCard icon={UsersRound} label="Total unique donors" value={summary.uniqueDonors} onClick={() => setDonorFilter('all')} />
         <StatCard icon={Gift} label="Total Bottus sponsored in 2025" value={summary.totalBottus} />
-        <StatCard icon={MessageCircle} label="WhatsApp Sent" value={summary.whatsAppSent} tone="success" />
-        <StatCard icon={MessageCircle} label="WhatsApp Pending" value={summary.whatsAppPending} tone="warning" />
-        <StatCard icon={AlertTriangle} label="Missing Mobile Numbers" value={summary.missingMobile} tone="danger" />
+        <StatCard icon={MessageCircle} label="WhatsApp Sent" value={summary.whatsAppSent} tone="success" onClick={() => setDonorFilter('whatsapp-sent')} />
+        <StatCard icon={MessageCircle} label="WhatsApp Pending" value={summary.whatsAppPending} tone="warning" onClick={() => setDonorFilter('whatsapp-pending')} />
+        <StatCard icon={AlertTriangle} label="Missing Mobile Numbers" value={summary.missingMobile} tone="danger" onClick={() => setDonorFilter('missing-mobile')} />
       </div>
+
+      {donorFilter !== 'all' ? (
+        <div className="donor-filter-strip">
+          <span>
+            Showing {visibleDonors.length} {donorFilter === 'missing-mobile' ? 'missing mobile' : donorFilter === 'whatsapp-sent' ? 'WhatsApp sent' : 'WhatsApp pending'} donor(s)
+          </span>
+          <button type="button" onClick={() => setDonorFilter('all')}>Show All Donors</button>
+        </div>
+      ) : null}
 
       <div className="bulk-whatsapp-panel donor-bulk-panel">
         <div className="bulk-actions">
@@ -1406,8 +1428,8 @@ function MangalyaDonorsSection({ donorState }) {
       </div>
 
       <div className="participants-list donor-list">
-        {donors.length ? (
-          donors.map((donor) => (
+        {visibleDonors.length ? (
+          visibleDonors.map((donor) => (
             <MangalyaDonorCard
               key={donor.id}
               donor={donor}
@@ -1418,7 +1440,7 @@ function MangalyaDonorsSection({ donorState }) {
         ) : (
           <div className="empty-state">
             <Gift size={28} />
-            <p>No Mangalya donors loaded yet.</p>
+            <p>No Mangalya donors found for this filter.</p>
           </div>
         )}
       </div>
