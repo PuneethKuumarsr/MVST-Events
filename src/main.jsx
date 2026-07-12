@@ -558,19 +558,19 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 function buildMangalyaDonorThankYouMessage(donor) {
   const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
   const bottuWord = donorBottuWord(quantitySponsored);
-  const amount = quantitySponsored * 15000;
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-Thank you for confirming your Gold Mangalya ${bottuWord} sponsorship for the 2026 Samoohika Shanthi event.
+Thank you so much for your kind and generous confirmation to sponsor ${quantitySponsored} Gold Mangalya ${bottuWord} for our 4th Samoohika Shashtipoorthi Shanthi.
 
-Confirmed Sponsorship: ${quantitySponsored} Gold Mangalya ${bottuWord}
-Amount: ${formatCurrency(amount)}
+Your valuable support means a lot to us and will help us continue this noble seva of blessing senior couples through this sacred ceremony.
 
-Your continued generosity and support means a lot to Mane Manege Vasavi Seva Trust (R).
+💛 Confirmed Sponsorship: ${quantitySponsored} Gold Mangalya ${bottuWord}
 
-We will coordinate further details with you shortly.
+Our Trust representative will get in touch with you shortly regarding the contribution.
 
-🙏 Thank you once again.
+May Vasavi Matha bless you and your family with good health, happiness and prosperity.
+
+🙏 With heartfelt gratitude,
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
