@@ -31,11 +31,17 @@ const ADMIN_FIELDS = {
   receiptGenerated: ['Receipt Generated'],
 };
 const DONOR_FIELDS = {
-  contactNo: ['Contact No'],
+  sponsorName: ['Sponsor Name'],
+  contactNo: ['Contact Number', 'Contact No'],
+  sponsored2025: ['Sponsored 2025'],
+  sponsored2026: ['Sponsored 2026'],
+  status: ['Status'],
+  remarks: ['Remarks'],
   whatsAppSent: ['WhatsApp Sent'],
   sentDate: ['Sent Date'],
 };
-const DONOR_RANGE = process.env.MANGALYA_DONORS_RANGE || "'Donors 2026'!A:H";
+const BOTTU_AMOUNT = 15000;
+const DONOR_RANGE = process.env.MANGALYA_SPONSORSHIP_RANGE || "'Sponsorship 2026'!A:J";
 
 const EVENTS = {
   shashtipoorthi: {
@@ -186,7 +192,10 @@ function hasGoogleCredentials() {
 }
 
 function hasDonorConfig() {
-  return Boolean(hasGoogleCredentials() && process.env.MANGALYA_DONORS_SHEET_ID);
+  return Boolean(
+    hasGoogleCredentials() &&
+      (process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID),
+  );
 }
 
 function getSheetName(range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE) {
@@ -295,21 +304,27 @@ function normalizeDonorRows(values) {
     .slice(1)
     .map((row, index) => {
       const rowNumber = index + 2;
+      const sponsored2025 = numberFrom(getCell(row, headerMap, ['Sponsored 2025', 'Quantity Sponsored']));
+      const sponsored2026 = numberFrom(getCell(row, headerMap, ['Sponsored 2026']));
+      const amount = sponsored2026 * BOTTU_AMOUNT;
       return {
         id: `mangalya:${rowNumber}`,
         rowNumber,
         slNo: getCell(row, headerMap, ['Sl No', 'Sl. No.']),
-        donorName: getCell(row, headerMap, ['Mangalya Donor']),
-        contactNo: getCell(row, headerMap, ['Contact No']),
-        quantitySponsored: numberFrom(getCell(row, headerMap, ['Quantity Sponsored'])),
-        lastSponsoredYear: getCell(row, headerMap, ['Last Sponsored Year']),
+        sponsorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
+        donorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
+        contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No']),
+        sponsored2025,
+        sponsored2026,
+        amount,
+        status: getCell(row, headerMap, ['Status']) || 'Pending',
         remarks: getCell(row, headerMap, ['Remarks']),
         whatsAppSent: boolFrom(getCell(row, headerMap, ['WhatsApp Sent'])),
         sentDate: getCell(row, headerMap, ['Sent Date']),
         adminColumns,
       };
     })
-    .filter((row) => row.donorName || row.contactNo);
+    .filter((row) => row.sponsorName || row.contactNo);
 }
 
 function requireConfig() {
@@ -423,7 +438,7 @@ async function loadMangalyaDonors() {
 
   const sheets = createSheetsClient({ requireRegistrationSheets: false });
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.MANGALYA_DONORS_SHEET_ID,
+    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
     range: DONOR_RANGE,
   });
 
@@ -512,6 +527,7 @@ async function updateRegistration(registrationId, updates) {
 
 function normalizeDonorPatchValue(field, value) {
   if (field === 'whatsAppSent') return value ? 'Yes' : 'No';
+  if (field === 'sponsored2025' || field === 'sponsored2026') return String(numberFrom(value));
   return String(value ?? '');
 }
 
@@ -553,7 +569,7 @@ async function updateMangalyaDonor(donorId, updates) {
 
   const sheets = createSheetsClient({ requireRegistrationSheets: false });
   await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: process.env.MANGALYA_DONORS_SHEET_ID,
+    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
     requestBody: {
       valueInputOption: 'USER_ENTERED',
       data,
@@ -647,7 +663,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
   }
 });
 
-app.get('/api/mangalya-donors', async (req, res) => {
+app.get(['/api/mangalya-sponsorship', '/api/mangalya-donors'], async (req, res) => {
   try {
     if (!donorCache.refreshedAt) await loadMangalyaDonors();
     res.json({
@@ -672,7 +688,7 @@ app.get('/api/mangalya-donors', async (req, res) => {
   }
 });
 
-app.post('/api/mangalya-donors/refresh', async (req, res) => {
+app.post(['/api/mangalya-sponsorship/refresh', '/api/mangalya-donors/refresh'], async (req, res) => {
   try {
     const next = await loadMangalyaDonors();
     res.json({
@@ -697,7 +713,7 @@ app.post('/api/mangalya-donors/refresh', async (req, res) => {
   }
 });
 
-app.patch('/api/mangalya-donors/:id', async (req, res) => {
+app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], async (req, res) => {
   try {
     const next = await updateMangalyaDonor(req.params.id, req.body);
     res.json({

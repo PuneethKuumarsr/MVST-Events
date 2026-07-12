@@ -11,7 +11,7 @@ services:
         value: production
       - key: VITE_DEVELOPER_MODE
         value: false
-      - key: MANGALYA_DONORS_SHEET_ID
+      - key: MANGALYA_SPONSORSHIP_SHEET_ID
         sync: false
-      - key: MANGALYA_DONORS_RANGE
-        value: "'Donors 2026'!A:H"
+      - key: MANGALYA_SPONSORSHIP_RANGE
+        value: "'Sponsorship 2026'!A:J"

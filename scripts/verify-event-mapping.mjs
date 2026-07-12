@@ -83,7 +83,7 @@ assert.ok(frontend.includes('onClick={goToPaymentPending}'), 'Pending summary ca
 assert.ok(frontend.includes('app-sidebar'), 'Dashboard must include sidebar navigation');
 assert.ok(frontend.includes('Shashtipoorthi Shanthi'), 'Sidebar must include Shashtipoorthi Shanthi view');
 assert.ok(frontend.includes('Bhimaratha Shanthi'), 'Sidebar must include Bhimaratha Shanthi view');
-assert.ok(frontend.includes('Mangalya Donors'), 'Sidebar must include Mangalya Donors view');
+assert.ok(frontend.includes('Mangalya Sponsorship'), 'Sidebar must include Mangalya Sponsorship view');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
@@ -99,21 +99,24 @@ assert.ok(backend.includes("seatNo: ['Seat No']"), 'Backend must allow Seat No w
 assert.ok(backend.includes("receiptNo: ['Receipt No']"), 'Backend must allow Receipt No write-back');
 assert.ok(backend.includes("receiptGenerated: ['Receipt Generated']"), 'Backend must allow Receipt Generated write-back');
 assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Backend range must include receipt columns beyond Z');
-assert.ok(frontend.includes('Mangalya Donors 2026'), 'Dashboard must show Mangalya Donors 2026 section');
-assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya donor WhatsApp appeal dynamically');
-assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must create Mangalya donor WhatsApp URLs');
-assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya donor WhatsApp URL must use wa.me and encodeURIComponent');
-assert.ok(frontend.includes('Add Mobile Number'), 'Donor dashboard must allow missing mobile numbers to be added');
-assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Donor dashboard must include a preview-all WhatsApp queue');
-assert.ok(frontend.includes('Current Message Preview'), 'Donor dashboard must preview the selected bulk WhatsApp message');
-assert.ok(frontend.includes('Next WhatsApp'), 'Donor dashboard must open donor WhatsApp messages one by one');
-assert.ok(frontend.includes("setDonorFilter('missing-mobile')"), 'Missing Mobile Numbers donor card must filter to missing mobile donors');
-assert.ok(frontend.includes('Show All Donors'), 'Donor dashboard must allow returning from filtered donor views');
-assert.ok(backend.includes("const DONOR_RANGE = process.env.MANGALYA_DONORS_RANGE || \"'Donors 2026'!A:H\""), 'Backend must use private Mangalya donors sheet range');
-assert.ok(backend.includes("app.get('/api/mangalya-donors'"), 'Backend must expose Mangalya donor read endpoint');
-assert.ok(backend.includes("app.patch('/api/mangalya-donors/:id'"), 'Backend must expose Mangalya donor write-back endpoint');
-assert.ok(backend.includes('MANGALYA_DONORS_SHEET_ID'), 'Backend must read donor sheet ID from environment only');
-assert.ok(!frontend.includes('MANGALYA_DONORS_SHEET_ID'), 'Frontend must not reference the private donor sheet ID');
+assert.ok(frontend.includes('Gold Mangalya Bottu sponsorship tracking'), 'Dashboard must show Mangalya Sponsorship module');
+assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya sponsorship WhatsApp appeal dynamically');
+assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must create Mangalya sponsorship WhatsApp URLs');
+assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya sponsorship WhatsApp URL must use wa.me and encodeURIComponent');
+assert.ok(frontend.includes('Total Sponsors'), 'Sponsorship dashboard must show sponsor summary cards');
+assert.ok(frontend.includes('Confirmed 2026'), 'Sponsorship dashboard must show confirmed 2026 bottus');
+assert.ok(frontend.includes('Remaining Requirement'), 'Sponsorship dashboard must show remaining bottu requirement');
+assert.ok(frontend.includes('Expected Collection'), 'Sponsorship dashboard must show collection summary');
+assert.ok(frontend.includes('Top Sponsors'), 'Sponsorship dashboard must show top sponsors');
+assert.ok(frontend.includes('Mark Paid'), 'Sponsor cards must support Mark Paid');
+assert.ok(frontend.includes('Mark Received'), 'Sponsor cards must support Mark Received');
+assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Sponsorship dashboard must include a preview-all WhatsApp queue');
+assert.ok(frontend.includes('Current Message Preview'), 'Sponsorship dashboard must preview the selected bulk WhatsApp message');
+assert.ok(frontend.includes('Next WhatsApp'), 'Sponsorship dashboard must open sponsor WhatsApp messages one by one');
+assert.ok(backend.includes("const DONOR_RANGE = process.env.MANGALYA_SPONSORSHIP_RANGE || \"'Sponsorship 2026'!A:J\""), 'Backend must use private Mangalya sponsorship sheet range');
+assert.ok(backend.includes('/api/mangalya-sponsorship'), 'Backend must expose Mangalya sponsorship endpoints');
+assert.ok(backend.includes('MANGALYA_SPONSORSHIP_SHEET_ID'), 'Backend must read sponsorship sheet ID from environment');
+assert.ok(!frontend.includes('MANGALYA_SPONSORSHIP_SHEET_ID'), 'Frontend must not reference the private sponsorship sheet ID');
 
 const mobileValidationForTest = (rawMobile) => {
   const digits = String(rawMobile || '').replace(/\D/g, '');

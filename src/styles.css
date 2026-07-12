@@ -1300,6 +1300,62 @@ main {
   margin-bottom: 10px;
 }
 
+.sponsorship-summary-block {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.sponsorship-summary-block .event-label {
+  margin-bottom: 8px;
+}
+
+.sponsorship-stat-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+
+.sponsorship-stat-panel div {
+  display: grid;
+  gap: 5px;
+  border-radius: 8px;
+  background: rgba(240, 220, 168, 0.25);
+  padding: 10px;
+}
+
+.sponsorship-stat-panel span {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sponsorship-stat-panel strong {
+  color: var(--maroon-deep);
+}
+
+.sponsorship-stat-panel .top-sponsors {
+  grid-column: span 2;
+}
+
+.sponsorship-controls {
+  grid-template-columns: 1.4fr minmax(160px, 0.8fr) minmax(140px, 0.6fr);
+}
+
+.sponsorship-money-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.sponsorship-edit-panel {
+  margin-top: 12px;
+}
+
 .donor-mobile-edit {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1356,6 +1412,25 @@ main {
 .donor-actions button:first-child {
   background: rgba(255, 250, 240, 0.84);
   color: var(--maroon);
+}
+
+.save-button.secondary-action,
+.text-preview-button {
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  background: rgba(255, 250, 240, 0.84);
+  color: var(--maroon);
+}
+
+.text-preview-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-weight: 850;
+  cursor: pointer;
 }
 
 .donor-actions button:disabled,
@@ -1431,9 +1506,27 @@ main {
   .donor-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .sponsorship-stat-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sponsorship-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
+  .sponsorship-stat-panel,
+  .sponsorship-controls,
+  .sponsorship-money-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sponsorship-stat-panel .top-sponsors {
+    grid-column: auto;
+  }
+
   .donor-mobile-edit,
   .donor-bulk-list div,
   .donor-bulk-list button {
