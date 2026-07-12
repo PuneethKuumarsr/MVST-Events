@@ -1348,6 +1348,45 @@ main {
   grid-template-columns: 1.4fr minmax(160px, 0.8fr) minmax(140px, 0.6fr);
 }
 
+.confirmed-sponsors-panel {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.confirmed-sponsors-panel p {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.confirmed-sponsors-panel strong {
+  color: var(--maroon-deep);
+}
+
+.confirmed-sponsors-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.confirmed-sponsors-list span {
+  border: 1px solid rgba(120, 31, 42, 0.14);
+  border-radius: 999px;
+  background: rgba(240, 220, 168, 0.32);
+  color: var(--ink);
+  padding: 7px 10px;
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
 .sponsorship-money-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1431,6 +1470,12 @@ main {
   padding: 7px 11px;
   font-weight: 850;
   cursor: pointer;
+}
+
+.message-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .donor-actions button:disabled,
@@ -1535,7 +1580,8 @@ main {
 
   .donor-actions button,
   .donor-mobile-edit button,
-  .donor-filter-strip button {
+  .donor-filter-strip button,
+  .message-preview-actions button {
     width: 100%;
   }
 

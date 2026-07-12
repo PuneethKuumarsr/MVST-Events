@@ -555,9 +555,52 @@ Kindly reply to this message or contact us if you wish to continue your support.
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
-function makeMangalyaDonorWhatsAppUrl(donor) {
+function buildMangalyaDonorThankYouMessage(donor) {
+  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
+  const bottuWord = donorBottuWord(quantitySponsored);
+  const amount = quantitySponsored * 15000;
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+
+Thank you for confirming your Gold Mangalya ${bottuWord} sponsorship for the 2026 Samoohika Shanthi event.
+
+Confirmed Sponsorship: ${quantitySponsored} Gold Mangalya ${bottuWord}
+Amount: ${formatCurrency(amount)}
+
+Your continued generosity and support means a lot to Mane Manege Vasavi Seva Trust (R).
+
+We will coordinate further details with you shortly.
+
+🙏 Thank you once again.
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildMangalyaDonorPaymentReceivedMessage(donor) {
+  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
+  const bottuWord = donorBottuWord(quantitySponsored);
+  const amount = quantitySponsored * 15000;
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+
+We have received your contribution of ${formatCurrency(amount)} towards ${quantitySponsored} Gold Mangalya ${bottuWord} sponsorship for the 2026 Samoohika Shanthi event.
+
+Thank you for your valuable contribution and continued trust in Mane Manege Vasavi Seva Trust (R).
+
+Your support will help us continue this noble tradition and bless deserving senior couples.
+
+🙏 Thank you once again.
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function makeMangalyaDonorWhatsAppUrl(donor, messageType = 'appeal') {
   const normalizedMobile = normalizeIndianMobileNumber(donor.contactNo);
-  const message = buildMangalyaDonorAppealMessage(donor);
+  const messageMap = {
+    appeal: buildMangalyaDonorAppealMessage,
+    'thank-you': buildMangalyaDonorThankYouMessage,
+    'payment-received': buildMangalyaDonorPaymentReceivedMessage,
+  };
+  const messageBuilder = messageMap[messageType] || buildMangalyaDonorAppealMessage;
+  const message = messageBuilder(donor);
   const encodedText = encodeURIComponent(message);
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
@@ -1125,7 +1168,7 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
 }
 
 function isConfirmedSponsor(sponsor) {
-  return ['confirmed', 'paid', 'received'].includes(String(sponsor.status || '').toLowerCase());
+  return Number(sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled';
 }
 
 function isReceivedSponsor(sponsor) {
@@ -1151,6 +1194,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     remarks: sponsor.remarks || '',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewType, setPreviewType] = useState('appeal');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -1168,6 +1212,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     });
     setMessage('');
     setOpened(false);
+    setPreviewType('appeal');
   }, [sponsor]);
 
   async function saveSponsor(updates) {
@@ -1175,7 +1220,15 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     setSaving(true);
     setMessage('');
     try {
-      await onSave(sponsor.id, updates);
+      const nextUpdates = { ...updates };
+      if (
+        Object.prototype.hasOwnProperty.call(nextUpdates, 'sponsored2026') &&
+        Number(nextUpdates.sponsored2026 || 0) > 0 &&
+        String(nextUpdates.status || sponsor.status || '').toLowerCase() === 'pending'
+      ) {
+        nextUpdates.status = 'Confirmed';
+      }
+      await onSave(sponsor.id, nextUpdates);
       setMessage('Saved to Google Sheet');
       setEditing(false);
     } catch (error) {
@@ -1185,13 +1238,19 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     }
   }
 
-  function openWhatsApp() {
+  function openWhatsApp(messageType = 'appeal') {
     if (!canOpenWhatsApp) return;
-    const url = makeMangalyaDonorWhatsAppUrl(sponsor);
-    console.debug('[MVST Mangalya sponsorship WhatsApp decoded message]', buildMangalyaDonorAppealMessage(sponsor));
+    const url = makeMangalyaDonorWhatsAppUrl(sponsor, messageType);
+    const decodedMessage = decodeURIComponent(url.split('text=')[1] || '');
+    console.debug('[MVST Mangalya sponsorship WhatsApp decoded message]', decodedMessage);
     window.open(url, '_blank', 'noopener,noreferrer');
     setOpened(true);
     setMessage('');
+  }
+
+  function previewMessage(messageType) {
+    setPreviewType(messageType);
+    setPreviewOpen(true);
   }
 
   return (
@@ -1232,7 +1291,9 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       ) : null}
 
       <div className="donor-actions">
-        <button type="button" onClick={openWhatsApp} disabled={!canOpenWhatsApp}>WhatsApp</button>
+        <button type="button" onClick={() => openWhatsApp('appeal')} disabled={!canOpenWhatsApp}>Appeal WhatsApp</button>
+        <button type="button" onClick={() => openWhatsApp('thank-you')} disabled={!canOpenWhatsApp}>Thank You</button>
+        <button type="button" onClick={() => openWhatsApp('payment-received')} disabled={!canOpenWhatsApp}>Payment Received</button>
         <button type="button" onClick={() => setEditing(!editing)}>Edit</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving}>Mark Paid</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving}>Mark Received</button>
@@ -1245,8 +1306,20 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         </div>
       ) : null}
 
-      <button className="text-preview-button" type="button" onClick={() => setPreviewOpen(!previewOpen)}>Preview Message</button>
-      {previewOpen ? <pre className="donor-message-preview">{buildMangalyaDonorAppealMessage(sponsor)}</pre> : null}
+      <div className="message-preview-actions">
+        <button className="text-preview-button" type="button" onClick={() => previewMessage('appeal')}>Preview Appeal</button>
+        <button className="text-preview-button" type="button" onClick={() => previewMessage('thank-you')}>Preview Thank You</button>
+        <button className="text-preview-button" type="button" onClick={() => previewMessage('payment-received')}>Preview Payment</button>
+      </div>
+      {previewOpen ? (
+        <pre className="donor-message-preview">
+          {previewType === 'thank-you'
+            ? buildMangalyaDonorThankYouMessage(sponsor)
+            : previewType === 'payment-received'
+              ? buildMangalyaDonorPaymentReceivedMessage(sponsor)
+              : buildMangalyaDonorAppealMessage(sponsor)}
+        </pre>
+      ) : null}
       {message ? <small className="donor-note">{message}</small> : null}
       {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
     </article>
@@ -1300,6 +1373,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
         if (sponsorFilter === 'missing-mobile') return !String(sponsor.contactNo || '').trim();
         if (sponsorFilter === 'whatsapp-pending') return !sponsor.whatsAppSent;
         if (sponsorFilter === 'whatsapp-sent') return sponsor.whatsAppSent;
+        if (sponsorFilter === 'confirmed-2026') return isConfirmedSponsor(sponsor);
         if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
         return true;
       })
@@ -1394,7 +1468,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <p className="event-label">Sponsors</p>
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setSponsorFilter('all')} />
-            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed')} />
+            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-2026')} />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setSponsorFilter('pending')} />
             <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} />
           </div>
@@ -1403,7 +1477,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <p className="event-label">Bottus</p>
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={Gift} label="Sponsored 2025" value={summary.sponsored2025} />
-            <StatCard icon={Gift} label="Confirmed 2026" value={summary.confirmed2026} tone="success" />
+            <StatCard icon={Gift} label="Confirmed 2026" value={summary.confirmed2026} tone="success" onClick={() => setSponsorFilter('confirmed-2026')} />
             <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" />
           </div>
         </div>
@@ -1433,6 +1507,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <option value="all">All</option>
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
+          <option value="confirmed-2026">Confirmed 2026</option>
           <option value="paid">Paid</option>
           <option value="received">Received</option>
           <option value="cancelled">Cancelled</option>
@@ -1448,6 +1523,20 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <option>3+</option>
         </SelectField>
       </div>
+
+      {sponsorFilter === 'confirmed-2026' ? (
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>Confirmed 2026 Sponsors</p>
+            <strong>{visibleDonors.length} sponsors / {summary.confirmed2026} bottus</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {visibleDonors.map((sponsor) => (
+              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.sponsored2026 || 0} bottu(s)</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="bulk-whatsapp-panel donor-bulk-panel">
         <div className="bulk-actions">
