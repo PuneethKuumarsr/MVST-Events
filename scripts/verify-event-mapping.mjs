@@ -103,6 +103,7 @@ assert.ok(frontend.includes('Gold Mangalya Bottu sponsorship tracking'), 'Dashbo
 assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya sponsorship WhatsApp appeal dynamically');
 assert.ok(frontend.includes('buildMangalyaDonorThankYouMessage'), 'Frontend must build Mangalya sponsorship thank-you WhatsApp message');
 assert.ok(frontend.includes('buildMangalyaDonorPaymentReceivedMessage'), 'Frontend must build Mangalya sponsorship payment received WhatsApp message');
+assert.ok(frontend.includes('buildMangalyaDonorPostEventThankYouMessage'), 'Frontend must build Mangalya sponsorship post-event thank-you WhatsApp message');
 assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must create Mangalya sponsorship WhatsApp URLs');
 assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya sponsorship WhatsApp URL must use wa.me and encodeURIComponent');
 assert.ok(frontend.includes('Total Sponsors'), 'Sponsorship dashboard must show sponsor summary cards');
@@ -115,8 +116,10 @@ assert.ok(frontend.includes('Expected Collection'), 'Sponsorship dashboard must 
 assert.ok(frontend.includes('Top Sponsors'), 'Sponsorship dashboard must show top sponsors');
 assert.ok(frontend.includes('Mark Paid'), 'Sponsor cards must support Mark Paid');
 assert.ok(frontend.includes('Mark Received'), 'Sponsor cards must support Mark Received');
-assert.ok(frontend.includes('Thank You'), 'Sponsor cards must support thank-you WhatsApp messages');
-assert.ok(frontend.includes('Payment Received'), 'Sponsor cards must support payment received WhatsApp messages');
+assert.ok(frontend.includes('Donor Journey'), 'Sponsor cards must show the donor journey');
+assert.ok(frontend.includes('2. Confirmation'), 'Sponsor cards must support confirmation WhatsApp messages');
+assert.ok(frontend.includes('3. Payment + Receipt'), 'Sponsor cards must support payment received receipt invitation WhatsApp messages');
+assert.ok(frontend.includes('4. Post-Event Thanks'), 'Sponsor cards must support post-event thank-you WhatsApp messages');
 assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Sponsorship dashboard must include a preview-all WhatsApp queue');
 assert.ok(frontend.includes('Current Message Preview'), 'Sponsorship dashboard must preview the selected bulk WhatsApp message');
 assert.ok(frontend.includes('Next WhatsApp'), 'Sponsorship dashboard must open sponsor WhatsApp messages one by one');

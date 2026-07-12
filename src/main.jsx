@@ -581,13 +581,44 @@ function buildMangalyaDonorPaymentReceivedMessage(donor) {
   const amount = quantitySponsored * 15000;
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-We have received your contribution of ${formatCurrency(amount)} towards ${quantitySponsored} Gold Mangalya ${bottuWord} sponsorship for the 2026 Samoohika Shanthi event.
+We are pleased to confirm receipt of your generous contribution towards ${quantitySponsored} Gold Mangalya ${bottuWord} for our 4th Samoohika Shashtipoorthi Shanthi.
 
-Thank you for your valuable contribution and continued trust in Mane Manege Vasavi Seva Trust (R).
+💛 Sponsored: ${quantitySponsored} Gold Mangalya ${bottuWord}
+💰 Contribution Received: ${formatCurrency(amount)}
 
-Your support will help us continue this noble tradition and bless deserving senior couples.
+Your support is deeply appreciated and will help us conduct this sacred event successfully.
 
-🙏 Thank you once again.
+📄 Your official receipt has been generated and is shared herewith.
+
+📩 We hope you have received the invitation card handed over by our Trust representative.
+
+💐 We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
+
+May Vasavi Matha shower her choicest blessings upon you and your family with good health, happiness, prosperity and success in all your endeavours.
+
+🙏 Your generosity and continued support inspire us to carry forward this noble seva. We sincerely thank you for being a part of this sacred initiative.
+
+With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildMangalyaDonorPostEventThankYouMessage(donor) {
+  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
+  const bottuWord = donorBottuWord(quantitySponsored);
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+
+On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${quantitySponsored} Gold Mangalya ${bottuWord}.
+
+With the blessings of Vasavi Matha and the generous support of donors like you, the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bhimaratha Shanthi were conducted successfully.
+
+Your contribution played a valuable role in making this sacred event a grand success and in blessing many senior couples.
+
+🙏 We sincerely thank you for your trust, generosity and continued support.
+
+May Vasavi Matha bless you and your family with good health, happiness, prosperity and success.
+
+With heartfelt gratitude,
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
@@ -598,6 +629,7 @@ function makeMangalyaDonorWhatsAppUrl(donor, messageType = 'appeal') {
     appeal: buildMangalyaDonorAppealMessage,
     'thank-you': buildMangalyaDonorThankYouMessage,
     'payment-received': buildMangalyaDonorPaymentReceivedMessage,
+    'post-event-thank-you': buildMangalyaDonorPostEventThankYouMessage,
   };
   const messageBuilder = messageMap[messageType] || buildMangalyaDonorAppealMessage;
   const message = messageBuilder(donor);
@@ -1290,10 +1322,19 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         </div>
       ) : null}
 
+      <div className="donor-journey">
+        <p>Donor Journey</p>
+        <span>1. Appeal Message</span>
+        <span>2. Sponsorship Confirmation</span>
+        <span>3. Payment Received + Receipt + Invitation</span>
+        <span>4. Post-Event Thank You</span>
+      </div>
+
       <div className="donor-actions">
-        <button type="button" onClick={() => openWhatsApp('appeal')} disabled={!canOpenWhatsApp}>Appeal WhatsApp</button>
-        <button type="button" onClick={() => openWhatsApp('thank-you')} disabled={!canOpenWhatsApp}>Thank You</button>
-        <button type="button" onClick={() => openWhatsApp('payment-received')} disabled={!canOpenWhatsApp}>Payment Received</button>
+        <button type="button" onClick={() => openWhatsApp('appeal')} disabled={!canOpenWhatsApp}>1. Appeal</button>
+        <button type="button" onClick={() => openWhatsApp('thank-you')} disabled={!canOpenWhatsApp}>2. Confirmation</button>
+        <button type="button" onClick={() => openWhatsApp('payment-received')} disabled={!canOpenWhatsApp}>3. Payment + Receipt</button>
+        <button type="button" onClick={() => openWhatsApp('post-event-thank-you')} disabled={!canOpenWhatsApp}>4. Post-Event Thanks</button>
         <button type="button" onClick={() => setEditing(!editing)}>Edit</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving}>Mark Paid</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving}>Mark Received</button>
@@ -1308,8 +1349,9 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
       <div className="message-preview-actions">
         <button className="text-preview-button" type="button" onClick={() => previewMessage('appeal')}>Preview Appeal</button>
-        <button className="text-preview-button" type="button" onClick={() => previewMessage('thank-you')}>Preview Thank You</button>
+        <button className="text-preview-button" type="button" onClick={() => previewMessage('thank-you')}>Preview Confirmation</button>
         <button className="text-preview-button" type="button" onClick={() => previewMessage('payment-received')}>Preview Payment</button>
+        <button className="text-preview-button" type="button" onClick={() => previewMessage('post-event-thank-you')}>Preview Post-Event</button>
       </div>
       {previewOpen ? (
         <pre className="donor-message-preview">
@@ -1317,7 +1359,9 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
             ? buildMangalyaDonorThankYouMessage(sponsor)
             : previewType === 'payment-received'
               ? buildMangalyaDonorPaymentReceivedMessage(sponsor)
-              : buildMangalyaDonorAppealMessage(sponsor)}
+              : previewType === 'post-event-thank-you'
+                ? buildMangalyaDonorPostEventThankYouMessage(sponsor)
+                : buildMangalyaDonorAppealMessage(sponsor)}
         </pre>
       ) : null}
       {message ? <small className="donor-note">{message}</small> : null}

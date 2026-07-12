@@ -1433,6 +1433,36 @@ main {
   margin-top: 12px;
 }
 
+.donor-journey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 243, 212, 0.5);
+  padding: 10px;
+}
+
+.donor-journey p {
+  width: 100%;
+  margin: 0;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.donor-journey span {
+  border: 1px solid rgba(120, 31, 42, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 250, 240, 0.78);
+  color: var(--maroon-deep);
+  padding: 6px 9px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .donor-actions button,
 .donor-mobile-edit button {
   display: inline-flex;
