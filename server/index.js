@@ -37,11 +37,19 @@ const DONOR_FIELDS = {
   sponsored2026: ['Sponsored 2026'],
   status: ['Status'],
   remarks: ['Remarks'],
+  appealSent: ['Appeal Sent', 'WhatsApp Sent'],
+  appealSentDate: ['Appeal Sent Date', 'Sent Date'],
+  confirmationSent: ['Confirmation Sent'],
+  confirmationSentDate: ['Confirmation Sent Date'],
+  paymentMessageSent: ['Payment Message Sent'],
+  paymentMessageSentDate: ['Payment Message Sent Date'],
+  postEventSent: ['Post Event Sent'],
+  postEventSentDate: ['Post Event Sent Date'],
   whatsAppSent: ['WhatsApp Sent'],
   sentDate: ['Sent Date'],
 };
 const BOTTU_AMOUNT = 15000;
-const DONOR_RANGE = process.env.MANGALYA_SPONSORSHIP_RANGE || "'Sponsorship 2026'!A:J";
+const DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || "'Sponsorship 2026'!A:R");
 
 const EVENTS = {
   shashtipoorthi: {
@@ -84,6 +92,10 @@ let donorCache = {
   source: null,
   writeEnabled: false,
 };
+
+function sponsorshipRange(range) {
+  return String(range || "'Sponsorship 2026'!A:R").replace(/A:J$/i, 'A:R');
+}
 
 function withCacheBust(url) {
   const separator = url.includes('?') ? '&' : '?';
@@ -307,6 +319,8 @@ function normalizeDonorRows(values) {
       const sponsored2025 = numberFrom(getCell(row, headerMap, ['Sponsored 2025', 'Quantity Sponsored']));
       const sponsored2026 = numberFrom(getCell(row, headerMap, ['Sponsored 2026']));
       const amount = sponsored2026 * BOTTU_AMOUNT;
+      const appealSent = boolFrom(getCell(row, headerMap, ['Appeal Sent', 'WhatsApp Sent']));
+      const appealSentDate = getCell(row, headerMap, ['Appeal Sent Date', 'Sent Date']);
       return {
         id: `mangalya:${rowNumber}`,
         rowNumber,
@@ -319,8 +333,16 @@ function normalizeDonorRows(values) {
         amount,
         status: getCell(row, headerMap, ['Status']) || 'Pending',
         remarks: getCell(row, headerMap, ['Remarks']),
-        whatsAppSent: boolFrom(getCell(row, headerMap, ['WhatsApp Sent'])),
-        sentDate: getCell(row, headerMap, ['Sent Date']),
+        appealSent,
+        appealSentDate,
+        confirmationSent: boolFrom(getCell(row, headerMap, ['Confirmation Sent'])),
+        confirmationSentDate: getCell(row, headerMap, ['Confirmation Sent Date']),
+        paymentMessageSent: boolFrom(getCell(row, headerMap, ['Payment Message Sent'])),
+        paymentMessageSentDate: getCell(row, headerMap, ['Payment Message Sent Date']),
+        postEventSent: boolFrom(getCell(row, headerMap, ['Post Event Sent'])),
+        postEventSentDate: getCell(row, headerMap, ['Post Event Sent Date']),
+        whatsAppSent: appealSent,
+        sentDate: appealSentDate,
         adminColumns,
       };
     })
@@ -526,7 +548,13 @@ async function updateRegistration(registrationId, updates) {
 }
 
 function normalizeDonorPatchValue(field, value) {
-  if (field === 'whatsAppSent') return value ? 'Yes' : 'No';
+  if (
+    field === 'whatsAppSent' ||
+    field === 'appealSent' ||
+    field === 'confirmationSent' ||
+    field === 'paymentMessageSent' ||
+    field === 'postEventSent'
+  ) return value ? 'Yes' : 'No';
   if (field === 'sponsored2025' || field === 'sponsored2026') return String(numberFrom(value));
   return String(value ?? '');
 }

@@ -525,6 +525,63 @@ function donorBottuWord(quantitySponsored) {
   return Number(quantitySponsored) === 1 ? 'Bottu' : 'Bottus';
 }
 
+const DONOR_JOURNEY_STEPS = [
+  {
+    type: 'appeal',
+    label: '1. Appeal',
+    title: '1. Appeal Message',
+    sentField: 'appealSent',
+    dateField: 'appealSentDate',
+  },
+  {
+    type: 'thank-you',
+    label: '2. Confirmation',
+    title: '2. Sponsorship Confirmation',
+    sentField: 'confirmationSent',
+    dateField: 'confirmationSentDate',
+  },
+  {
+    type: 'payment-received',
+    label: '3. Payment + Receipt',
+    title: '3. Payment Received + Receipt + Invitation',
+    sentField: 'paymentMessageSent',
+    dateField: 'paymentMessageSentDate',
+  },
+  {
+    type: 'post-event-thank-you',
+    label: '4. Post-Event Thanks',
+    title: '4. Post-Event Thank You',
+    sentField: 'postEventSent',
+    dateField: 'postEventSentDate',
+  },
+];
+
+function donorJourneyStep(messageType) {
+  return DONOR_JOURNEY_STEPS.find((step) => step.type === messageType) || DONOR_JOURNEY_STEPS[0];
+}
+
+function donorJourneySent(donor, messageType) {
+  const step = donorJourneyStep(messageType);
+  if (messageType === 'appeal') return Boolean(donor[step.sentField] || donor.whatsAppSent);
+  return Boolean(donor[step.sentField]);
+}
+
+function donorJourneyDate(donor, messageType) {
+  const step = donorJourneyStep(messageType);
+  if (messageType === 'appeal') return donor[step.dateField] || donor.sentDate || '';
+  return donor[step.dateField] || '';
+}
+
+function donorJourneySentUpdates(messageType) {
+  const step = donorJourneyStep(messageType);
+  const sentDate = deliveryDateStamp();
+  return {
+    [step.sentField]: true,
+    [step.dateField]: sentDate,
+    ...(messageType === 'appeal' ? { whatsAppSent: true, sentDate } : {}),
+  };
+}
+
 function buildMangalyaDonorAppealMessage(donor) {
   const quantitySponsored = Number(donor.sponsored2025 || donor.quantitySponsored || 0) || 1;
   const bottuWord = donorBottuWord(quantitySponsored);
@@ -1230,6 +1287,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [openedMessageType, setOpenedMessageType] = useState('appeal');
   const validation = mobileValidationStatus(sponsor.contactNo);
   const canOpenWhatsApp = validation.status === 'ok';
 
@@ -1244,6 +1302,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     });
     setMessage('');
     setOpened(false);
+    setOpenedMessageType('appeal');
     setPreviewType('appeal');
   }, [sponsor]);
 
@@ -1277,6 +1336,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     console.debug('[MVST Mangalya sponsorship WhatsApp decoded message]', decodedMessage);
     window.open(url, '_blank', 'noopener,noreferrer');
     setOpened(true);
+    setOpenedMessageType(messageType);
     setMessage('');
   }
 
@@ -1306,7 +1366,14 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
       <div className="detail-grid donor-detail-grid">
         <p><span>Remarks</span>{sponsor.remarks || 'No remarks'}</p>
-        <p><span>WhatsApp Status</span>{sponsor.whatsAppSent ? 'Sent' : 'Pending'}{sponsor.sentDate ? ' - ' + sponsor.sentDate : ''}</p>
+        <p>
+          <span>Journey Status</span>
+          {DONOR_JOURNEY_STEPS.map((step) => {
+            const sent = donorJourneySent(sponsor, step.type);
+            const date = donorJourneyDate(sponsor, step.type);
+            return `${step.label}: ${sent ? 'Sent' : 'Pending'}${date ? ' - ' + date : ''}`;
+          }).join(' | ')}
+        </p>
       </div>
 
       {editing ? (
@@ -1324,17 +1391,25 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
       <div className="donor-journey">
         <p>Donor Journey</p>
-        <span>1. Appeal Message</span>
-        <span>2. Sponsorship Confirmation</span>
-        <span>3. Payment Received + Receipt + Invitation</span>
-        <span>4. Post-Event Thank You</span>
+        {DONOR_JOURNEY_STEPS.map((step) => (
+          <span className={donorJourneySent(sponsor, step.type) ? 'journey-sent' : ''} key={step.type}>
+            {step.title}
+          </span>
+        ))}
       </div>
 
       <div className="donor-actions">
-        <button type="button" onClick={() => openWhatsApp('appeal')} disabled={!canOpenWhatsApp}>1. Appeal</button>
-        <button type="button" onClick={() => openWhatsApp('thank-you')} disabled={!canOpenWhatsApp}>2. Confirmation</button>
-        <button type="button" onClick={() => openWhatsApp('payment-received')} disabled={!canOpenWhatsApp}>3. Payment + Receipt</button>
-        <button type="button" onClick={() => openWhatsApp('post-event-thank-you')} disabled={!canOpenWhatsApp}>4. Post-Event Thanks</button>
+        {DONOR_JOURNEY_STEPS.map((step) => (
+          <button
+            className={donorJourneySent(sponsor, step.type) ? 'journey-sent-button' : ''}
+            disabled={!canOpenWhatsApp}
+            key={step.type}
+            onClick={() => openWhatsApp(step.type)}
+            type="button"
+          >
+            {step.label}
+          </button>
+        ))}
         <button type="button" onClick={() => setEditing(!editing)}>Edit</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving}>Mark Paid</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving}>Mark Received</button>
@@ -1342,8 +1417,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
       {opened ? (
         <div className="sent-action-panel">
-          <span>WhatsApp opened</span>
-          <button type="button" onClick={() => saveSponsor({ whatsAppSent: true, sentDate: deliveryDateStamp() })} disabled={!writeEnabled || saving}>Mark WhatsApp Sent</button>
+          <span>{donorJourneyStep(openedMessageType).label} WhatsApp opened</span>
+          <button type="button" onClick={() => saveSponsor(donorJourneySentUpdates(openedMessageType))} disabled={!writeEnabled || saving}>
+            Mark {donorJourneyStep(openedMessageType).label} Sent
+          </button>
         </div>
       ) : null}
 
@@ -1415,8 +1492,8 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
     return donors
       .filter((sponsor) => {
         if (sponsorFilter === 'missing-mobile') return !String(sponsor.contactNo || '').trim();
-        if (sponsorFilter === 'whatsapp-pending') return !sponsor.whatsAppSent;
-        if (sponsorFilter === 'whatsapp-sent') return sponsor.whatsAppSent;
+        if (sponsorFilter === 'whatsapp-pending') return !donorJourneySent(sponsor, 'appeal');
+        if (sponsorFilter === 'whatsapp-sent') return donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'confirmed-2026') return isConfirmedSponsor(sponsor);
         if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
         return true;
@@ -1436,7 +1513,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
   }, [donors, sponsorFilter, sponsorQuery, quantityFilter]);
 
   function prepareBulkQueue() {
-    setBulkQueue(donors.filter((donor) => donorMobileIsValid(donor) && !donor.whatsAppSent));
+    setBulkQueue(donors.filter((donor) => donorMobileIsValid(donor) && !donorJourneySent(donor, 'appeal')));
     setBulkStarted(false);
     setBulkIndex(0);
     setBulkMessage('');
@@ -1479,7 +1556,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
     setSavingBulk(true);
     setBulkMessage('');
     try {
-      await saveDonor(currentBulkDonor.id, { whatsAppSent: true, sentDate: deliveryDateStamp() });
+      await saveDonor(currentBulkDonor.id, donorJourneySentUpdates('appeal'));
       setBulkMessage('Saved to Google Sheet');
     } catch (saveError) {
       setBulkMessage(saveError.message || 'Unable to mark as sent');

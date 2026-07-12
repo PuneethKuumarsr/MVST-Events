@@ -14,4 +14,4 @@ services:
       - key: MANGALYA_SPONSORSHIP_SHEET_ID
         sync: false
       - key: MANGALYA_SPONSORSHIP_RANGE
-        value: "'Sponsorship 2026'!A:J"
+        value: "'Sponsorship 2026'!A:R"
