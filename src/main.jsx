@@ -1465,6 +1465,7 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
+  const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -1603,21 +1604,32 @@ function App() {
   }
 
   function goToNewRegistrations() {
-    scrollToSection('new-registrations-dashboard');
+    setActiveView('home');
+    requestAnimationFrame(() => scrollToSection('new-registrations-dashboard'));
   }
 
   function goToPaymentPending() {
     setPaymentFilter('Pending');
     setVerifiedFilter('All');
     setKitFilter('All');
-    scrollToSection('participant-management-dashboard');
+    setActiveView(activeEvent);
+    requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
   }
 
   function goToParticipantManagement() {
     setPaymentFilter('All');
     setVerifiedFilter('All');
     setKitFilter('All');
-    scrollToSection('participant-management-dashboard');
+    setActiveView(activeEvent);
+    requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
+  }
+
+  function openEventView(eventType) {
+    setActiveEvent(eventType);
+    setActiveView(eventType);
+    setPaymentFilter('All');
+    setVerifiedFilter('All');
+    setKitFilter('All');
   }
 
   async function generateBulkReceipts() {
@@ -1679,58 +1691,81 @@ function App() {
         </div>
       </section>
 
-      <section className="status-strip">
-        <div className="status-main">
-          <ClipboardList size={18} />
-          <span>{status}</span>
-        </div>
-        <button className="refresh-button" type="button" onClick={refresh} disabled={isRefreshing}>
-          <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
-          {isRefreshing ? 'Refreshing' : 'Refresh Data'}
-        </button>
-      </section>
+      <div className="app-shell">
+        <aside className="app-sidebar" aria-label="Dashboard navigation">
+          <button className={activeView === 'home' ? 'active' : ''} type="button" onClick={() => setActiveView('home')}>
+            <ClipboardList size={18} />
+            <span>Home</span>
+          </button>
+          <button className={activeView === 'shashtipoorthi' ? 'active' : ''} type="button" onClick={() => openEventView('shashtipoorthi')}>
+            <HeartHandshake size={18} />
+            <span>Shashtipoorthi Shanthi</span>
+          </button>
+          <button className={activeView === 'bhimaratha' ? 'active' : ''} type="button" onClick={() => openEventView('bhimaratha')}>
+            <HeartHandshake size={18} />
+            <span>Bhimaratha Shanthi</span>
+          </button>
+          <button className={activeView === 'mangalya-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('mangalya-donors')}>
+            <Gift size={18} />
+            <span>Mangalya Donors</span>
+          </button>
+        </aside>
 
-      {error ? (
-        <section className="error-strip">
-          <AlertTriangle size={18} />
-          <span>{error}</span>
-        </section>
-      ) : null}
+        <div className="app-content">
+          <section className="status-strip">
+            <div className="status-main">
+              <ClipboardList size={18} />
+              <span>{status}</span>
+            </div>
+            <button className="refresh-button" type="button" onClick={refresh} disabled={isRefreshing}>
+              <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
+              {isRefreshing ? 'Refreshing' : 'Refresh Data'}
+            </button>
+          </section>
 
-      <section className="summary-section">
-        <div className="section-heading">
-          <div>
-            <p>Dashboard Summary</p>
-            <h2>Registration and collection overview</h2>
-          </div>
-        </div>
-        <div className="stats-grid">
-          <StatCard icon={UsersRound} label="Total registrations" value={summary.total} />
-          <StatCard icon={HeartHandshake} label="Shashtipoorthi" value={summary.shashtipoorthi} />
-          <StatCard icon={HeartHandshake} label="Bhimaratha" value={summary.bhimaratha} />
-          <StatCard icon={CheckCircle2} label="Full Paid" value={summary.fullPaid} tone="success" />
-          <StatCard icon={CircleDollarSign} label="Part Paid" value={summary.partPaid} tone="warning" />
-          <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
-          <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
-          <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" onClick={goToNewRegistrations} />
-          <StatCard icon={HeartHandshake} label="New Shashtipoorthi" value={summary.newShashtipoorthi} tone="warning" onClick={goToNewRegistrations} />
-          <StatCard icon={HeartHandshake} label="New Bhimaratha" value={summary.newBhimaratha} tone="warning" onClick={goToNewRegistrations} />
-          <StatCard icon={Gift} label="KIT Issued" value={summary.kitIssued} />
-          <StatCard icon={MessageCircle} label="Welcome Sent" value={summary.welcomeSent} tone="success" />
-          <StatCard icon={MessageCircle} label="Welcome Pending" value={summary.welcomePending} tone="warning" onClick={goToParticipantManagement} />
-          <StatCard icon={BadgeCheck} label="Payment Sent" value={summary.paymentSent} tone="success" onClick={goToParticipantManagement} />
-          <StatCard icon={BadgeCheck} label="Payment Pending" value={summary.paymentPending} tone="warning" onClick={goToPaymentPending} />
-          <StatCard icon={FileText} label="Shashtipoorthi Receipts Generated" value={summary.shashtipoorthiReceiptsGenerated} tone="success" />
-          <StatCard icon={FileText} label="Shashtipoorthi Receipts Pending" value={summary.shashtipoorthiReceiptsPending} tone="warning" onClick={goToParticipantManagement} />
-          <StatCard icon={FileText} label="Bhimaratha Receipts Generated" value={summary.bhimarathaReceiptsGenerated} tone="success" onClick={goToParticipantManagement} />
-          <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" onClick={goToParticipantManagement} />
-          <StatCard icon={IndianRupee} label="Expected collection" value={formatCurrency(summary.expected)} />
-          <StatCard icon={IndianRupee} label="Received collection" value={formatCurrency(summary.received)} tone="success" />
-          <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" />
-        </div>
-      </section>
+          {error ? (
+            <section className="error-strip">
+              <AlertTriangle size={18} />
+              <span>{error}</span>
+            </section>
+          ) : null}
 
-      <section className="mobile-issues-section">
+          {activeView === 'home' ? (
+            <>
+              <section className="summary-section">
+                <div className="section-heading">
+                  <div>
+                    <p>Dashboard Summary</p>
+                    <h2>Registration and collection overview</h2>
+                  </div>
+                </div>
+                <div className="stats-grid">
+                  <StatCard icon={UsersRound} label="Total registrations" value={summary.total} />
+                  <StatCard icon={HeartHandshake} label="Shashtipoorthi" value={summary.shashtipoorthi} onClick={() => openEventView('shashtipoorthi')} />
+                  <StatCard icon={HeartHandshake} label="Bhimaratha" value={summary.bhimaratha} onClick={() => openEventView('bhimaratha')} />
+                  <StatCard icon={CheckCircle2} label="Full Paid" value={summary.fullPaid} tone="success" />
+                  <StatCard icon={CircleDollarSign} label="Part Paid" value={summary.partPaid} tone="warning" />
+                  <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
+                  <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
+                  <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" onClick={goToNewRegistrations} />
+                  <StatCard icon={HeartHandshake} label="New Shashtipoorthi" value={summary.newShashtipoorthi} tone="warning" onClick={goToNewRegistrations} />
+                  <StatCard icon={HeartHandshake} label="New Bhimaratha" value={summary.newBhimaratha} tone="warning" onClick={goToNewRegistrations} />
+                  <StatCard icon={Gift} label="KIT Issued" value={summary.kitIssued} />
+                  <StatCard icon={MessageCircle} label="Welcome Sent" value={summary.welcomeSent} tone="success" />
+                  <StatCard icon={MessageCircle} label="Welcome Pending" value={summary.welcomePending} tone="warning" onClick={goToParticipantManagement} />
+                  <StatCard icon={BadgeCheck} label="Payment Sent" value={summary.paymentSent} tone="success" onClick={goToParticipantManagement} />
+                  <StatCard icon={BadgeCheck} label="Payment Pending" value={summary.paymentPending} tone="warning" onClick={goToPaymentPending} />
+                  <StatCard icon={FileText} label="Shashtipoorthi Receipts Generated" value={summary.shashtipoorthiReceiptsGenerated} tone="success" />
+                  <StatCard icon={FileText} label="Shashtipoorthi Receipts Pending" value={summary.shashtipoorthiReceiptsPending} tone="warning" onClick={() => openEventView('shashtipoorthi')} />
+                  <StatCard icon={FileText} label="Bhimaratha Receipts Generated" value={summary.bhimarathaReceiptsGenerated} tone="success" onClick={() => openEventView('bhimaratha')} />
+                  <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" onClick={() => openEventView('bhimaratha')} />
+                  <StatCard icon={IndianRupee} label="Expected collection" value={formatCurrency(summary.expected)} />
+                  <StatCard icon={IndianRupee} label="Received collection" value={formatCurrency(summary.received)} tone="success" />
+                  <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" />
+                </div>
+              </section>
+
+              <section className="mobile-issues-section">
         <div className="section-heading">
           <div>
             <p>WhatsApp Check / Mobile Issues</p>
@@ -1772,9 +1807,7 @@ function App() {
         </div>
       </section>
 
-      <MangalyaDonorsSection donorState={donorState} />
-
-      <section className="management-section new-registrations-section" id="new-registrations-dashboard">
+              <section className="management-section new-registrations-section" id="new-registrations-dashboard">
         <div className="section-heading">
           <div>
             <p>New Registrations</p>
@@ -1806,26 +1839,18 @@ function App() {
           )}
         </div>
       </section>
+            </>
+          ) : null}
 
-      <section className="management-section" id="participant-management-dashboard">
+          {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} /> : null}
+
+          {activeView === 'shashtipoorthi' || activeView === 'bhimaratha' ? (
+            <section className="management-section" id="participant-management-dashboard">
         <div className="section-heading">
           <div>
             <p>Participant Management</p>
-            <h2>Verified registrations by event</h2>
+            <h2>{EVENTS[activeEvent].shortLabel} verified registrations</h2>
           </div>
-        </div>
-
-        <div className="tabs" role="tablist" aria-label="Event tabs">
-          {Object.values(EVENTS).map((event) => (
-            <button
-              key={event.id}
-              className={activeEvent === event.id ? 'active' : ''}
-              onClick={() => setActiveEvent(event.id)}
-              type="button"
-            >
-              {event.shortLabel}
-            </button>
-          ))}
         </div>
 
         <div className="controls">
@@ -1953,6 +1978,9 @@ function App() {
           )}
         </div>
       </section>
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 }

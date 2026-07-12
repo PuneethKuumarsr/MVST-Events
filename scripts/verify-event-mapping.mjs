@@ -80,6 +80,10 @@ assert.ok(frontend.includes('scrollToSection'), 'Dashboard summary cards must su
 assert.ok(frontend.includes('id="new-registrations-dashboard"'), 'New Registrations section must have a jump target');
 assert.ok(frontend.includes('id="participant-management-dashboard"'), 'Participant Management section must have a jump target');
 assert.ok(frontend.includes('onClick={goToPaymentPending}'), 'Pending summary cards must jump to pending participants');
+assert.ok(frontend.includes('app-sidebar'), 'Dashboard must include sidebar navigation');
+assert.ok(frontend.includes('Shashtipoorthi Shanthi'), 'Sidebar must include Shashtipoorthi Shanthi view');
+assert.ok(frontend.includes('Bhimaratha Shanthi'), 'Sidebar must include Bhimaratha Shanthi view');
+assert.ok(frontend.includes('Mangalya Donors'), 'Sidebar must include Mangalya Donors view');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
