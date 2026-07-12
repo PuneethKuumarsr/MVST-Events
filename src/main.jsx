@@ -536,13 +536,13 @@ Last year, you generously sponsored ${quantitySponsored} Gold Mangalya ${bottuWo
 
 This year, Mane Manege Vasavi Seva Trust (R) is once again organizing:
 
-🪔 4th Samoohika Shashtipoorthi Shanthi
-🪔 2nd Samoohika Bhimaratha Shanthi
+4th Samoohika Shashtipoorthi Shanthi
+2nd Samoohika Bhimaratha Shanthi
 
-📅 Date: Sunday, 02-Aug-2026
-📍 Venue: Shubh Convention, JP Nagar, Bengaluru
+Date: Sunday, 02-Aug-2026
+Venue: Shubh Convention, JP Nagar, Bengaluru
 
-💛 Mangalya Bottu Sponsorship: ₹15,000 per Bottu
+Mangalya Bottu Sponsorship: ₹15,000 per Bottu
 
 With folded hands, we request your continued support by sponsoring Gold Mangalya Bottu(s) once again this year.
 
