@@ -1335,13 +1335,13 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
 function isConfirmedSponsor(sponsor) {
   const status = String(sponsor.status || '').toLowerCase();
   return status !== 'cancelled' && (
-    ['confirmed', 'paid', 'received'].includes(status) ||
+    ['confirmed', 'paid', 'received', 'fully received'].includes(status) ||
     Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0
   );
 }
 
 function isReceivedSponsor(sponsor) {
-  return String(sponsor.status || '').toLowerCase() === 'received';
+  return ['received', 'fully received'].includes(String(sponsor.status || '').toLowerCase());
 }
 
 function sponsorDisplayName(sponsor) {
