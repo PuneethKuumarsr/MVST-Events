@@ -531,11 +531,11 @@ function sponsorUnit(sponsor) {
 }
 
 function sponsorQuantity(sponsor) {
-  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) || 1;
+  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
 }
 
 function sponsorPreviousQuantity(sponsor) {
-  return Number(sponsor.sponsored2025 || sponsor.quantitySponsored || 0) || 1;
+  return Number(sponsor.sponsored2025 || sponsor.quantitySponsored || 0);
 }
 
 function sponsorEventName(sponsor) {
@@ -547,7 +547,18 @@ function sponsorAmount(sponsor) {
 }
 
 function sponsorQuantityText(quantity, unit) {
+  if (!Number(quantity)) return unit || 'sponsorship';
   return `${quantity} ${unit}${Number(quantity) === 1 || String(unit).endsWith('s') ? '' : 's'}`;
+}
+
+function sponsorContributionText(sponsor) {
+  const quantity = sponsorQuantity(sponsor);
+  return sponsorQuantityText(quantity, sponsorUnit(sponsor));
+}
+
+function sponsorPreviousContributionText(sponsor) {
+  const quantity = sponsorPreviousQuantity(sponsor);
+  return sponsorQuantityText(quantity, sponsorUnit(sponsor));
 }
 
 const DONOR_JOURNEY_STEPS = [
@@ -613,8 +624,6 @@ function isActiveEventYear(eventYear) {
 }
 
 function buildMangalyaDonorAppealMessage(donor) {
-  const previousQuantity = sponsorPreviousQuantity(donor);
-  const unit = sponsorUnit(donor);
   const category = sponsorCategory(donor);
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
@@ -622,7 +631,7 @@ function buildMangalyaDonorAppealMessage(donor) {
 
 We hope you and your family are doing well by the grace of Vasavi Matha.
 
-Previously, you generously sponsored ${sponsorQuantityText(previousQuantity, unit)} for our trust activity. We sincerely thank you for your valuable support.
+Previously, you generously sponsored ${sponsorPreviousContributionText(donor)} for our trust activity. We sincerely thank you for your valuable support.
 
 This time, Mane Manege Vasavi Seva Trust (R) is organizing:
 
@@ -642,16 +651,14 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorThankYouMessage(donor) {
-  const quantitySponsored = sponsorQuantity(donor);
-  const unit = sponsorUnit(donor);
   const eventName = sponsorEventName(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-Thank you so much for your kind and generous confirmation to sponsor ${sponsorQuantityText(quantitySponsored, unit)} for ${eventName}.
+Thank you so much for your kind and generous confirmation to sponsor ${sponsorContributionText(donor)} for ${eventName}.
 
 Your valuable support means a lot to us and will help us continue this noble seva of blessing senior couples through this sacred ceremony.
 
-💛 Confirmed Sponsorship: ${sponsorQuantityText(quantitySponsored, unit)}
+💛 Confirmed Sponsorship: ${sponsorContributionText(donor)}
 
 Our Trust representative will get in touch with you shortly regarding the contribution.
 
@@ -663,15 +670,13 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorPaymentReceivedMessage(donor) {
-  const quantitySponsored = sponsorQuantity(donor);
-  const unit = sponsorUnit(donor);
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-We are pleased to confirm receipt of your generous contribution towards ${sponsorQuantityText(quantitySponsored, unit)} for ${eventName}.
+We are pleased to confirm receipt of your generous contribution towards ${sponsorContributionText(donor)} for ${eventName}.
 
-💛 Sponsored: ${sponsorQuantityText(quantitySponsored, unit)}
+💛 Sponsored: ${sponsorContributionText(donor)}
 💰 Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
 
 Your support is deeply appreciated and will help us conduct this sacred event successfully.
@@ -692,12 +697,10 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorPostEventThankYouMessage(donor) {
-  const quantitySponsored = sponsorQuantity(donor);
-  const unit = sponsorUnit(donor);
   const eventName = sponsorEventName(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${sponsorQuantityText(quantitySponsored, unit)}.
+On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${sponsorContributionText(donor)}.
 
 With the blessings of Vasavi Matha and the generous support of donors like you, ${eventName} was conducted successfully.
 
