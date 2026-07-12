@@ -33,10 +33,32 @@ const ADMIN_FIELDS = {
 const DONOR_FIELDS = {
   sponsorName: ['Sponsor Name'],
   contactNo: ['Contact Number', 'Contact No'],
+  eventYear: ['Event Year'],
+  eventName: ['Event Name'],
+  category: ['Category', 'Sponsorship Category'],
+  contributionNature: ['Contribution Nature'],
   sponsored2025: ['Sponsored 2025'],
   sponsored2026: ['Sponsored 2026'],
+  confirmedQuantity: ['Confirmed Quantity', 'Sponsored 2026'],
+  receivedQuantity: ['Received Quantity'],
+  pendingQuantity: ['Pending Quantity'],
+  unit: ['Unit'],
+  estimatedValue: ['Estimated Value'],
+  actualValue: ['Actual Value'],
+  confirmedAmount: ['Confirmed Amount', 'Amount (Auto)'],
+  receivedAmount: ['Received Amount'],
+  balanceAmount: ['Balance Amount'],
   status: ['Status'],
   remarks: ['Remarks'],
+  introducedBy: ['Introduced By', 'Trustee Reference', 'Introduced By / Trustee Reference'],
+  followUpBy: ['Follow-up By', 'Follow Up By'],
+  collectedBy: ['Collected By'],
+  invitationHandedOverBy: ['Invitation Handed Over By'],
+  paymentMode: ['Payment Mode'],
+  bankOrCash: ['Bank / Cash', 'Bank Cash'],
+  transactionReference: ['Transaction Reference / UTR / Cheque No', 'Transaction Reference', 'UTR', 'Cheque No'],
+  paymentDate: ['Payment Date'],
+  paymentProofLink: ['Payment Proof Link'],
   appealSent: ['Appeal Sent', 'WhatsApp Sent'],
   appealSentDate: ['Appeal Sent Date', 'Sent Date'],
   confirmationSent: ['Confirmation Sent'],
@@ -48,8 +70,8 @@ const DONOR_FIELDS = {
   whatsAppSent: ['WhatsApp Sent'],
   sentDate: ['Sent Date'],
 };
-const BOTTU_AMOUNT = 15000;
-const DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || "'Sponsorship 2026'!A:R");
+const DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE || "'Sponsorship Contributions'!A:AZ");
+const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponsorship Requirements'!A:O";
 
 const EVENTS = {
   shashtipoorthi: {
@@ -93,8 +115,18 @@ let donorCache = {
   writeEnabled: false,
 };
 
+let requirementCache = {
+  rows: [],
+  refreshedAt: null,
+  source: null,
+  writeEnabled: false,
+};
+
 function sponsorshipRange(range) {
-  return String(range || "'Sponsorship 2026'!A:R").replace(/A:J$/i, 'A:R');
+  return String(range || "'Sponsorship Contributions'!A:AZ")
+    .replace(/A:J$/i, 'A:AZ')
+    .replace(/A:R$/i, 'A:AZ')
+    .replace(/A:AD$/i, 'A:AZ');
 }
 
 function withCacheBust(url) {
@@ -140,6 +172,27 @@ function normalizeKey(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
+}
+
+const CATEGORY_ALIASES = {
+  vegetable: 'Vegetables',
+  vegetables: 'Vegetables',
+  misc: 'Miscellaneous',
+  miscellaneous: 'Miscellaneous',
+  cuttlery: 'Cutlery',
+  cutlery: 'Cutlery',
+  stationary: 'Stationery',
+  stationery: 'Stationery',
+  rent: 'Choultry',
+  choultry: 'Choultry',
+  veesles: 'Vessels',
+  vessels: 'Vessels',
+};
+
+function canonicalCategory(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return CATEGORY_ALIASES[normalizeKey(raw)] || raw;
 }
 
 function getCell(row, headerMap, labels) {
@@ -318,7 +371,12 @@ function normalizeDonorRows(values) {
       const rowNumber = index + 2;
       const sponsored2025 = numberFrom(getCell(row, headerMap, ['Sponsored 2025', 'Quantity Sponsored']));
       const sponsored2026 = numberFrom(getCell(row, headerMap, ['Sponsored 2026']));
-      const amount = sponsored2026 * BOTTU_AMOUNT;
+      const confirmedQuantity = numberFrom(getCell(row, headerMap, ['Confirmed Quantity', 'Sponsored 2026'])) || sponsored2026;
+      const receivedQuantity = numberFrom(getCell(row, headerMap, ['Received Quantity']));
+      const confirmedAmount = numberFrom(getCell(row, headerMap, ['Confirmed Amount', 'Amount (Auto)']));
+      const receivedAmount = numberFrom(getCell(row, headerMap, ['Received Amount']));
+      const amount = confirmedAmount;
+      const category = getCell(row, headerMap, ['Category', 'Sponsorship Category']) || process.env.DEFAULT_SPONSORSHIP_CATEGORY || '';
       const appealSent = boolFrom(getCell(row, headerMap, ['Appeal Sent', 'WhatsApp Sent']));
       const appealSentDate = getCell(row, headerMap, ['Appeal Sent Date', 'Sent Date']);
       return {
@@ -328,11 +386,34 @@ function normalizeDonorRows(values) {
         sponsorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
         donorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
         contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No']),
+        eventYear: getCell(row, headerMap, ['Event Year']),
+        eventName: getCell(row, headerMap, ['Event Name']),
+        category,
+        canonicalCategory: canonicalCategory(category),
+        contributionNature: getCell(row, headerMap, ['Contribution Nature']) || 'Monetary',
         sponsored2025,
         sponsored2026,
+        confirmedQuantity,
+        receivedQuantity,
+        pendingQuantity: numberFrom(getCell(row, headerMap, ['Pending Quantity'])) || Math.max(confirmedQuantity - receivedQuantity, 0),
+        unit: getCell(row, headerMap, ['Unit']) || process.env.DEFAULT_SPONSORSHIP_UNIT || '',
+        estimatedValue: numberFrom(getCell(row, headerMap, ['Estimated Value'])),
+        actualValue: numberFrom(getCell(row, headerMap, ['Actual Value'])),
+        confirmedAmount,
+        receivedAmount,
+        balanceAmount: numberFrom(getCell(row, headerMap, ['Balance Amount'])) || Math.max(confirmedAmount - receivedAmount, 0),
         amount,
         status: getCell(row, headerMap, ['Status']) || 'Pending',
         remarks: getCell(row, headerMap, ['Remarks']),
+        introducedBy: getCell(row, headerMap, ['Introduced By', 'Trustee Reference', 'Introduced By / Trustee Reference']),
+        followUpBy: getCell(row, headerMap, ['Follow-up By', 'Follow Up By']),
+        collectedBy: getCell(row, headerMap, ['Collected By']),
+        invitationHandedOverBy: getCell(row, headerMap, ['Invitation Handed Over By']),
+        paymentMode: getCell(row, headerMap, ['Payment Mode']),
+        bankOrCash: getCell(row, headerMap, ['Bank / Cash', 'Bank Cash']),
+        transactionReference: getCell(row, headerMap, ['Transaction Reference / UTR / Cheque No', 'Transaction Reference', 'UTR', 'Cheque No']),
+        paymentDate: getCell(row, headerMap, ['Payment Date']),
+        paymentProofLink: getCell(row, headerMap, ['Payment Proof Link']),
         appealSent,
         appealSentDate,
         confirmationSent: boolFrom(getCell(row, headerMap, ['Confirmation Sent'])),
@@ -347,6 +428,49 @@ function normalizeDonorRows(values) {
       };
     })
     .filter((row) => row.sponsorName || row.contactNo);
+}
+
+function normalizeRequirementRows(values) {
+  if (!values || values.length < 2) return [];
+  const headers = values[0];
+  const headerMap = headers.reduce((map, header, index) => {
+    map[normalizeKey(header)] = index;
+    return map;
+  }, {});
+
+  return values
+    .slice(1)
+    .map((row, index) => {
+      const category = getCell(row, headerMap, ['Category']);
+      const requiredQuantity = numberFrom(getCell(row, headerMap, ['Required Quantity']));
+      const estimatedUnitCost = numberFrom(getCell(row, headerMap, ['Estimated Unit Cost']));
+      const estimatedTotalCost = numberFrom(getCell(row, headerMap, ['Estimated Total Cost'])) || requiredQuantity * estimatedUnitCost;
+      const confirmedQuantity = numberFrom(getCell(row, headerMap, ['Confirmed Quantity']));
+      const receivedQuantity = numberFrom(getCell(row, headerMap, ['Received Quantity']));
+      const confirmedAmount = numberFrom(getCell(row, headerMap, ['Confirmed Amount']));
+      const receivedAmount = numberFrom(getCell(row, headerMap, ['Received Amount']));
+      return {
+        id: `requirement:${index + 2}`,
+        rowNumber: index + 2,
+        eventYear: getCell(row, headerMap, ['Event Year']),
+        eventName: getCell(row, headerMap, ['Event Name']),
+        category,
+        canonicalCategory: canonicalCategory(category),
+        requiredQuantity,
+        unit: getCell(row, headerMap, ['Unit']),
+        estimatedUnitCost,
+        estimatedTotalCost,
+        confirmedQuantity,
+        receivedQuantity,
+        remainingQuantity: numberFrom(getCell(row, headerMap, ['Remaining Quantity'])) || Math.max(requiredQuantity - receivedQuantity, 0),
+        confirmedAmount,
+        receivedAmount,
+        remainingAmount: numberFrom(getCell(row, headerMap, ['Remaining Amount'])) || Math.max(estimatedTotalCost - receivedAmount, 0),
+        status: getCell(row, headerMap, ['Status']) || 'Pending',
+        remarks: getCell(row, headerMap, ['Remarks']),
+      };
+    })
+    .filter((row) => row.eventYear || row.eventName || row.category);
 }
 
 function requireConfig() {
@@ -475,6 +599,45 @@ async function loadMangalyaDonors() {
   return donorCache;
 }
 
+async function loadSponsorshipRequirements() {
+  if (!hasDonorConfig()) {
+    requirementCache = {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'not-configured',
+      writeEnabled: false,
+      notice: 'Sponsorship requirements sheet is not configured.',
+    };
+    return requirementCache;
+  }
+
+  try {
+    const sheets = createSheetsClient({ requireRegistrationSheets: false });
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
+      range: REQUIREMENT_RANGE,
+    });
+
+    requirementCache = {
+      rows: normalizeRequirementRows(response.data.values),
+      refreshedAt: new Date().toISOString(),
+      source: 'google-api',
+      writeEnabled: true,
+      notice: null,
+    };
+  } catch (error) {
+    requirementCache = {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'google-api',
+      writeEnabled: true,
+      notice: 'Sponsorship Requirements tab is not available yet.',
+    };
+  }
+
+  return requirementCache;
+}
+
 function sourceForEvent(eventType) {
   return SHEETS.find((sheet) => sheet.id === eventType);
 }
@@ -555,7 +718,18 @@ function normalizeDonorPatchValue(field, value) {
     field === 'paymentMessageSent' ||
     field === 'postEventSent'
   ) return value ? 'Yes' : 'No';
-  if (field === 'sponsored2025' || field === 'sponsored2026') return String(numberFrom(value));
+  if (
+    field === 'sponsored2025' ||
+    field === 'sponsored2026' ||
+    field === 'confirmedQuantity' ||
+    field === 'receivedQuantity' ||
+    field === 'pendingQuantity' ||
+    field === 'estimatedValue' ||
+    field === 'actualValue' ||
+    field === 'confirmedAmount' ||
+    field === 'receivedAmount' ||
+    field === 'balanceAmount'
+  ) return String(numberFrom(value));
   return String(value ?? '');
 }
 
@@ -735,6 +909,56 @@ app.post(['/api/mangalya-sponsorship/refresh', '/api/mangalya-donors/refresh'], 
       refreshedAt: donorCache.refreshedAt,
       writeEnabled: false,
       notice: donorCache.notice,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.get(['/api/sponsorship-requirements', '/api/sponsorship/requirements'], async (req, res) => {
+  try {
+    if (!requirementCache.refreshedAt) await loadSponsorshipRequirements();
+    res.json({
+      ok: true,
+      rows: requirementCache.rows,
+      refreshedAt: requirementCache.refreshedAt,
+      source: requirementCache.source,
+      writeEnabled: requirementCache.writeEnabled,
+      notice: requirementCache.notice,
+      mode: requirementCache.writeEnabled ? 'read-write' : 'read-only',
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: requirementCache.rows,
+      refreshedAt: requirementCache.refreshedAt,
+      writeEnabled: false,
+      notice: requirementCache.notice,
+      mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.post(['/api/sponsorship-requirements/refresh', '/api/sponsorship/requirements/refresh'], async (req, res) => {
+  try {
+    const next = await loadSponsorshipRequirements();
+    res.json({
+      ok: true,
+      rows: next.rows,
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      notice: next.notice,
+      mode: next.writeEnabled ? 'read-write' : 'read-only',
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: requirementCache.rows,
+      refreshedAt: requirementCache.refreshedAt,
+      writeEnabled: false,
+      notice: requirementCache.notice,
       mode: 'read-only',
       error: error.message,
     });

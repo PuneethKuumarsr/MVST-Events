@@ -521,8 +521,32 @@ function deliveryDateStamp() {
   });
 }
 
-function donorBottuWord(quantitySponsored) {
-  return Number(quantitySponsored) === 1 ? 'Bottu' : 'Bottus';
+function sponsorCategory(sponsor) {
+  return sponsor.category || sponsor.canonicalCategory || 'Sponsorship';
+}
+
+function sponsorUnit(sponsor) {
+  return sponsor.unit || sponsorCategory(sponsor);
+}
+
+function sponsorQuantity(sponsor) {
+  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) || 1;
+}
+
+function sponsorPreviousQuantity(sponsor) {
+  return Number(sponsor.sponsored2025 || sponsor.quantitySponsored || 0) || 1;
+}
+
+function sponsorEventName(sponsor) {
+  return sponsor.eventName || 'the upcoming trust event';
+}
+
+function sponsorAmount(sponsor) {
+  return Number(sponsor.confirmedAmount || sponsor.amount || sponsor.actualValue || 0);
+}
+
+function sponsorQuantityText(quantity, unit) {
+  return `${quantity} ${unit}${Number(quantity) === 1 || String(unit).endsWith('s') ? '' : 's'}`;
 }
 
 const DONOR_JOURNEY_STEPS = [
@@ -583,25 +607,24 @@ function donorJourneySentUpdates(messageType) {
 }
 
 function buildMangalyaDonorAppealMessage(donor) {
-  const quantitySponsored = Number(donor.sponsored2025 || donor.quantitySponsored || 0) || 1;
-  const bottuWord = donorBottuWord(quantitySponsored);
+  const previousQuantity = sponsorPreviousQuantity(donor);
+  const unit = sponsorUnit(donor);
+  const category = sponsorCategory(donor);
+  const eventName = sponsorEventName(donor);
+  const amount = sponsorAmount(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 We hope you and your family are doing well by the grace of Vasavi Matha.
 
-Last year, you generously sponsored ${quantitySponsored} Gold Mangalya ${bottuWord} for our Samoohika Shashtipoorthi Shanthi. We sincerely thank you for your valuable support.
+Previously, you generously sponsored ${sponsorQuantityText(previousQuantity, unit)} for our trust activity. We sincerely thank you for your valuable support.
 
-This year, Mane Manege Vasavi Seva Trust (R) is once again organizing:
+This time, Mane Manege Vasavi Seva Trust (R) is organizing:
 
-4th Samoohika Shashtipoorthi Shanthi
-2nd Samoohika Bhimaratha Shanthi
+${eventName}
 
-Date: Sunday, 02-Aug-2026
-Venue: Shubh Convention, JP Nagar, Bengaluru
+${amount ? `${category} Sponsorship: ${formatCurrency(amount)}` : `${category} Sponsorship`}
 
-Mangalya Bottu Sponsorship: ₹15,000 per Bottu
-
-With folded hands, we request your continued support by sponsoring Gold Mangalya Bottu(s) once again this year.
+With folded hands, we request your continued support once again.
 
 Your generosity will help us continue this noble tradition and bless many deserving senior couples.
 
@@ -613,15 +636,16 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorThankYouMessage(donor) {
-  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
-  const bottuWord = donorBottuWord(quantitySponsored);
+  const quantitySponsored = sponsorQuantity(donor);
+  const unit = sponsorUnit(donor);
+  const eventName = sponsorEventName(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-Thank you so much for your kind and generous confirmation to sponsor ${quantitySponsored} Gold Mangalya ${bottuWord} for our 4th Samoohika Shashtipoorthi Shanthi.
+Thank you so much for your kind and generous confirmation to sponsor ${sponsorQuantityText(quantitySponsored, unit)} for ${eventName}.
 
 Your valuable support means a lot to us and will help us continue this noble seva of blessing senior couples through this sacred ceremony.
 
-💛 Confirmed Sponsorship: ${quantitySponsored} Gold Mangalya ${bottuWord}
+💛 Confirmed Sponsorship: ${sponsorQuantityText(quantitySponsored, unit)}
 
 Our Trust representative will get in touch with you shortly regarding the contribution.
 
@@ -633,15 +657,16 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorPaymentReceivedMessage(donor) {
-  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
-  const bottuWord = donorBottuWord(quantitySponsored);
-  const amount = quantitySponsored * 15000;
+  const quantitySponsored = sponsorQuantity(donor);
+  const unit = sponsorUnit(donor);
+  const eventName = sponsorEventName(donor);
+  const amount = sponsorAmount(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-We are pleased to confirm receipt of your generous contribution towards ${quantitySponsored} Gold Mangalya ${bottuWord} for our 4th Samoohika Shashtipoorthi Shanthi.
+We are pleased to confirm receipt of your generous contribution towards ${sponsorQuantityText(quantitySponsored, unit)} for ${eventName}.
 
-💛 Sponsored: ${quantitySponsored} Gold Mangalya ${bottuWord}
-💰 Contribution Received: ${formatCurrency(amount)}
+💛 Sponsored: ${sponsorQuantityText(quantitySponsored, unit)}
+💰 Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
 
 Your support is deeply appreciated and will help us conduct this sacred event successfully.
 
@@ -661,13 +686,14 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorPostEventThankYouMessage(donor) {
-  const quantitySponsored = Number(donor.sponsored2026 || 0) || 1;
-  const bottuWord = donorBottuWord(quantitySponsored);
+  const quantitySponsored = sponsorQuantity(donor);
+  const unit = sponsorUnit(donor);
+  const eventName = sponsorEventName(donor);
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
-On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${quantitySponsored} Gold Mangalya ${bottuWord}.
+On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${sponsorQuantityText(quantitySponsored, unit)}.
 
-With the blessings of Vasavi Matha and the generous support of donors like you, the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bhimaratha Shanthi were conducted successfully.
+With the blessings of Vasavi Matha and the generous support of donors like you, ${eventName} was conducted successfully.
 
 Your contribution played a valuable role in making this sacred event a grand success and in blessing many senior couples.
 
@@ -907,6 +933,56 @@ function useMangalyaDonors() {
       applyPayload(payload);
       return payload;
     },
+  };
+}
+
+function useSponsorshipRequirements() {
+  const [requirements, setRequirements] = useState([]);
+  const [status, setStatus] = useState('Loading sponsorship requirements...');
+  const [error, setError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  function applyPayload(payload) {
+    const refreshedAt = payload.refreshedAt || new Date().toISOString();
+    setRequirements(payload.rows || []);
+    setStatus(`Requirement Master. Last refreshed: ${formatRefreshTime(refreshedAt)}`);
+    setError(payload.notice || '');
+  }
+
+  async function load(forceRefresh = false, aliveRef = { current: true }) {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/sponsorship-requirements' + (forceRefresh ? '/refresh' : ''), {
+        method: forceRefresh ? 'POST' : 'GET',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `Sponsorship requirements API returned ${response.status}`);
+      if (!aliveRef.current) return;
+      applyPayload(payload);
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setError(loadError.message || 'Unable to load sponsorship requirements');
+    } finally {
+      if (aliveRef.current) setIsRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    const aliveRef = { current: true };
+    load(false, aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  return {
+    requirements,
+    status,
+    error,
+    isRefreshing,
+    refresh: () => load(true),
   };
 }
 
@@ -1257,15 +1333,11 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
 }
 
 function isConfirmedSponsor(sponsor) {
-  return Number(sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled';
+  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled';
 }
 
 function isReceivedSponsor(sponsor) {
   return String(sponsor.status || '').toLowerCase() === 'received';
-}
-
-function sponsorAmount(sponsor) {
-  return Number(sponsor.sponsored2026 || 0) * 15000;
 }
 
 function sponsorDisplayName(sponsor) {
@@ -1349,7 +1421,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     <article className="donor-card sponsorship-card">
       <div className="participant-top">
         <div>
-          <p className="event-label">Mangalya Sponsorship</p>
+          <p className="event-label">Sponsorship Management</p>
           <h3>{sponsorDisplayName(sponsor)}</h3>
           <p className="muted">{sponsor.contactNo || 'Mobile number missing'} - {validation.issue}</p>
         </div>
@@ -1359,8 +1431,8 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       </div>
 
       <div className="money-grid sponsorship-money-grid">
-        <span><small>Sponsored 2025</small><b>{sponsor.sponsored2025 || 0}</b></span>
-        <span><small>Sponsored 2026</small><b>{sponsor.sponsored2026 || 0}</b></span>
+        <span><small>Previous Qty</small><b>{sponsor.sponsored2025 || 0}</b></span>
+        <span><small>Confirmed Qty</small><b>{sponsor.confirmedQuantity || sponsor.sponsored2026 || 0}</b></span>
         <span><small>Amount</small><b>{formatCurrency(sponsor.amount || sponsorAmount(sponsor))}</b></span>
       </div>
 
@@ -1380,8 +1452,8 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <div className="admin-panel sponsorship-edit-panel">
           <label><span>Sponsor Name</span><input value={form.sponsorName} onChange={(event) => setForm({ ...form, sponsorName: event.target.value })} /></label>
           <label><span>Contact Number</span><input value={form.contactNo} onChange={(event) => setForm({ ...form, contactNo: event.target.value })} /></label>
-          <label><span>Sponsored 2025</span><input min="0" type="number" value={form.sponsored2025} onChange={(event) => setForm({ ...form, sponsored2025: event.target.value })} /></label>
-          <label><span>Sponsored 2026</span><input min="0" type="number" value={form.sponsored2026} onChange={(event) => setForm({ ...form, sponsored2026: event.target.value })} /></label>
+          <label><span>Previous Qty</span><input min="0" type="number" value={form.sponsored2025} onChange={(event) => setForm({ ...form, sponsored2025: event.target.value })} /></label>
+          <label><span>Confirmed Qty</span><input min="0" type="number" value={form.sponsored2026} onChange={(event) => setForm({ ...form, sponsored2026: event.target.value })} /></label>
           <label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{['Pending', 'Confirmed', 'Paid', 'Received', 'Cancelled'].map((statusValue) => <option key={statusValue}>{statusValue}</option>)}</select></label>
           <label className="remarks-field"><span>Remarks</span><textarea rows="2" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} /></label>
           <button className="save-button" type="button" onClick={() => saveSponsor(form)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save'}</button>
@@ -1447,8 +1519,9 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   );
 }
 
-function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
+function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 0 }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const requirements = requirementState?.requirements || [];
   const [bulkQueue, setBulkQueue] = useState([]);
   const [bulkStarted, setBulkStarted] = useState(false);
   const [bulkIndex, setBulkIndex] = useState(0);
@@ -1462,10 +1535,11 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
   const summary = useMemo(() => {
     const confirmedSponsors = donors.filter(isConfirmedSponsor);
     const receivedSponsors = donors.filter(isReceivedSponsor);
-    const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2026 || 0), 0);
-    const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2026 || 0), 0);
-    const confirmedAmount = confirmedBottus * 15000;
-    const receivedAmount = receivedBottus * 15000;
+    const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
+    const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
+    const confirmedAmount = confirmedSponsors.reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0);
+    const receivedAmount = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedAmount || sponsorAmount(sponsor) || 0), 0);
+    const requirementQuantity = requirements.reduce((sum, row) => sum + Number(row.requiredQuantity || 0), 0);
     return {
       totalSponsors: donors.length,
       sponsorsConfirmed: confirmedSponsors.length,
@@ -1473,17 +1547,62 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
       newSponsors: donors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0).length,
       sponsored2025: donors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2025 || 0), 0),
       confirmed2026: confirmedBottus,
-      remainingRequirement: Math.max(Number(requiredBottus || 0) - confirmedBottus, 0),
-      expectedCollection: Number(requiredBottus || 0) * 15000,
+      remainingRequirement: Math.max(Number(requirementQuantity || requiredBottus || 0) - confirmedBottus, 0),
+      expectedCollection: donors.reduce((sum, sponsor) => sum + Number(sponsor.estimatedValue || 0), 0),
       confirmedCollection: confirmedAmount,
       receivedCollection: receivedAmount,
       balanceCollection: Math.max(confirmedAmount - receivedAmount, 0),
       averageBottus: confirmedSponsors.length ? confirmedBottus / confirmedSponsors.length : 0,
       topSponsors: [...confirmedSponsors]
-        .sort((a, b) => Number(b.sponsored2026 || 0) - Number(a.sponsored2026 || 0))
+        .sort((a, b) => Number(b.confirmedQuantity || b.sponsored2026 || 0) - Number(a.confirmedQuantity || a.sponsored2026 || 0))
         .slice(0, 4),
     };
-  }, [donors, requiredBottus]);
+  }, [donors, requiredBottus, requirements]);
+
+  const requirementTotals = useMemo(() => requirements.reduce((totals, row) => ({
+    requiredQuantity: totals.requiredQuantity + Number(row.requiredQuantity || 0),
+    confirmedQuantity: totals.confirmedQuantity + Number(row.confirmedQuantity || 0),
+    receivedQuantity: totals.receivedQuantity + Number(row.receivedQuantity || 0),
+    remainingQuantity: totals.remainingQuantity + Number(row.remainingQuantity || 0),
+    estimatedTotalCost: totals.estimatedTotalCost + Number(row.estimatedTotalCost || 0),
+    confirmedAmount: totals.confirmedAmount + Number(row.confirmedAmount || 0),
+    receivedAmount: totals.receivedAmount + Number(row.receivedAmount || 0),
+    remainingAmount: totals.remainingAmount + Number(row.remainingAmount || 0),
+  }), {
+    requiredQuantity: 0,
+    confirmedQuantity: 0,
+    receivedQuantity: 0,
+    remainingQuantity: 0,
+    estimatedTotalCost: 0,
+    confirmedAmount: 0,
+    receivedAmount: 0,
+    remainingAmount: 0,
+  }), [requirements]);
+
+  const financialTotals = useMemo(() => donors.reduce((totals, sponsor) => {
+    const received = Number(sponsor.receivedAmount || 0);
+    const estimated = Number(sponsor.estimatedValue || 0);
+    const nature = String(sponsor.contributionNature || '').toLowerCase();
+    const mode = String(sponsor.paymentMode || sponsor.bankOrCash || '').toLowerCase();
+    if (nature.includes('material') || nature.includes('kind')) totals.inKindEstimatedValue += estimated;
+    if (nature.includes('service')) totals.serviceEstimatedValue += estimated;
+    if (mode.includes('cash')) totals.cashReceived += received;
+    else if (mode.includes('upi')) totals.upiReceived += received;
+    else if (mode.includes('cheque') || mode.includes('check')) totals.chequeReceived += received;
+    else if (mode.includes('bank')) totals.bankReceived += received;
+    totals.totalMonetaryReceived += received;
+    totals.totalSponsorshipValue += received + (nature.includes('material') || nature.includes('service') ? estimated : 0);
+    return totals;
+  }, {
+    cashReceived: 0,
+    bankReceived: 0,
+    upiReceived: 0,
+    chequeReceived: 0,
+    inKindEstimatedValue: 0,
+    serviceEstimatedValue: 0,
+    totalMonetaryReceived: 0,
+    totalSponsorshipValue: 0,
+  }), [donors]);
 
   const currentBulkDonor = bulkQueue[bulkIndex];
   const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
@@ -1494,7 +1613,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
         if (sponsorFilter === 'missing-mobile') return !String(sponsor.contactNo || '').trim();
         if (sponsorFilter === 'whatsapp-pending') return !donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'whatsapp-sent') return donorJourneySent(sponsor, 'appeal');
-        if (sponsorFilter === 'confirmed-2026') return isConfirmedSponsor(sponsor);
+        if (sponsorFilter === 'confirmed-quantity') return isConfirmedSponsor(sponsor);
         if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
         return true;
       })
@@ -1569,8 +1688,8 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
     <section className="management-section mangalya-donors-section">
       <div className="section-heading">
         <div>
-          <p>Mangalya Sponsorship</p>
-          <h2>Gold Mangalya Bottu sponsorship tracking</h2>
+          <p>Sponsorship Management</p>
+          <h2>Requirement and donor contribution tracking</h2>
         </div>
         <button className="refresh-button compact" type="button" onClick={refresh} disabled={isRefreshing}>
           <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
@@ -1584,21 +1703,85 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
       </div>
       {error ? <div className="donor-warning">{error}</div> : null}
 
+      <div className="requirement-progress-panel">
+        <div className="requirement-panel-head">
+          <div>
+            <p>Requirement Progress Dashboard</p>
+            <h3>Annual sponsorship requirements from master data</h3>
+            {requirementState?.status ? <span>{requirementState.status}</span> : null}
+          </div>
+          <button className="refresh-button compact" type="button" onClick={requirementState?.refresh} disabled={requirementState?.isRefreshing}>
+            <RefreshCw size={16} className={requirementState?.isRefreshing ? 'spin' : ''} />
+            {requirementState?.isRefreshing ? 'Refreshing' : 'Refresh Requirements'}
+          </button>
+        </div>
+        {requirementState?.error ? <div className="donor-warning">{requirementState.error}</div> : null}
+        {requirements.length ? (
+          <>
+            <div className="requirement-total-grid">
+              <span><small>Required</small><b>{requirementTotals.requiredQuantity}</b></span>
+              <span><small>Confirmed</small><b>{requirementTotals.confirmedQuantity}</b></span>
+              <span><small>Received</small><b>{requirementTotals.receivedQuantity}</b></span>
+              <span><small>Remaining</small><b>{requirementTotals.remainingQuantity}</b></span>
+              <span><small>Estimated Cost</small><b>{formatCurrency(requirementTotals.estimatedTotalCost)}</b></span>
+              <span><small>Confirmed Amount</small><b>{formatCurrency(requirementTotals.confirmedAmount)}</b></span>
+              <span><small>Received Amount</small><b>{formatCurrency(requirementTotals.receivedAmount)}</b></span>
+              <span><small>Balance</small><b>{formatCurrency(requirementTotals.remainingAmount)}</b></span>
+            </div>
+            <div className="requirement-table">
+              <div>
+                <strong>Category</strong><strong>Required</strong><strong>Confirmed</strong><strong>Received</strong><strong>Remaining</strong><strong>Received Amount</strong>
+              </div>
+              {requirements.map((row) => (
+                <div key={row.id}>
+                  <span>{row.canonicalCategory || row.category}</span>
+                  <span>{row.requiredQuantity} {row.unit}</span>
+                  <span>{row.confirmedQuantity}</span>
+                  <span>{row.receivedQuantity}</span>
+                  <span>{row.remainingQuantity}</span>
+                  <span>{formatCurrency(row.receivedAmount)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="empty-state compact-empty">
+            <Gift size={24} />
+            <p>Add a private Google Sheet tab named Sponsorship Requirements to enable annual category progress.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="financial-report-heading">
+        <p>Financial Report</p>
+        <h3>Collections and estimated non-cash sponsorship value</h3>
+      </div>
+      <div className="sponsorship-stat-panel financial-report-panel">
+        <div><span>Cash Received</span><strong>{formatCurrency(financialTotals.cashReceived)}</strong></div>
+        <div><span>Bank Received</span><strong>{formatCurrency(financialTotals.bankReceived)}</strong></div>
+        <div><span>UPI Received</span><strong>{formatCurrency(financialTotals.upiReceived)}</strong></div>
+        <div><span>Cheque Received</span><strong>{formatCurrency(financialTotals.chequeReceived)}</strong></div>
+        <div><span>In-Kind Estimated Value</span><strong>{formatCurrency(financialTotals.inKindEstimatedValue)}</strong></div>
+        <div><span>Service Estimated Value</span><strong>{formatCurrency(financialTotals.serviceEstimatedValue)}</strong></div>
+        <div><span>Total Monetary Received</span><strong>{formatCurrency(financialTotals.totalMonetaryReceived)}</strong></div>
+        <div><span>Total Sponsorship Value</span><strong>{formatCurrency(financialTotals.totalSponsorshipValue)}</strong></div>
+      </div>
+
       <div className="sponsorship-summary-block">
         <div>
           <p className="event-label">Sponsors</p>
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setSponsorFilter('all')} />
-            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-2026')} />
+            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setSponsorFilter('pending')} />
             <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} />
           </div>
         </div>
         <div>
-          <p className="event-label">Bottus</p>
+          <p className="event-label">Requirement Quantity</p>
           <div className="stats-grid donor-stats-grid">
-            <StatCard icon={Gift} label="Sponsored 2025" value={summary.sponsored2025} />
-            <StatCard icon={Gift} label="Confirmed 2026" value={summary.confirmed2026} tone="success" onClick={() => setSponsorFilter('confirmed-2026')} />
+            <StatCard icon={Gift} label="Previous Qty" value={summary.sponsored2025} />
+            <StatCard icon={Gift} label="Confirmed Qty" value={summary.confirmed2026} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
             <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" />
           </div>
         </div>
@@ -1612,10 +1795,10 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           </div>
         </div>
         <div className="sponsorship-stat-panel">
-          <div><span>Total Bottus Confirmed</span><strong>{summary.confirmed2026}</strong></div>
+          <div><span>Total Quantity Confirmed</span><strong>{summary.confirmed2026}</strong></div>
           <div><span>Total Amount Confirmed</span><strong>{formatCurrency(summary.confirmedCollection)}</strong></div>
-          <div><span>Average Bottus per Sponsor</span><strong>{summary.averageBottus.toFixed(1)}</strong></div>
-          <div className="top-sponsors"><span>Top Sponsors</span><strong>{summary.topSponsors.map((sponsor) => `${sponsorDisplayName(sponsor)} (${sponsor.sponsored2026})`).join(', ') || 'None'}</strong></div>
+          <div><span>Average Quantity per Sponsor</span><strong>{summary.averageBottus.toFixed(1)}</strong></div>
+          <div className="top-sponsors"><span>Top Sponsors</span><strong>{summary.topSponsors.map((sponsor) => `${sponsorDisplayName(sponsor)} (${sponsor.confirmedQuantity || sponsor.sponsored2026 || 0})`).join(', ') || 'None'}</strong></div>
         </div>
       </div>
 
@@ -1628,7 +1811,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <option value="all">All</option>
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
-          <option value="confirmed-2026">Confirmed 2026</option>
+          <option value="confirmed-quantity">Confirmed Quantity</option>
           <option value="paid">Paid</option>
           <option value="received">Received</option>
           <option value="cancelled">Cancelled</option>
@@ -1645,15 +1828,15 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
         </SelectField>
       </div>
 
-      {sponsorFilter === 'confirmed-2026' ? (
+      {sponsorFilter === 'confirmed-quantity' ? (
         <div className="confirmed-sponsors-panel">
           <div>
-            <p>Confirmed 2026 Sponsors</p>
-            <strong>{visibleDonors.length} sponsors / {summary.confirmed2026} bottus</strong>
+            <p>Confirmed Sponsors</p>
+            <strong>{visibleDonors.length} sponsors / {summary.confirmed2026} confirmed quantity</strong>
           </div>
           <div className="confirmed-sponsors-list">
             {visibleDonors.map((sponsor) => (
-              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.sponsored2026 || 0} bottu(s)</span>
+              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'}</span>
             ))}
           </div>
         </div>
@@ -1670,7 +1853,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
           <div className="bulk-preview">
             <div className="bulk-preview-head">
               <div>
-                <p>Mangalya Sponsorship WhatsApp Queue</p>
+                <p>Sponsorship WhatsApp Queue</p>
                 <h3>Total count: {bulkQueue.length}</h3>
               </div>
               <button type="button" onClick={clearBulkQueue}>Close</button>
@@ -1682,7 +1865,7 @@ function MangalyaDonorsSection({ donorState, requiredBottus = 0 }) {
                     <button className={index === bulkIndex ? 'active' : ''} key={donor.id} onClick={() => { setBulkIndex(index); setBulkOpened(false); setBulkMessage(''); }} type="button">
                       <strong>{sponsorDisplayName(donor)}</strong>
                       <span>{donor.contactNo}</span>
-                      <span>{donor.sponsored2025} {donorBottuWord(donor.sponsored2025)}</span>
+                      <span>{donor.sponsored2025} previous qty</span>
                       <span>{donor.status}</span>
                     </button>
                   ))}
@@ -1734,6 +1917,7 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
+  const requirementState = useSponsorshipRequirements();
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
@@ -1976,7 +2160,7 @@ function App() {
           </button>
           <button className={activeView === 'mangalya-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('mangalya-donors')}>
             <Gift size={18} />
-            <span>Mangalya Sponsorship</span>
+            <span>Sponsorship Management</span>
           </button>
         </aside>
 
@@ -2111,7 +2295,7 @@ function App() {
             </>
           ) : null}
 
-          {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requiredBottus={summary.shashtipoorthi} /> : null}
+          {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
           {activeView === 'shashtipoorthi' || activeView === 'bhimaratha' ? (
             <section className="management-section" id="participant-management-dashboard">

@@ -83,7 +83,7 @@ assert.ok(frontend.includes('onClick={goToPaymentPending}'), 'Pending summary ca
 assert.ok(frontend.includes('app-sidebar'), 'Dashboard must include sidebar navigation');
 assert.ok(frontend.includes('Shashtipoorthi Shanthi'), 'Sidebar must include Shashtipoorthi Shanthi view');
 assert.ok(frontend.includes('Bhimaratha Shanthi'), 'Sidebar must include Bhimaratha Shanthi view');
-assert.ok(frontend.includes('Mangalya Sponsorship'), 'Sidebar must include Mangalya Sponsorship view');
+assert.ok(frontend.includes('Sponsorship Management'), 'Sidebar must include Sponsorship Management view');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
@@ -99,7 +99,9 @@ assert.ok(backend.includes("seatNo: ['Seat No']"), 'Backend must allow Seat No w
 assert.ok(backend.includes("receiptNo: ['Receipt No']"), 'Backend must allow Receipt No write-back');
 assert.ok(backend.includes("receiptGenerated: ['Receipt Generated']"), 'Backend must allow Receipt Generated write-back');
 assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Backend range must include receipt columns beyond Z');
-assert.ok(frontend.includes('Gold Mangalya Bottu sponsorship tracking'), 'Dashboard must show Mangalya Sponsorship module');
+assert.ok(frontend.includes('Requirement and donor contribution tracking'), 'Dashboard must show Sponsorship Management module');
+assert.ok(frontend.includes('Requirement Progress Dashboard'), 'Dashboard must show annual requirement progress');
+assert.ok(frontend.includes('Financial Report'), 'Dashboard must show sponsorship financial report');
 assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya sponsorship WhatsApp appeal dynamically');
 assert.ok(frontend.includes('buildMangalyaDonorThankYouMessage'), 'Frontend must build Mangalya sponsorship thank-you WhatsApp message');
 assert.ok(frontend.includes('buildMangalyaDonorPaymentReceivedMessage'), 'Frontend must build Mangalya sponsorship payment received WhatsApp message');
@@ -107,10 +109,10 @@ assert.ok(frontend.includes('buildMangalyaDonorPostEventThankYouMessage'), 'Fron
 assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must create Mangalya sponsorship WhatsApp URLs');
 assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya sponsorship WhatsApp URL must use wa.me and encodeURIComponent');
 assert.ok(frontend.includes('Total Sponsors'), 'Sponsorship dashboard must show sponsor summary cards');
-assert.ok(frontend.includes('Confirmed 2026'), 'Sponsorship dashboard must show confirmed 2026 bottus');
-assert.ok(frontend.includes("Number(sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled'"), 'Sponsored 2026 must count as confirmed unless cancelled');
-assert.ok(frontend.includes("setSponsorFilter('confirmed-2026')"), 'Confirmed 2026 card must open the confirmed sponsor breakdown');
-assert.ok(frontend.includes('Confirmed 2026 Sponsors'), 'Confirmed 2026 filter must show sponsor names and bottu counts');
+assert.ok(frontend.includes('Confirmed Qty'), 'Sponsorship dashboard must show confirmed quantity');
+assert.ok(frontend.includes("Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled'"), 'Confirmed quantity must count as confirmed unless cancelled');
+assert.ok(frontend.includes("setSponsorFilter('confirmed-quantity')"), 'Confirmed quantity card must open the confirmed sponsor breakdown');
+assert.ok(frontend.includes('Confirmed Sponsors'), 'Confirmed quantity filter must show sponsor names and counts');
 assert.ok(frontend.includes('Remaining Requirement'), 'Sponsorship dashboard must show remaining bottu requirement');
 assert.ok(frontend.includes('Expected Collection'), 'Sponsorship dashboard must show collection summary');
 assert.ok(frontend.includes('Top Sponsors'), 'Sponsorship dashboard must show top sponsors');
@@ -125,7 +127,11 @@ assert.ok(frontend.includes('4. Post-Event Thanks'), 'Sponsor cards must support
 assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Sponsorship dashboard must include a preview-all WhatsApp queue');
 assert.ok(frontend.includes('Current Message Preview'), 'Sponsorship dashboard must preview the selected bulk WhatsApp message');
 assert.ok(frontend.includes('Next WhatsApp'), 'Sponsorship dashboard must open sponsor WhatsApp messages one by one');
-assert.ok(backend.includes("sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || \"'Sponsorship 2026'!A:R\")"), 'Backend must use private Mangalya sponsorship sheet range through journey columns');
+assert.ok(backend.includes('SPONSORSHIP_REQUIREMENTS_RANGE'), 'Backend must support Sponsorship Requirements master range');
+assert.ok(backend.includes('normalizeRequirementRows'), 'Backend must normalize Sponsorship Requirements rows');
+assert.ok(backend.includes('canonicalCategory'), 'Backend must normalize canonical category aliases');
+assert.ok(backend.includes("process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE"), 'Backend must support configurable sponsorship contribution ranges');
+assert.ok(backend.includes("A:AZ"), 'Backend must leave room for future sponsorship contribution fields');
 assert.ok(backend.includes("confirmationSent: ['Confirmation Sent']"), 'Backend must support confirmation sent write-back');
 assert.ok(backend.includes("paymentMessageSent: ['Payment Message Sent']"), 'Backend must support payment message sent write-back');
 assert.ok(backend.includes("postEventSent: ['Post Event Sent']"), 'Backend must support post-event sent write-back');

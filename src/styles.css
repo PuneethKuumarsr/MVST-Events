@@ -1310,6 +1310,119 @@ main {
   margin-bottom: 8px;
 }
 
+.requirement-progress-panel {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.requirement-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.requirement-panel-head p {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.requirement-panel-head h3 {
+  margin: 0;
+  color: var(--maroon-deep);
+  font-size: 1rem;
+}
+
+.requirement-panel-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.requirement-total-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.requirement-total-grid span {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  background: rgba(240, 220, 168, 0.25);
+  padding: 10px;
+}
+
+.requirement-total-grid small,
+.requirement-table strong {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.requirement-total-grid b {
+  color: var(--maroon-deep);
+}
+
+.requirement-table {
+  display: grid;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.requirement-table div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(5, minmax(105px, 0.8fr));
+  gap: 8px;
+  min-width: 780px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(120, 31, 42, 0.1);
+}
+
+.requirement-table div:last-child {
+  border-bottom: 0;
+}
+
+.requirement-table span {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.financial-report-panel {
+  margin-bottom: 14px;
+}
+
+.financial-report-heading {
+  margin: 14px 0 8px;
+}
+
+.financial-report-heading p {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.financial-report-heading h3 {
+  margin: 0;
+  color: var(--maroon-deep);
+  font-size: 1rem;
+}
+
 .sponsorship-stat-panel {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1595,6 +1708,10 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .requirement-total-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sponsorship-stat-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1606,9 +1723,14 @@ main {
 
 @media (max-width: 620px) {
   .sponsorship-stat-panel,
+  .requirement-total-grid,
   .sponsorship-controls,
   .sponsorship-money-grid {
     grid-template-columns: 1fr;
+  }
+
+  .requirement-panel-head {
+    display: grid;
   }
 
   .sponsorship-stat-panel .top-sponsors {
