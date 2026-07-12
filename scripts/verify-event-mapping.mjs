@@ -102,6 +102,8 @@ assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Ba
 assert.ok(frontend.includes('Requirement and donor contribution tracking'), 'Dashboard must show Sponsorship Management module');
 assert.ok(frontend.includes('Requirement Progress Dashboard'), 'Dashboard must show annual requirement progress');
 assert.ok(frontend.includes('Financial Report'), 'Dashboard must show sponsorship financial report');
+assert.ok(frontend.includes('VITE_ACTIVE_EVENT_YEAR'), 'Sponsorship dashboard must be scoped by configurable active event year');
+assert.ok(frontend.includes('isActiveEventYear'), 'Sponsorship dashboard must exclude explicit non-active-year rows from current totals');
 assert.ok(frontend.includes('buildMangalyaDonorAppealMessage'), 'Frontend must build Mangalya sponsorship WhatsApp appeal dynamically');
 assert.ok(frontend.includes('buildMangalyaDonorThankYouMessage'), 'Frontend must build Mangalya sponsorship thank-you WhatsApp message');
 assert.ok(frontend.includes('buildMangalyaDonorPaymentReceivedMessage'), 'Frontend must build Mangalya sponsorship payment received WhatsApp message');

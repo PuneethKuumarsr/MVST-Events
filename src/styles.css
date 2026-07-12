@@ -1423,6 +1423,13 @@ main {
   font-size: 1rem;
 }
 
+.financial-report-heading span {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
 .sponsorship-stat-panel {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

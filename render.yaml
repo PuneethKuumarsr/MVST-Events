@@ -21,3 +21,5 @@ services:
         value: ""
       - key: DEFAULT_SPONSORSHIP_UNIT
         value: ""
+      - key: VITE_ACTIVE_EVENT_YEAR
+        value: "2026"
