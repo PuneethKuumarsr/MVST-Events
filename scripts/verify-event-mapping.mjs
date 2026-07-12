@@ -110,7 +110,7 @@ assert.ok(frontend.includes('makeMangalyaDonorWhatsAppUrl'), 'Frontend must crea
 assert.ok(frontend.includes('https://wa.me/${normalizedMobile}?text=${encodedText}'), 'Mangalya sponsorship WhatsApp URL must use wa.me and encodeURIComponent');
 assert.ok(frontend.includes('Total Sponsors'), 'Sponsorship dashboard must show sponsor summary cards');
 assert.ok(frontend.includes('Confirmed Qty'), 'Sponsorship dashboard must show confirmed quantity');
-assert.ok(frontend.includes("Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled'"), 'Confirmed quantity must count as confirmed unless cancelled');
+assert.ok(frontend.includes("['confirmed', 'paid', 'received'].includes(status)"), 'Confirmed sponsorship status must count even before quantity is finalized');
 assert.ok(frontend.includes("setSponsorFilter('confirmed-quantity')"), 'Confirmed quantity card must open the confirmed sponsor breakdown');
 assert.ok(frontend.includes('Confirmed Sponsors'), 'Confirmed quantity filter must show sponsor names and counts');
 assert.ok(frontend.includes('Remaining Requirement'), 'Sponsorship dashboard must show remaining bottu requirement');

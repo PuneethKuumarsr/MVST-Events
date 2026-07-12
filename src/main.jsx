@@ -1333,7 +1333,11 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
 }
 
 function isConfirmedSponsor(sponsor) {
-  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0 && String(sponsor.status || '').toLowerCase() !== 'cancelled';
+  const status = String(sponsor.status || '').toLowerCase();
+  return status !== 'cancelled' && (
+    ['confirmed', 'paid', 'received'].includes(status) ||
+    Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0
+  );
 }
 
 function isReceivedSponsor(sponsor) {
