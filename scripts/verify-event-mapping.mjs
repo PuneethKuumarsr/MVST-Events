@@ -71,6 +71,16 @@ assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome S
 assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
 assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');
 assert.ok(frontend.includes('Duplicate mobile number'), 'Mobile report must flag duplicate mobile numbers');
+assert.ok(frontend.includes('WhatsApp Groups'), 'Dashboard must show WhatsApp group setup section');
+assert.ok(frontend.includes('Direct group creation is not supported'), 'WhatsApp group workflow must explain direct group creation limits');
+assert.ok(frontend.includes('buildWhatsAppGroupPreview'), 'Frontend must build event-specific WhatsApp group previews');
+assert.ok(frontend.includes('row.eventType === eventType'), 'WhatsApp group preview must filter participants by event type');
+assert.ok(frontend.includes('Duplicate entries skipped'), 'WhatsApp group preview must prevent duplicate participant contacts');
+assert.ok(frontend.includes('navigator.clipboard.writeText'), 'WhatsApp group workflow must copy the prepared participant list');
+assert.ok(frontend.includes('https://web.whatsapp.com/'), 'Assisted workflow must open WhatsApp for manual group creation');
+assert.ok(frontend.includes('Mark Group Created'), 'Dashboard must require manual confirmation before logging group creation');
+assert.ok(frontend.includes('/api/whatsapp-group-config'), 'Frontend must load PST admins from backend/private sheet');
+assert.ok(frontend.includes('/api/whatsapp-groups'), 'Frontend must save group creation status through the backend');
 assert.ok(frontend.includes('New Registrations'), 'Dashboard must show New Registrations section');
 assert.ok(frontend.includes('Awaiting treasurer payment confirmation'), 'New Registrations section must explain treasurer confirmation status');
 assert.ok(frontend.includes('newRegistrationRows'), 'Frontend must keep unverified registrations in a separate list');
@@ -141,6 +151,11 @@ assert.ok(backend.includes("postEventSent: ['Post Event Sent']"), 'Backend must 
 assert.ok(backend.includes('/api/mangalya-sponsorship'), 'Backend must expose Mangalya sponsorship endpoints');
 assert.ok(backend.includes('MANGALYA_SPONSORSHIP_SHEET_ID'), 'Backend must read sponsorship sheet ID from environment');
 assert.ok(!frontend.includes('MANGALYA_SPONSORSHIP_SHEET_ID'), 'Frontend must not reference the private sponsorship sheet ID');
+assert.ok(backend.includes('/api/whatsapp-group-config'), 'Backend must expose WhatsApp group config endpoint');
+assert.ok(backend.includes('/api/whatsapp-groups'), 'Backend must expose WhatsApp group log endpoint');
+assert.ok(backend.includes('WHATSAPP_PST_ADMINS_RANGE'), 'Backend must read PST admins from a private sheet range');
+assert.ok(backend.includes('WHATSAPP_GROUP_LOG_RANGE'), 'Backend must append WhatsApp group logs to private sheet');
+assert.ok(frontend.includes('groupConfig.pstAdmins'), 'Frontend must use PST admins loaded at runtime');
 
 const mobileValidationForTest = (rawMobile) => {
   const digits = String(rawMobile || '').replace(/\D/g, '');

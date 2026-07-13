@@ -73,6 +73,9 @@ const DONOR_FIELDS = {
 };
 const DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE || "'Sponsorship Contributions'!A:AZ");
 const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponsorship Requirements'!A:O";
+const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'WhatsApp PST Admins'!A:B";
+const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
+const WHATSAPP_GROUP_LOG_HEADERS = ['Group Name', 'Event', 'Creation Date', 'Participant Count', 'Status', 'Remarks'];
 
 const EVENTS = {
   shashtipoorthi: {
@@ -277,6 +280,44 @@ function columnLetter(index) {
     number = Math.floor((number - 1) / 26);
   }
   return column;
+}
+
+async function ensureSheetTabWithHeaders(spreadsheetId, range, headers) {
+  const sheetName = getSheetName(range);
+  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const workbook = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = workbook.data.sheets?.some((sheet) => sheet.properties?.title === sheetName);
+
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: { title: sheetName },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  const headerResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${sheetName}'!A1:${columnLetter(headers.length - 1)}1`,
+  });
+  const currentHeaders = headerResponse.data.values?.[0] || [];
+  if (!headers.every((header, index) => currentHeaders[index] === header)) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${sheetName}'!A1:${columnLetter(headers.length - 1)}1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [headers] },
+    });
+  }
+
+  return sheets;
 }
 
 function buildAdminColumnMap(headerMap) {
@@ -640,6 +681,63 @@ async function loadSponsorshipRequirements() {
   return requirementCache;
 }
 
+async function loadWhatsappPstAdmins() {
+  if (!hasDonorConfig()) return [];
+
+  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
+    range: WHATSAPP_PST_ADMINS_RANGE,
+  });
+
+  const values = response.data.values || [];
+  const [headers = [], ...rows] = values;
+  const headerMap = buildHeaderMap(headers);
+
+  return rows
+    .map((row) => ({
+      name: getCell(row, headerMap, ['Name', 'PST Member', 'Admin Name']),
+      mobileNumber: getCell(row, headerMap, ['Mobile Number', 'Contact Number', 'Contact No', 'Mobile']),
+    }))
+    .filter((admin) => admin.name || admin.mobileNumber);
+}
+
+async function appendWhatsappGroupLog({ groupName, eventType, participantCount, status, remarks }) {
+  if (!hasDonorConfig()) {
+    const error = new Error('Private Google Sheet is not configured for WhatsApp group logging.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const spreadsheetId = process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID;
+  const sheets = await ensureSheetTabWithHeaders(spreadsheetId, WHATSAPP_GROUP_LOG_RANGE, WHATSAPP_GROUP_LOG_HEADERS);
+  const sheetName = getSheetName(WHATSAPP_GROUP_LOG_RANGE);
+  const creationDate = new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${sheetName}'!A:F`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [[
+        String(groupName || ''),
+        String(eventType || ''),
+        creationDate,
+        Number(participantCount || 0),
+        String(status || 'Created manually'),
+        String(remarks || 'Assisted WhatsApp group workflow'),
+      ]],
+    },
+  });
+
+  return { groupName, eventType, creationDate, participantCount, status };
+}
+
 function sourceForEvent(eventType) {
   return SHEETS.find((sheet) => sheet.id === eventType);
 }
@@ -988,6 +1086,53 @@ app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], async (
       writeEnabled: false,
       notice: donorCache.notice,
       mode: 'read-only',
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/whatsapp-group-config', async (req, res) => {
+  try {
+    const pstAdmins = await loadWhatsappPstAdmins();
+    res.json({
+      ok: true,
+      canCreateGroupsDirectly: false,
+      reason: 'WhatsApp click-to-chat links and WhatsApp Business Cloud API do not support direct group creation or admin assignment.',
+      pstAdmins,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      canCreateGroupsDirectly: false,
+      pstAdmins: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/whatsapp-groups', async (req, res) => {
+  try {
+    const { groupName, eventType, participantCount, status, remarks } = req.body || {};
+    if (!groupName || !eventType) {
+      return res.status(400).json({ ok: false, error: 'Group name and event are required.' });
+    }
+
+    const result = await appendWhatsappGroupLog({
+      groupName,
+      eventType,
+      participantCount,
+      status,
+      remarks,
+    });
+
+    return res.json({
+      ok: true,
+      message: 'WhatsApp group status saved to private Google Sheet',
+      group: result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
       error: error.message,
     });
   }

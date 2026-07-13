@@ -37,6 +37,10 @@ const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
   bhimaratha: bhimarathaReceiptTemplate,
 };
+const WHATSAPP_GROUP_NAMES = {
+  shashtipoorthi: 'Shastipoorthi Shanthi 02-08-2026',
+  bhimaratha: 'Bheemaratha Shanti 02-08-2026',
+};
 
 const EVENTS = {
   shashtipoorthi: {
@@ -495,6 +499,72 @@ function buildBulkQueue(rows, queueType) {
       eventType: eventDisplayName(participant.eventType),
     };
   });
+}
+
+function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
+  const eventRows = rows.filter((row) => row.eventType === eventType);
+  const seenMobiles = new Map();
+  const validParticipants = [];
+  const missingMobileParticipants = [];
+  let duplicateCount = 0;
+
+  eventRows.forEach((participant) => {
+    const validation = mobileValidationStatus(participant.mobileNumber);
+    const name = participantDisplayName(participant);
+    if (validation.status !== 'ok' || !validation.normalized) {
+      missingMobileParticipants.push({
+        name,
+        issue: validation.issue,
+      });
+      return;
+    }
+    if (seenMobiles.has(validation.normalized)) {
+      duplicateCount += 1;
+      return;
+    }
+    seenMobiles.set(validation.normalized, true);
+    validParticipants.push({
+      name,
+      mobileNumber: validation.normalized,
+    });
+  });
+
+  const normalizedAdmins = pstAdmins.map((admin) => ({
+    name: admin.name || 'PST Member',
+    mobileNumber: normalizeIndianMobileNumber(admin.mobileNumber),
+  })).filter((admin) => admin.name && mobileValidationStatus(admin.mobileNumber).status === 'ok');
+
+  return {
+    eventType,
+    groupName: WHATSAPP_GROUP_NAMES[eventType],
+    eventLabel: eventDisplayName(eventType),
+    totalParticipants: eventRows.length,
+    validParticipants,
+    missingMobileParticipants,
+    duplicateCount,
+    pstAdmins: normalizedAdmins,
+  };
+}
+
+function buildGroupClipboardText(preview) {
+  return [
+    `WhatsApp Group: ${preview.groupName}`,
+    `Event: ${preview.eventLabel}`,
+    '',
+    'PST admins to add first and make group admins:',
+    ...preview.pstAdmins.map((admin) => `${admin.name} - ${admin.mobileNumber}`),
+    '',
+    'Participants to add:',
+    ...preview.validParticipants.map((participant) => `${participant.name} - ${participant.mobileNumber}`),
+    '',
+    'Manual steps:',
+    '1. Open WhatsApp and create a New Group.',
+    '2. Add the PST members first.',
+    `3. Set the group name as: ${preview.groupName}`,
+    '4. Add the participant contacts from this list.',
+    '5. Make all PST members group admins.',
+    '6. Return to MVST Events and click Mark Group Created.',
+  ].join('\n');
 }
 function makeWhatsAppMessage(participant, kind) {
   return buildWhatsAppMessage(participant, kind);
@@ -992,6 +1062,66 @@ function useSponsorshipRequirements() {
     error,
     isRefreshing,
     refresh: () => load(true),
+  };
+}
+
+function useWhatsAppGroupConfig() {
+  const [pstAdmins, setPstAdmins] = useState([]);
+  const [status, setStatus] = useState('Loading PST admins...');
+  const [error, setError] = useState('');
+  const [canCreateGroupsDirectly, setCanCreateGroupsDirectly] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function load(aliveRef = { current: true }) {
+    setError('');
+    try {
+      const response = await fetch('/api/whatsapp-group-config', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `WhatsApp group config returned ${response.status}`);
+      if (!aliveRef.current) return;
+      setPstAdmins(payload.pstAdmins || []);
+      setCanCreateGroupsDirectly(Boolean(payload.canCreateGroupsDirectly));
+      setStatus(payload.reason || 'Assisted WhatsApp group workflow');
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setPstAdmins([]);
+      setCanCreateGroupsDirectly(false);
+      setError(loadError.message || 'Unable to load PST admins');
+      setStatus('Assisted WhatsApp group workflow');
+    }
+  }
+
+  useEffect(() => {
+    const aliveRef = { current: true };
+    load(aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  return {
+    pstAdmins,
+    status,
+    error,
+    canCreateGroupsDirectly,
+    isSaving,
+    refresh: () => load(),
+    saveGroupLog: async (group) => {
+      setIsSaving(true);
+      try {
+        const response = await fetch('/api/whatsapp-groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(group),
+          cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error(payload.error || `WhatsApp group log returned ${response.status}`);
+        return payload;
+      } finally {
+        setIsSaving(false);
+      }
+    },
   };
 }
 
@@ -1930,10 +2060,149 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
   );
 }
 
+function WhatsAppGroupSetup({ rows, groupConfig }) {
+  const [preview, setPreview] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [message, setMessage] = useState('');
+
+  function openPreview(eventType) {
+    setPreview(buildWhatsAppGroupPreview(rows, eventType, groupConfig.pstAdmins));
+    setConfirmed(false);
+    setMessage('');
+  }
+
+  async function confirmAssistedFlow() {
+    if (!preview || preview.pstAdmins.length < 3) return;
+    const clipboardText = buildGroupClipboardText(preview);
+    setMessage('');
+    try {
+      await navigator.clipboard.writeText(clipboardText);
+      setMessage('Participant list copied. WhatsApp opened for manual group creation.');
+    } catch (error) {
+      setMessage('Automatic copy is blocked. Select and copy the participant list manually.');
+    }
+    setConfirmed(true);
+    window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
+  }
+
+  async function markGroupCreated() {
+    if (!preview) return;
+    setMessage('');
+    try {
+      await groupConfig.saveGroupLog({
+        groupName: preview.groupName,
+        eventType: preview.eventType,
+        participantCount: preview.validParticipants.length,
+        status: 'Created manually',
+        remarks: `Assisted workflow. Source participants: ${preview.totalParticipants}. Missing/invalid: ${preview.missingMobileParticipants.length}. Duplicates skipped: ${preview.duplicateCount}.`,
+      });
+      setMessage('Group creation status saved to private Google Sheet.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to save group status.');
+    }
+  }
+
+  const canProceed = preview && preview.validParticipants.length > 0 && preview.pstAdmins.length >= 3;
+
+  return (
+    <section className="whatsapp-group-section">
+      <div className="section-heading">
+        <div>
+          <p>WhatsApp Groups</p>
+          <h2>Assisted group creation</h2>
+        </div>
+      </div>
+
+      <div className="whatsapp-group-note">
+        <b>Direct group creation is not supported by WhatsApp links or WhatsApp Business API.</b>
+        <span>{groupConfig.status}</span>
+        {groupConfig.error ? <small>{groupConfig.error}</small> : null}
+      </div>
+
+      <div className="group-action-grid">
+        <button type="button" onClick={() => openPreview('shashtipoorthi')}>
+          <UsersRound size={18} />
+          Prepare Shastipoorthi Group
+        </button>
+        <button type="button" onClick={() => openPreview('bhimaratha')}>
+          <UsersRound size={18} />
+          Prepare Bheemaratha Group
+        </button>
+      </div>
+
+      {preview ? (
+        <div className="group-preview-card">
+          <div className="group-preview-head">
+            <div>
+              <p>Confirmation Preview</p>
+              <h3>{preview.groupName}</h3>
+            </div>
+            <button type="button" onClick={() => setPreview(null)}>Close</button>
+          </div>
+
+          <div className="group-preview-grid">
+            <div><span>Event</span><strong>{preview.eventLabel}</strong></div>
+            <div><span>Total participants</span><strong>{preview.totalParticipants}</strong></div>
+            <div><span>Valid unique contacts</span><strong>{preview.validParticipants.length}</strong></div>
+            <div><span>Missing-mobile participants</span><strong>{preview.missingMobileParticipants.length}</strong></div>
+            <div><span>Duplicate entries skipped</span><strong>{preview.duplicateCount}</strong></div>
+            <div><span>PST admins</span><strong>{preview.pstAdmins.length}</strong></div>
+          </div>
+
+          <div className="group-preview-lists">
+            <div>
+              <h4>PST admins</h4>
+              {preview.pstAdmins.length ? (
+                preview.pstAdmins.map((admin) => <span key={admin.name}>{admin.name}</span>)
+              ) : (
+                <span>PST admins not configured in private sheet.</span>
+              )}
+            </div>
+            <div>
+              <h4>Missing-mobile participants</h4>
+              {preview.missingMobileParticipants.length ? (
+                preview.missingMobileParticipants.map((participant, index) => (
+                  <span key={`${participant.name}-${index}`}>{participant.name} - {participant.issue}</span>
+                ))
+              ) : (
+                <span>No missing or invalid mobile numbers.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="group-manual-steps">
+            <h4>Manual WhatsApp steps</h4>
+            <ol>
+              <li>Create a new WhatsApp group.</li>
+              <li>Add the three PST members first.</li>
+              <li>Name the group exactly as shown above.</li>
+              <li>Add the copied participant contacts for this event only.</li>
+              <li>Make all three PST members group admins.</li>
+              <li>Return here and mark the group as created.</li>
+            </ol>
+          </div>
+
+          <div className="group-controls">
+            <button type="button" onClick={confirmAssistedFlow} disabled={!canProceed}>
+              Confirm, Copy List & Open WhatsApp
+            </button>
+            <button type="button" onClick={markGroupCreated} disabled={!confirmed || groupConfig.isSaving}>
+              {groupConfig.isSaving ? 'Saving' : 'Mark Group Created'}
+            </button>
+          </div>
+          {!canProceed ? <small className="group-warning">Add PST admins and at least one valid participant contact before continuing.</small> : null}
+          {message ? <small className="group-message">{message}</small> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
   const requirementState = useSponsorshipRequirements();
+  const groupConfig = useWhatsAppGroupConfig();
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
@@ -2275,6 +2544,8 @@ function App() {
           </div>
         </div>
       </section>
+
+              <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} />
 
               <section className="management-section new-registrations-section" id="new-registrations-dashboard">
         <div className="section-heading">
