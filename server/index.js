@@ -215,6 +215,13 @@ function getColumnIndex(headerMap, labels) {
   return null;
 }
 
+function buildHeaderMap(headers) {
+  return headers.reduce((map, header, index) => {
+    map[normalizeKey(header)] = index;
+    return map;
+  }, {});
+}
+
 function numberFrom(value) {
   const parsed = Number(String(value || '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
