@@ -2435,6 +2435,10 @@ function App() {
             <ClipboardList size={18} />
             <span>Home</span>
           </button>
+          <button className={activeView === 'whatsapp-groups' ? 'active' : ''} type="button" onClick={() => setActiveView('whatsapp-groups')}>
+            <UsersRound size={18} />
+            <span>WhatsApp Groups</span>
+          </button>
           <button className={activeView === 'shashtipoorthi' ? 'active' : ''} type="button" onClick={() => openEventView('shashtipoorthi')}>
             <HeartHandshake size={18} />
             <span>Shashtipoorthi Shanthi</span>
@@ -2581,6 +2585,8 @@ function App() {
       </section>
             </>
           ) : null}
+
+          {activeView === 'whatsapp-groups' ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
 
           {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
