@@ -684,9 +684,10 @@ async function loadSponsorshipRequirements() {
 async function loadWhatsappPstAdmins() {
   if (!hasDonorConfig()) return [];
 
-  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const spreadsheetId = process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID;
+  const sheets = await ensureSheetTabWithHeaders(spreadsheetId, WHATSAPP_PST_ADMINS_RANGE, ['Name', 'Mobile Number']);
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
+    spreadsheetId,
     range: WHATSAPP_PST_ADMINS_RANGE,
   });
 
