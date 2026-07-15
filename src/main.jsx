@@ -32,6 +32,7 @@ import './styles.css';
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
 const DEVELOPER_MODE = import.meta.env.VITE_DEVELOPER_MODE === 'true';
 const ACTIVE_EVENT_YEAR = import.meta.env.VITE_ACTIVE_EVENT_YEAR || '2026';
+const WHATSAPP_GROUP_HANDLED_SEAT_BASELINE = import.meta.env.VITE_WHATSAPP_GROUP_HANDLED_SEAT_BASELINE || 'D-01';
 const RECEIPT_PREFIXES = { shashtipoorthi: 'SP26', bhimaratha: 'BS26' };
 const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
@@ -487,6 +488,19 @@ function paymentMessageType(participant) {
   return null;
 }
 
+function seatRank(seatNo) {
+  const match = String(seatNo || '').trim().toUpperCase().match(/^([A-Z]+)[-\s]*(\d+)$/);
+  if (!match) return null;
+  const letters = match[1].split('').reduce((value, letter) => value * 26 + (letter.charCodeAt(0) - 64), 0);
+  return letters * 10000 + Number(match[2]);
+}
+
+function isSeatAfterBaseline(seatNo, baseline = WHATSAPP_GROUP_HANDLED_SEAT_BASELINE) {
+  const seatValue = seatRank(seatNo);
+  const baselineValue = seatRank(baseline);
+  return seatValue !== null && baselineValue !== null && seatValue > baselineValue;
+}
+
 function buildBulkQueue(rows, queueType) {
   const sourceRows =
     queueType === 'welcome'
@@ -508,17 +522,19 @@ function buildBulkQueue(rows, queueType) {
 
 function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
   const eventRows = rows.filter((row) => row.eventType === eventType);
+  const futureRows = eventRows.filter((row) => isSeatAfterBaseline(row.seatNo));
   const seenMobiles = new Map();
   const validParticipants = [];
   const missingMobileParticipants = [];
   let duplicateCount = 0;
 
-  eventRows.forEach((participant) => {
+  futureRows.forEach((participant) => {
     const validation = mobileValidationStatus(participant.mobileNumber);
     const name = participantDisplayName(participant);
     if (validation.status !== 'ok' || !validation.normalized) {
       missingMobileParticipants.push({
         name,
+        seatNo: participant.seatNo || '',
         issue: validation.issue,
       });
       return;
@@ -530,6 +546,7 @@ function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
     seenMobiles.set(validation.normalized, true);
     validParticipants.push({
       name,
+      seatNo: participant.seatNo || '',
       mobileNumber: validation.normalized,
     });
   });
@@ -544,6 +561,8 @@ function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
     groupName: WHATSAPP_GROUP_NAMES[eventType],
     eventLabel: eventDisplayName(eventType),
     totalParticipants: eventRows.length,
+    handledSeatBaseline: WHATSAPP_GROUP_HANDLED_SEAT_BASELINE,
+    futureRegistrations: futureRows.length,
     validParticipants,
     missingMobileParticipants,
     duplicateCount,
@@ -591,7 +610,6 @@ function buildGroupContactRows(preview) {
     });
   };
 
-  preview.pstAdmins.forEach((admin) => addContact(WHATSAPP_CONTACT_PREFIXES.pst, admin.name, admin.mobileNumber));
   preview.validParticipants.forEach((participant) =>
     addContact(WHATSAPP_CONTACT_PREFIXES[preview.eventType], participant.name, participant.mobileNumber),
   );
@@ -631,7 +649,9 @@ function downloadTextFile(fileName, content, type = 'text/plain;charset=utf-8') 
 }
 
 function groupContactFileName(preview) {
-  return `${preview.eventType}-whatsapp-contacts.vcf`;
+  return `${preview.eventType}-new-whatsapp-contacts-after-${preview.handledSeatBaseline}.vcf`
+    .replace(/[^a-z0-9.-]+/gi, '-')
+    .toLowerCase();
 }
 
 function buildGroupClipboardText(preview) {
@@ -646,15 +666,19 @@ function buildGroupClipboardText(preview) {
     ...participantNames,
     '',
     'Manual steps:',
-    '1. Download and import the VCF contacts.',
+    `Existing participants handled through Seat No. ${preview.handledSeatBaseline}.`,
+    '1. Download and import the new-participant VCF contacts.',
     '2. Wait briefly for WhatsApp contacts to sync.',
-    '3. Open WhatsApp and create a New Group.',
-    `4. Set the group name as: ${preview.groupName}`,
-    `5. Search using ${WHATSAPP_CONTACT_PREFIXES[preview.eventType]} and ${WHATSAPP_CONTACT_PREFIXES.pst}.`,
-    '6. Add all relevant contacts.',
-    '7. Make all PST members group admins.',
-    '8. Return to MVST Events and click Mark Group Created.',
+    `3. Open the existing WhatsApp group: ${preview.groupName}`,
+    `4. Search using ${WHATSAPP_CONTACT_PREFIXES[preview.eventType]}.`,
+    '5. Add only the new contacts shown in this section.',
   ].join('\n');
+}
+
+function buildGroupMobileNumbersText(preview) {
+  return buildGroupContactRows(preview)
+    .map((contact) => `+${contact.mobileNumber}`)
+    .join('\n');
 }
 function makeWhatsAppMessage(participant, kind) {
   return buildWhatsAppMessage(participant, kind);
@@ -1160,7 +1184,6 @@ function useWhatsAppGroupConfig() {
   const [status, setStatus] = useState('Loading PST admins...');
   const [error, setError] = useState('');
   const [canCreateGroupsDirectly, setCanCreateGroupsDirectly] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   async function load(aliveRef = { current: true }) {
     setError('');
@@ -1194,24 +1217,7 @@ function useWhatsAppGroupConfig() {
     status,
     error,
     canCreateGroupsDirectly,
-    isSaving,
     refresh: () => load(),
-    saveGroupLog: async (group) => {
-      setIsSaving(true);
-      try {
-        const response = await fetch('/api/whatsapp-groups', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(group),
-          cache: 'no-store',
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok) throw new Error(payload.error || `WhatsApp group log returned ${response.status}`);
-        return payload;
-      } finally {
-        setIsSaving(false);
-      }
-    },
   };
 }
 
@@ -2152,7 +2158,6 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
 
 function WhatsAppGroupSetup({ rows, groupConfig }) {
   const [preview, setPreview] = useState(null);
-  const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
 
   const groupPreviews = useMemo(
@@ -2162,7 +2167,6 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
 
   function openPreview(eventType) {
     setPreview(buildWhatsAppGroupPreview(rows, eventType, groupConfig.pstAdmins));
-    setConfirmed(false);
     setMessage('');
   }
 
@@ -2170,8 +2174,7 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
     if (!preview || !canProceed) return;
     const contacts = buildGroupContactRows(preview);
     downloadTextFile(groupContactFileName(preview), buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
-    setConfirmed(true);
-    setMessage(`Downloaded ${contacts.length} contacts. Import the VCF, wait for WhatsApp sync, then create the group.`);
+    setMessage(`Downloaded ${contacts.length} new contacts after Seat No. ${preview.handledSeatBaseline}. Import the VCF, wait for WhatsApp sync, then add them to the existing group.`);
   }
 
   function downloadBothGroupContacts() {
@@ -2180,9 +2183,8 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
       setMessage('No valid contacts are available for download.');
       return;
     }
-    downloadTextFile('mvst-whatsapp-group-contacts.vcf', buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
-    setConfirmed(true);
-    setMessage(`Downloaded ${contacts.length} contacts for both groups. PST contacts are included only once.`);
+    downloadTextFile('mvst-new-whatsapp-contacts-after-' + WHATSAPP_GROUP_HANDLED_SEAT_BASELINE.toLowerCase() + '.vcf', buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
+    setMessage(`Downloaded ${contacts.length} new contacts for both groups after Seat No. ${WHATSAPP_GROUP_HANDLED_SEAT_BASELINE}.`);
   }
 
   async function copyParticipantNames() {
@@ -2195,33 +2197,26 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
     } catch (error) {
       setMessage('Automatic copy is blocked. Use the downloaded VCF and on-screen prefixes.');
     }
-    setConfirmed(true);
+  }
+
+  async function copyMobileNumbers() {
+    if (!preview || !canProceed) return;
+    const clipboardText = buildGroupMobileNumbersText(preview);
+    setMessage('');
+    try {
+      await navigator.clipboard.writeText(clipboardText);
+      setMessage('New mobile numbers copied in +91 format.');
+    } catch (error) {
+      setMessage('Automatic copy is blocked. Download the VCF instead.');
+    }
   }
 
   function openWhatsAppWeb() {
-    setConfirmed(true);
     setMessage('WhatsApp Web opened. On mobile, open the WhatsApp app manually if WhatsApp Web shows the desktop-only screen.');
     window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
   }
 
-  async function markGroupCreated() {
-    if (!preview) return;
-    setMessage('');
-    try {
-      await groupConfig.saveGroupLog({
-        groupName: preview.groupName,
-        eventType: preview.eventType,
-        participantCount: preview.validParticipants.length,
-        status: 'Created manually',
-        remarks: `Assisted workflow. Source participants: ${preview.totalParticipants}. Missing/invalid: ${preview.missingMobileParticipants.length}. Duplicates skipped: ${preview.duplicateCount}.`,
-      });
-      setMessage('Group creation status saved to private Google Sheet.');
-    } catch (error) {
-      setMessage(error.message || 'Unable to save group status.');
-    }
-  }
-
-  const canProceed = preview && preview.validParticipants.length > 0 && preview.pstAdmins.length >= 3;
+  const canProceed = preview && preview.validParticipants.length > 0;
 
   return (
     <section className="whatsapp-group-section">
@@ -2233,8 +2228,8 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
       </div>
 
       <div className="whatsapp-group-note">
-        <b>Direct group creation is not supported by WhatsApp links or WhatsApp Business API.</b>
-        <span>{groupConfig.status}</span>
+        <b>Current groups are already created. Existing participants up to Seat No. {WHATSAPP_GROUP_HANDLED_SEAT_BASELINE} are treated as handled.</b>
+        <span>Use this section only for future registrations after Seat No. {WHATSAPP_GROUP_HANDLED_SEAT_BASELINE}. No WhatsApp-added status is written back to Google Sheets.</span>
         {groupConfig.error ? <small>{groupConfig.error}</small> : null}
       </div>
 
@@ -2249,7 +2244,7 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
         </button>
         <button type="button" onClick={downloadBothGroupContacts} disabled={groupPreviews.every((item) => !buildGroupContactRows(item).length)}>
           <Download size={18} />
-          Download Both Groups' Contacts
+          Download Both Groups' New Contacts
         </button>
       </div>
 
@@ -2266,63 +2261,64 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
           <div className="group-preview-grid">
             <div><span>Event</span><strong>{preview.eventLabel}</strong></div>
             <div><span>Total participants</span><strong>{preview.totalParticipants}</strong></div>
-            <div><span>Valid unique contacts</span><strong>{preview.validParticipants.length}</strong></div>
-            <div><span>Missing-mobile participants</span><strong>{preview.missingMobileParticipants.length}</strong></div>
+            <div><span>Handled through seat</span><strong>{preview.handledSeatBaseline}</strong></div>
+            <div><span>Future registrations</span><strong>{preview.futureRegistrations}</strong></div>
+            <div><span>New valid contacts</span><strong>{preview.validParticipants.length}</strong></div>
+            <div><span>New missing-mobile participants</span><strong>{preview.missingMobileParticipants.length}</strong></div>
             <div><span>Duplicate entries skipped</span><strong>{preview.duplicateCount}</strong></div>
-            <div><span>PST admins</span><strong>{preview.pstAdmins.length}</strong></div>
           </div>
 
           <div className="group-preview-lists">
             <div>
-              <h4>PST admins</h4>
-              {preview.pstAdmins.length ? (
-                preview.pstAdmins.map((admin) => <span key={admin.name}>{admin.name}</span>)
+              <h4>Future / New Participants</h4>
+              {preview.validParticipants.length ? (
+                preview.validParticipants.map((participant, index) => (
+                  <span key={`${participant.name}-${index}`}>{participant.seatNo || 'Seat pending'} - {contactDisplayName(WHATSAPP_CONTACT_PREFIXES[preview.eventType], participant.name)}</span>
+                ))
               ) : (
-                <span>PST admins not configured in private sheet.</span>
+                <span>No new participants after Seat No. {preview.handledSeatBaseline}.</span>
               )}
             </div>
             <div>
-              <h4>Missing-mobile participants</h4>
+              <h4>New missing / invalid mobiles</h4>
               {preview.missingMobileParticipants.length ? (
                 preview.missingMobileParticipants.map((participant, index) => (
-                  <span key={`${participant.name}-${index}`}>{participant.name} - {participant.issue}</span>
+                  <span key={`${participant.name}-${index}`}>{participant.seatNo || 'Seat pending'} - {participant.name} - {participant.issue}</span>
                 ))
               ) : (
-                <span>No missing or invalid mobile numbers.</span>
+                <span>No missing or invalid mobile numbers among new participants.</span>
               )}
             </div>
           </div>
 
           <div className="group-manual-steps">
-            <h4>Manual WhatsApp steps</h4>
+            <h4>Future registration steps</h4>
             <ol>
-              <li>Download the VCF contact file.</li>
+              <li>Download the new-participant VCF contact file.</li>
               <li>Open or import it into Google Contacts, Windows contacts, or phone contacts.</li>
               <li>Wait briefly for WhatsApp contacts to sync.</li>
-              <li>Open WhatsApp and create the group.</li>
-              <li>Search using {WHATSAPP_CONTACT_PREFIXES[preview.eventType]} or {WHATSAPP_CONTACT_PREFIXES.pst}.</li>
-              <li>Add all relevant contacts.</li>
-              <li>Make all PST members group admins.</li>
-              <li>Return here and mark the group as created.</li>
+              <li>Open the existing WhatsApp group.</li>
+              <li>Search using {WHATSAPP_CONTACT_PREFIXES[preview.eventType]}.</li>
+              <li>Add only the new contacts shown in this section.</li>
             </ol>
           </div>
 
           <div className="group-controls">
             <button type="button" onClick={downloadContactsForPreview} disabled={!canProceed}>
               <Download size={16} />
-              Download Contacts (.vcf)
+              Download New Contacts (.vcf)
             </button>
             <button type="button" onClick={copyParticipantNames} disabled={!canProceed}>
-              Copy Participant Names
+              Copy New Participant Names
+            </button>
+            <button type="button" onClick={copyMobileNumbers} disabled={!canProceed}>
+              Copy New Mobile Numbers
             </button>
             <button type="button" onClick={openWhatsAppWeb} disabled={!canProceed}>
               Open WhatsApp Web
             </button>
-            <button type="button" onClick={markGroupCreated} disabled={!confirmed || groupConfig.isSaving}>
-              {groupConfig.isSaving ? 'Saving' : 'Mark Group Created'}
-            </button>
           </div>
-          {!canProceed ? <small className="group-warning">Add PST admins and at least one valid participant contact before continuing.</small> : null}
+          {!canProceed ? <small className="group-warning">No valid new participant contacts found after Seat No. {preview.handledSeatBaseline}.</small> : null}
           {message ? <small className="group-message">{message}</small> : null}
         </div>
       ) : null}
