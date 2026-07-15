@@ -70,6 +70,13 @@ assert.ok(frontend.includes('Payment Pending'), 'Dashboard must show Payment Pen
 assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome Sent Date');
 assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
 assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');
+assert.ok(frontend.includes('Free Sponsorship'), 'Dashboard must support Free Sponsorship payment status');
+assert.ok(frontend.includes('isFreeSponsorshipStatus'), 'Frontend must identify Free Sponsorship status');
+assert.ok(frontend.includes('sheetPaymentStatus'), 'CSV fallback must read the Payment Status column from the sheet');
+assert.ok(frontend.includes('balance = isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Free Sponsorship participants must not show a balance receivable');
+assert.ok(frontend.includes('goToFreeSponsorship'), 'Free Sponsorship summary card must jump to filtered participants');
+assert.ok(backend.includes('FREE_SPONSORSHIP_STATUS'), 'Backend must support Free Sponsorship payment status');
+assert.ok(backend.includes('isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Backend must set Free Sponsorship balance to zero');
 assert.ok(frontend.includes('Duplicate mobile number'), 'Mobile report must flag duplicate mobile numbers');
 assert.ok(frontend.includes('WhatsApp Groups'), 'Dashboard must show WhatsApp group setup section');
 assert.ok(frontend.includes('Existing participants up to Seat No.'), 'WhatsApp group workflow must explain the handled seat baseline');

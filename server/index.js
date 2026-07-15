@@ -76,6 +76,7 @@ const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponso
 const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'WhatsApp PST Admins'!A:B";
 const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
 const WHATSAPP_GROUP_LOG_HEADERS = ['Group Name', 'Event', 'Creation Date', 'Participant Count', 'Status', 'Remarks'];
+const FREE_SPONSORSHIP_STATUS = 'free sponsorship';
 
 const EVENTS = {
   shashtipoorthi: {
@@ -233,6 +234,10 @@ function boolFrom(value) {
   );
 }
 
+function isFreeSponsorshipStatus(status) {
+  return String(status || '').trim().toLowerCase() === FREE_SPONSORSHIP_STATUS;
+}
+
 function readServiceAccountFile() {
   try {
     if (!fs.existsSync(serviceAccountPath)) return null;
@@ -354,10 +359,11 @@ function normalizeRows(values, source) {
       const rowNumber = index + 2;
       const paidAmount = numberFrom(getCell(row, headerMap, ['Paid Amount']));
       const contribution = source.contribution;
-      const balance = Math.max(contribution - paidAmount, 0);
       const calculatedStatus =
         paidAmount >= contribution ? 'Full Paid' : paidAmount > 0 ? 'Part Paid' : 'Pending';
       const sheetPaymentStatus = getCell(row, headerMap, ['Payment Status']);
+      const paymentStatus = sheetPaymentStatus || calculatedStatus;
+      const balance = isFreeSponsorshipStatus(paymentStatus) ? 0 : Math.max(contribution - paidAmount, 0);
 
       return {
         id: `${source.id}:${rowNumber}`,
@@ -382,7 +388,7 @@ function normalizeRows(values, source) {
           'Payment Screenshot',
         ]),
         paidAmount,
-        paymentStatus: sheetPaymentStatus || calculatedStatus,
+        paymentStatus,
         treasurerVerified: boolFrom(getCell(row, headerMap, ['Treasurer Verified'])),
         kitIssued: boolFrom(getCell(row, headerMap, ['KIT Issued', 'Kit Issued'])),
         remarks: getCell(row, headerMap, ['Remarks']),

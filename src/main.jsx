@@ -47,6 +47,7 @@ const WHATSAPP_CONTACT_PREFIXES = {
   bhimaratha: 'MVST Bheema',
   pst: 'MVST PST',
 };
+const PAYMENT_STATUSES = ['Full Paid', 'Part Paid', 'Pending', 'Free Sponsorship'];
 
 const EVENTS = {
   shashtipoorthi: {
@@ -237,13 +238,19 @@ function boolFrom(value) {
   );
 }
 
+function isFreeSponsorshipStatus(status) {
+  return String(status || '').trim().toLowerCase() === 'free sponsorship';
+}
+
 function normalizeRow(row, headerMap, source) {
   const eventType = source.id;
   const paidAmount = numberFrom(getCell(row, headerMap, ['Paid Amount']));
   const contribution = EVENTS[eventType].contribution;
-  const balance = Math.max(contribution - paidAmount, 0);
-  const paymentStatus =
+  const calculatedStatus =
     paidAmount >= contribution ? 'Full Paid' : paidAmount > 0 ? 'Part Paid' : 'Pending';
+  const sheetPaymentStatus = getCell(row, headerMap, ['Payment Status']);
+  const paymentStatus = sheetPaymentStatus || calculatedStatus;
+  const balance = isFreeSponsorshipStatus(paymentStatus) ? 0 : Math.max(contribution - paidAmount, 0);
 
   return {
     eventType,
@@ -486,6 +493,10 @@ function paymentMessageType(participant) {
   if (participant.paymentStatus === 'Full Paid') return 'Full Payment';
   if (participant.paymentStatus === 'Part Paid') return 'Partial Payment';
   return null;
+}
+
+function isFreeSponsorship(participant) {
+  return isFreeSponsorshipStatus(participant.paymentStatus);
 }
 
 function seatRank(seatNo) {
@@ -1320,9 +1331,7 @@ function AdminEditPanel({ participant, writeEnabled, onSave }) {
           value={form.paymentStatus}
           onChange={(event) => setForm({ ...form, paymentStatus: event.target.value })}
         >
-          <option>Full Paid</option>
-          <option>Part Paid</option>
-          <option>Pending</option>
+          {PAYMENT_STATUSES.map((statusValue) => <option key={statusValue}>{statusValue}</option>)}
         </select>
       </label>
       <label>
@@ -1440,7 +1449,9 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
   const paymentTone =
     participant.paymentStatus === 'Full Paid'
       ? 'success'
-      : participant.paymentStatus === 'Part Paid'
+      : isFreeSponsorship(participant)
+        ? 'success'
+        : participant.paymentStatus === 'Part Paid'
         ? 'warning'
         : 'danger';
 
@@ -1542,12 +1553,16 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
         <a href={makeWhatsAppUrl(participant, 'welcome')} onClick={() => handleWhatsAppOpen('welcome')} target="_blank" rel="noreferrer">
           <MessageCircle size={16} /> Welcome
         </a>
-        <a href={makeWhatsAppUrl(participant, 'confirmation')} onClick={() => handleWhatsAppOpen('confirmation')} target="_blank" rel="noreferrer">
-          <BadgeCheck size={16} /> Payment
-        </a>
-        <a href={makeWhatsAppUrl(participant, 'balance')} onClick={() => handleWhatsAppOpen('balance')} target="_blank" rel="noreferrer">
-          <IndianRupee size={16} /> Balance
-        </a>
+        {!isFreeSponsorship(participant) ? (
+          <>
+            <a href={makeWhatsAppUrl(participant, 'confirmation')} onClick={() => handleWhatsAppOpen('confirmation')} target="_blank" rel="noreferrer">
+              <BadgeCheck size={16} /> Payment
+            </a>
+            <a href={makeWhatsAppUrl(participant, 'balance')} onClick={() => handleWhatsAppOpen('balance')} target="_blank" rel="noreferrer">
+              <IndianRupee size={16} /> Balance
+            </a>
+          </>
+        ) : null}
         <a href={makeWhatsAppUrl(participant, 'kit')} onClick={() => handleWhatsAppOpen('kit')} target="_blank" rel="noreferrer">
           <Gift size={16} /> KIT
         </a>
@@ -2347,7 +2362,7 @@ function App() {
   const [bulkReceiptMessage, setBulkReceiptMessage] = useState('');
 
   const summary = useMemo(() => {
-    const expected = rows.reduce((sum, row) => sum + row.contribution, 0);
+    const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
     const received = rows.reduce((sum, row) => sum + row.paidAmount, 0);
     return {
       total: rows.length,
@@ -2355,6 +2370,7 @@ function App() {
       bhimaratha: rows.filter((row) => row.eventType === 'bhimaratha').length,
       fullPaid: rows.filter((row) => row.paymentStatus === 'Full Paid').length,
       partPaid: rows.filter((row) => row.paymentStatus === 'Part Paid').length,
+      freeSponsorship: rows.filter((row) => isFreeSponsorship(row)).length,
       pending: rows.filter((row) => row.paymentStatus === 'Pending').length,
       verified: rows.filter((row) => row.treasurerVerified).length,
       newRegistrations: rows.filter((row) => !row.treasurerVerified).length,
@@ -2371,7 +2387,7 @@ function App() {
       bhimarathaReceiptsPending: rows.filter((row) => row.eventType === 'bhimaratha' && !row.receiptGenerated).length,
       expected,
       received,
-      balance: expected - received,
+      balance: rows.reduce((sum, row) => sum + row.balance, 0),
     };
   }, [rows]);
 
@@ -2476,6 +2492,14 @@ function App() {
 
   function goToPaymentPending() {
     setPaymentFilter('Pending');
+    setVerifiedFilter('All');
+    setKitFilter('All');
+    setActiveView(activeEvent);
+    requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
+  }
+
+  function goToFreeSponsorship() {
+    setPaymentFilter('Free Sponsorship');
     setVerifiedFilter('All');
     setKitFilter('All');
     setActiveView(activeEvent);
@@ -2615,6 +2639,7 @@ function App() {
                   <StatCard icon={HeartHandshake} label="Bhimaratha" value={summary.bhimaratha} onClick={() => openEventView('bhimaratha')} />
                   <StatCard icon={CheckCircle2} label="Full Paid" value={summary.fullPaid} tone="success" />
                   <StatCard icon={CircleDollarSign} label="Part Paid" value={summary.partPaid} tone="warning" />
+                  <StatCard icon={HeartHandshake} label="Free Sponsorship" value={summary.freeSponsorship} tone="success" onClick={goToFreeSponsorship} />
                   <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
                   <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
                   <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" onClick={goToNewRegistrations} />
@@ -2738,9 +2763,7 @@ function App() {
           </label>
           <SelectField icon={Filter} label="Payment" value={paymentFilter} onChange={setPaymentFilter}>
             <option>All</option>
-            <option>Full Paid</option>
-            <option>Part Paid</option>
-            <option>Pending</option>
+            {PAYMENT_STATUSES.map((statusValue) => <option key={statusValue}>{statusValue}</option>)}
           </SelectField>
           <SelectField label="Treasurer" value={verifiedFilter} onChange={setVerifiedFilter}>
             <option>All</option>
