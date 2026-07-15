@@ -41,6 +41,11 @@ const WHATSAPP_GROUP_NAMES = {
   shashtipoorthi: 'Shastipoorthi Shanthi 02-08-2026',
   bhimaratha: 'Bheemaratha Shanti 02-08-2026',
 };
+const WHATSAPP_CONTACT_PREFIXES = {
+  shashtipoorthi: 'MVST Shasti',
+  bhimaratha: 'MVST Bheema',
+  pst: 'MVST PST',
+};
 
 const EVENTS = {
   shashtipoorthi: {
@@ -546,24 +551,109 @@ function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
   };
 }
 
+function contactDisplayName(prefix, name) {
+  return `${prefix} - ${String(name || '').trim() || 'Contact'}`;
+}
+
+function vcfEscape(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;');
+}
+
+function buildVcfContact(fullName, normalizedMobile) {
+  const phone = String(normalizedMobile || '').startsWith('+')
+    ? String(normalizedMobile)
+    : `+${String(normalizedMobile || '').replace(/\D/g, '')}`;
+  const safeName = vcfEscape(fullName);
+  return [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${safeName}`,
+    `N:${safeName};;;;`,
+    `TEL;TYPE=CELL:${phone}`,
+    'END:VCARD',
+  ].join('\r\n');
+}
+
+function buildGroupContactRows(preview) {
+  const seenMobiles = new Set();
+  const contacts = [];
+  const addContact = (prefix, name, mobileNumber) => {
+    const normalizedMobile = normalizeIndianMobileNumber(mobileNumber);
+    if (!normalizedMobile || seenMobiles.has(normalizedMobile)) return;
+    seenMobiles.add(normalizedMobile);
+    contacts.push({
+      name: contactDisplayName(prefix, name),
+      mobileNumber: normalizedMobile,
+    });
+  };
+
+  preview.pstAdmins.forEach((admin) => addContact(WHATSAPP_CONTACT_PREFIXES.pst, admin.name, admin.mobileNumber));
+  preview.validParticipants.forEach((participant) =>
+    addContact(WHATSAPP_CONTACT_PREFIXES[preview.eventType], participant.name, participant.mobileNumber),
+  );
+
+  return contacts;
+}
+
+function buildCombinedGroupContactRows(previews) {
+  const seenMobiles = new Set();
+  const contacts = [];
+  const addContacts = (rows) => {
+    rows.forEach((contact) => {
+      if (!contact.mobileNumber || seenMobiles.has(contact.mobileNumber)) return;
+      seenMobiles.add(contact.mobileNumber);
+      contacts.push(contact);
+    });
+  };
+
+  previews.forEach((preview) => addContacts(buildGroupContactRows(preview)));
+  return contacts;
+}
+
+function buildContactsVcf(contacts) {
+  return contacts.map((contact) => buildVcfContact(contact.name, contact.mobileNumber)).join('\r\n');
+}
+
+function downloadTextFile(fileName, content, type = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function groupContactFileName(preview) {
+  return `${preview.eventType}-whatsapp-contacts.vcf`;
+}
+
 function buildGroupClipboardText(preview) {
+  const participantNames = preview.validParticipants.map((participant) =>
+    contactDisplayName(WHATSAPP_CONTACT_PREFIXES[preview.eventType], participant.name),
+  );
   return [
     `WhatsApp Group: ${preview.groupName}`,
     `Event: ${preview.eventLabel}`,
     '',
-    'PST admins to add first and make group admins:',
-    ...preview.pstAdmins.map((admin) => `${admin.name} - ${admin.mobileNumber}`),
-    '',
-    'Participants to add:',
-    ...preview.validParticipants.map((participant) => `${participant.name} - ${participant.mobileNumber}`),
+    'Participant contact names to search in WhatsApp:',
+    ...participantNames,
     '',
     'Manual steps:',
-    '1. Open WhatsApp and create a New Group.',
-    '2. Add the PST members first.',
-    `3. Set the group name as: ${preview.groupName}`,
-    '4. Add the participant contacts from this list.',
-    '5. Make all PST members group admins.',
-    '6. Return to MVST Events and click Mark Group Created.',
+    '1. Download and import the VCF contacts.',
+    '2. Wait briefly for WhatsApp contacts to sync.',
+    '3. Open WhatsApp and create a New Group.',
+    `4. Set the group name as: ${preview.groupName}`,
+    `5. Search using ${WHATSAPP_CONTACT_PREFIXES[preview.eventType]} and ${WHATSAPP_CONTACT_PREFIXES.pst}.`,
+    '6. Add all relevant contacts.',
+    '7. Make all PST members group admins.',
+    '8. Return to MVST Events and click Mark Group Created.',
   ].join('\n');
 }
 function makeWhatsAppMessage(participant, kind) {
@@ -2065,23 +2155,52 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
 
+  const groupPreviews = useMemo(
+    () => ['shashtipoorthi', 'bhimaratha'].map((eventType) => buildWhatsAppGroupPreview(rows, eventType, groupConfig.pstAdmins)),
+    [rows, groupConfig.pstAdmins],
+  );
+
   function openPreview(eventType) {
     setPreview(buildWhatsAppGroupPreview(rows, eventType, groupConfig.pstAdmins));
     setConfirmed(false);
     setMessage('');
   }
 
-  async function confirmAssistedFlow() {
-    if (!preview || preview.pstAdmins.length < 3) return;
+  function downloadContactsForPreview() {
+    if (!preview || !canProceed) return;
+    const contacts = buildGroupContactRows(preview);
+    downloadTextFile(groupContactFileName(preview), buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
+    setConfirmed(true);
+    setMessage(`Downloaded ${contacts.length} contacts. Import the VCF, wait for WhatsApp sync, then create the group.`);
+  }
+
+  function downloadBothGroupContacts() {
+    const contacts = buildCombinedGroupContactRows(groupPreviews);
+    if (!contacts.length) {
+      setMessage('No valid contacts are available for download.');
+      return;
+    }
+    downloadTextFile('mvst-whatsapp-group-contacts.vcf', buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
+    setConfirmed(true);
+    setMessage(`Downloaded ${contacts.length} contacts for both groups. PST contacts are included only once.`);
+  }
+
+  async function copyParticipantNames() {
+    if (!preview || !canProceed) return;
     const clipboardText = buildGroupClipboardText(preview);
     setMessage('');
     try {
       await navigator.clipboard.writeText(clipboardText);
-      setMessage('Participant list copied. WhatsApp opened for manual group creation.');
+      setMessage('Contact names copied. Use these names while searching in WhatsApp.');
     } catch (error) {
-      setMessage('Automatic copy is blocked. Select and copy the participant list manually.');
+      setMessage('Automatic copy is blocked. Use the downloaded VCF and on-screen prefixes.');
     }
     setConfirmed(true);
+  }
+
+  function openWhatsAppWeb() {
+    setConfirmed(true);
+    setMessage('WhatsApp Web opened. On mobile, open the WhatsApp app manually if WhatsApp Web shows the desktop-only screen.');
     window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
   }
 
@@ -2128,6 +2247,10 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
           <UsersRound size={18} />
           Prepare Bheemaratha Group
         </button>
+        <button type="button" onClick={downloadBothGroupContacts} disabled={groupPreviews.every((item) => !buildGroupContactRows(item).length)}>
+          <Download size={18} />
+          Download Both Groups' Contacts
+        </button>
       </div>
 
       {preview ? (
@@ -2173,18 +2296,27 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
           <div className="group-manual-steps">
             <h4>Manual WhatsApp steps</h4>
             <ol>
-              <li>Create a new WhatsApp group.</li>
-              <li>Add the three PST members first.</li>
-              <li>Name the group exactly as shown above.</li>
-              <li>Add the copied participant contacts for this event only.</li>
-              <li>Make all three PST members group admins.</li>
+              <li>Download the VCF contact file.</li>
+              <li>Open or import it into Google Contacts, Windows contacts, or phone contacts.</li>
+              <li>Wait briefly for WhatsApp contacts to sync.</li>
+              <li>Open WhatsApp and create the group.</li>
+              <li>Search using {WHATSAPP_CONTACT_PREFIXES[preview.eventType]} or {WHATSAPP_CONTACT_PREFIXES.pst}.</li>
+              <li>Add all relevant contacts.</li>
+              <li>Make all PST members group admins.</li>
               <li>Return here and mark the group as created.</li>
             </ol>
           </div>
 
           <div className="group-controls">
-            <button type="button" onClick={confirmAssistedFlow} disabled={!canProceed}>
-              Confirm, Copy List & Open WhatsApp
+            <button type="button" onClick={downloadContactsForPreview} disabled={!canProceed}>
+              <Download size={16} />
+              Download Contacts (.vcf)
+            </button>
+            <button type="button" onClick={copyParticipantNames} disabled={!canProceed}>
+              Copy Participant Names
+            </button>
+            <button type="button" onClick={openWhatsAppWeb} disabled={!canProceed}>
+              Open WhatsApp Web
             </button>
             <button type="button" onClick={markGroupCreated} disabled={!confirmed || groupConfig.isSaving}>
               {groupConfig.isSaving ? 'Saving' : 'Mark Group Created'}
