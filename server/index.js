@@ -2,6 +2,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { google } from 'googleapis';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,19 @@ const ADMIN_FIELDS = {
   seatNo: ['Seat No'],
   receiptNo: ['Receipt No'],
   receiptGenerated: ['Receipt Generated'],
+  qrToken: ['QR Token'],
+  meetingAttendance: ['Meeting Attendance'],
+  meetingAttendanceTime: ['Meeting Attendance Time', 'Meeting Attendance Date/Time'],
+  meetingAttendanceBy: ['Meeting Attendance By'],
+  eventAttendance: ['Event Attendance'],
+  eventAttendanceTime: ['Event Attendance Time', 'Event Attendance Date/Time'],
+  eventAttendanceBy: ['Event Attendance By'],
+  madalakkiGiven: ['Madalakki Given'],
+  madalakkiTime: ['Madalakki Time', 'Madalakki Date/Time'],
+  madalakkiBy: ['Madalakki By', 'Madalakki Given By'],
+  photoFrameGiven: ['Photo Frame Given'],
+  photoFrameTime: ['Photo Frame Time', 'Photo Frame Date/Time'],
+  photoFrameBy: ['Photo Frame By', 'Photo Frame Given By'],
 };
 const DONOR_FIELDS = {
   sponsorName: ['Sponsor Name'],
@@ -79,6 +93,38 @@ const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'Wha
 const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
 const WHATSAPP_GROUP_LOG_HEADERS = ['Group Name', 'Event', 'Creation Date', 'Participant Count', 'Status', 'Remarks'];
 const FREE_SPONSORSHIP_STATUS = 'free sponsorship';
+const QR_TOKEN_VERSION = 'mvstqr:v1';
+const DISTRIBUTION_OPERATIONS = {
+  meetingAttendance: {
+    label: 'Meeting Attendance',
+    statusField: 'meetingAttendance',
+    timeField: 'meetingAttendanceTime',
+    byField: 'meetingAttendanceBy',
+  },
+  kitCollection: {
+    label: 'Kit Collection',
+    statusField: 'kitIssued',
+    remarkField: 'remarks',
+  },
+  eventAttendance: {
+    label: 'Event Attendance',
+    statusField: 'eventAttendance',
+    timeField: 'eventAttendanceTime',
+    byField: 'eventAttendanceBy',
+  },
+  madalakkiDistribution: {
+    label: 'Madalakki Distribution',
+    statusField: 'madalakkiGiven',
+    timeField: 'madalakkiTime',
+    byField: 'madalakkiBy',
+  },
+  photoFrameDistribution: {
+    label: 'Photo Frame Distribution',
+    statusField: 'photoFrameGiven',
+    timeField: 'photoFrameTime',
+    byField: 'photoFrameBy',
+  },
+};
 
 const EVENTS = {
   shashtipoorthi: {
@@ -473,6 +519,59 @@ function buildAdminColumnMap(headerMap) {
   );
 }
 
+function requiredDistributionColumns() {
+  return [
+    'qrToken',
+    ...Object.values(DISTRIBUTION_OPERATIONS).flatMap((operation) => [
+      operation.statusField,
+      operation.timeField,
+      operation.byField,
+      operation.remarkField,
+    ].filter(Boolean)),
+  ];
+}
+
+function missingDistributionColumns(rows) {
+  const missingByEvent = {};
+  for (const eventType of Object.keys(EVENTS)) {
+    const sample = rows.find((row) => row.eventType === eventType);
+    const adminColumns = sample?.adminColumns || {};
+    missingByEvent[eventType] = requiredDistributionColumns()
+      .filter((field) => adminColumns[field] === null || adminColumns[field] === undefined)
+      .map((field) => ADMIN_FIELDS[field]?.[0] || field);
+  }
+  return missingByEvent;
+}
+
+function qrTokenSecret() {
+  return process.env.QR_TOKEN_SECRET ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+    process.env.BHIMARATHA_SHEET_ID ||
+    'mvst-events-local-qr-token';
+}
+
+function generateQrToken(row) {
+  const seed = `${row.eventType}:${row.rowNumber}`;
+  const digest = crypto.createHmac('sha256', qrTokenSecret()).update(seed).digest('base64url').slice(0, 24);
+  return `${QR_TOKEN_VERSION}:${digest}`;
+}
+
+function rowQrToken(row) {
+  return String(row.qrToken || '').trim() || generateQrToken(row);
+}
+
+function indiaDateTime() {
+  return new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 function buildDonorColumnMap(headerMap) {
   return Object.fromEntries(
     Object.entries(DONOR_FIELDS).map(([field, labels]) => [field, getColumnIndex(headerMap, labels)]),
@@ -535,6 +634,19 @@ function normalizeRows(values, source) {
         receiptNo: getCell(row, headerMap, ['Receipt No']),
         receiptDate: getCell(row, headerMap, ['Receipt Date']),
         receiptGenerated: boolFrom(getCell(row, headerMap, ['Receipt Generated'])),
+        qrToken: getCell(row, headerMap, ['QR Token']),
+        meetingAttendance: boolFrom(getCell(row, headerMap, ['Meeting Attendance'])),
+        meetingAttendanceTime: getCell(row, headerMap, ['Meeting Attendance Time', 'Meeting Attendance Date/Time']),
+        meetingAttendanceBy: getCell(row, headerMap, ['Meeting Attendance By']),
+        eventAttendance: boolFrom(getCell(row, headerMap, ['Event Attendance'])),
+        eventAttendanceTime: getCell(row, headerMap, ['Event Attendance Time', 'Event Attendance Date/Time']),
+        eventAttendanceBy: getCell(row, headerMap, ['Event Attendance By']),
+        madalakkiGiven: boolFrom(getCell(row, headerMap, ['Madalakki Given'])),
+        madalakkiTime: getCell(row, headerMap, ['Madalakki Time', 'Madalakki Date/Time']),
+        madalakkiBy: getCell(row, headerMap, ['Madalakki By', 'Madalakki Given By']),
+        photoFrameGiven: boolFrom(getCell(row, headerMap, ['Photo Frame Given'])),
+        photoFrameTime: getCell(row, headerMap, ['Photo Frame Time', 'Photo Frame Date/Time']),
+        photoFrameBy: getCell(row, headerMap, ['Photo Frame By', 'Photo Frame Given By']),
         contribution,
         balance,
         adminColumns,
@@ -745,7 +857,10 @@ async function loadFromCsvFallback() {
 }
 
 function publicRows(rows) {
-  return rows.map(({ adminColumns, ...row }) => row);
+  return rows.map(({ adminColumns, ...row }) => ({
+    ...row,
+    qrToken: rowQrToken(row),
+  }));
 }
 
 function publicDonorRows(rows) {
@@ -903,7 +1018,17 @@ function sourceForEvent(eventType) {
 
 function normalizePatchValue(field, value) {
   if (field === 'paidAmount') return String(numberFrom(value));
-  if (field === 'treasurerVerified' || field === 'kitIssued' || field === 'welcomeSent' || field === 'paymentSent' || field === 'receiptGenerated') return value ? 'Yes' : 'No';
+  if (
+    field === 'treasurerVerified' ||
+    field === 'kitIssued' ||
+    field === 'welcomeSent' ||
+    field === 'paymentSent' ||
+    field === 'receiptGenerated' ||
+    field === 'meetingAttendance' ||
+    field === 'eventAttendance' ||
+    field === 'madalakkiGiven' ||
+    field === 'photoFrameGiven'
+  ) return value ? 'Yes' : 'No';
   return String(value ?? '');
 }
 
@@ -1026,6 +1151,117 @@ async function updateRegistration(registrationId, updates) {
   });
 
   return loadRegistrations();
+}
+
+async function scanDistributionToken({ token, operationKey, actor }) {
+  if (!actor || !String(actor).trim()) {
+    const error = new Error('Unauthenticated scan blocked. Operator name is required.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  if (!operation) {
+    const error = new Error('Invalid distribution operation.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!hasGoogleConfig()) {
+    const error = new Error('Read-only mode. Google Sheets credentials are not configured.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await loadFromGoogleApi().then((result) => {
+    cache = {
+      rows: result.rows,
+      refreshedAt: new Date().toISOString(),
+      source: result.source,
+      writeEnabled: result.writeEnabled,
+    };
+  });
+
+  const currentRow = cache.rows.find((row) => rowQrToken(row) === String(token || '').trim());
+  if (!currentRow) {
+    const error = new Error('Invalid QR. Participant not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const source = sourceForEvent(currentRow.eventType);
+  if (!source?.spreadsheetId) {
+    const error = new Error('Registration source sheet is not configured for write-back.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requiredFields = [
+    operation.statusField,
+    operation.timeField,
+    operation.byField,
+    operation.remarkField,
+  ].filter(Boolean);
+  const missingColumns = requiredFields
+    .filter((field) => currentRow.adminColumns?.[field] === null || currentRow.adminColumns?.[field] === undefined)
+    .map((field) => ADMIN_FIELDS[field]?.[0] || field);
+  if (missingColumns.length) {
+    const error = new Error(`Distribution columns missing: ${missingColumns.join(', ')}`);
+    error.statusCode = 409;
+    error.missingColumns = missingColumns;
+    throw error;
+  }
+
+  if (currentRow[operation.statusField]) {
+    return {
+      status: 'already-completed',
+      operation: operation.label,
+      participant: publicRows([currentRow])[0],
+      completedAt: operation.timeField ? currentRow[operation.timeField] : '',
+      completedBy: operation.byField ? currentRow[operation.byField] : '',
+      rows: cache.rows,
+    };
+  }
+
+  const timestamp = indiaDateTime();
+  const updates = {
+    [operation.statusField]: true,
+  };
+  if (operation.timeField) updates[operation.timeField] = timestamp;
+  if (operation.byField) updates[operation.byField] = String(actor).trim();
+  if (operation.remarkField) {
+    const existingRemarks = String(currentRow.remarks || '').trim();
+    const auditRemark = `${operation.label}: ${timestamp} by ${String(actor).trim()}`;
+    updates[operation.remarkField] = existingRemarks ? `${existingRemarks}\n${auditRemark}` : auditRemark;
+  }
+
+  const data = Object.entries(updates).map(([field, value]) => {
+    const columnIndex = currentRow.adminColumns[field];
+    return {
+      range: `'${getSheetName()}'!${columnLetter(columnIndex)}${currentRow.rowNumber}`,
+      values: [[normalizePatchValue(field, value)]],
+    };
+  });
+
+  const sheets = createSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: source.spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data,
+    },
+  });
+
+  const next = await loadRegistrations();
+  const updatedRow = next.rows.find((row) => row.id === currentRow.id) || currentRow;
+  return {
+    status: 'completed',
+    operation: operation.label,
+    participant: publicRows([updatedRow])[0],
+    completedAt: timestamp,
+    completedBy: String(actor).trim(),
+    rows: next.rows,
+  };
 }
 
 function normalizeDonorPatchValue(field, value) {
@@ -1153,6 +1389,77 @@ app.post('/api/registrations/refresh', async (req, res) => {
       notice: cache.notice,
       mode: 'read-only',
       error: error.message,
+    });
+  }
+});
+
+app.get('/api/distribution/audit', async (req, res) => {
+  try {
+    if (!cache.refreshedAt) await loadRegistrations();
+    const missingColumns = missingDistributionColumns(cache.rows);
+    res.json({
+      ok: true,
+      missingColumns,
+      reusedExistingColumns: ['Kit Issued', 'Remarks'],
+      proposedNewColumns: [
+        'QR Token',
+        'Meeting Attendance',
+        'Meeting Attendance Time',
+        'Meeting Attendance By',
+        'Event Attendance',
+        'Event Attendance Time',
+        'Event Attendance By',
+        'Madalakki Given',
+        'Madalakki Time',
+        'Madalakki By',
+        'Photo Frame Given',
+        'Photo Frame Time',
+        'Photo Frame By',
+      ],
+      operations: Object.fromEntries(
+        Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => [key, {
+          label: operation.label,
+          fields: [
+            ADMIN_FIELDS[operation.statusField]?.[0],
+            ADMIN_FIELDS[operation.timeField]?.[0],
+            ADMIN_FIELDS[operation.byField]?.[0],
+            ADMIN_FIELDS[operation.remarkField]?.[0],
+          ].filter(Boolean),
+        }]),
+      ),
+      rows: publicRows(cache.rows),
+      refreshedAt: cache.refreshedAt,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/distribution/scan', async (req, res) => {
+  try {
+    const result = await scanDistributionToken({
+      token: req.body?.token,
+      operationKey: req.body?.operation,
+      actor: req.get('x-mvst-user') || req.body?.actor,
+    });
+    res.json({
+      ok: true,
+      status: result.status,
+      operation: result.operation,
+      participant: result.participant,
+      completedAt: result.completedAt,
+      completedBy: result.completedBy,
+      rows: publicRows(result.rows),
+      refreshedAt: cache.refreshedAt,
+      source: cache.source,
+      writeEnabled: cache.writeEnabled,
+      mode: cache.writeEnabled ? 'read-write' : 'read-only',
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+      missingColumns: error.missingColumns || [],
     });
   }
 });

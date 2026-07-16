@@ -1,9 +1,11 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import JSZip from 'jszip';
+import QRCode from 'qrcode';
 import {
   BadgeCheck,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
@@ -17,7 +19,9 @@ import {
   HeartHandshake,
   Image,
   IndianRupee,
+  Keyboard,
   MessageCircle,
+  QrCode,
   RefreshCw,
   Save,
   Search,
@@ -90,6 +94,62 @@ const WHATSAPP_CONTACT_PREFIXES = {
   pst: 'MVST PST',
 };
 const PAYMENT_STATUSES = ['Full Paid', 'Part Paid', 'Pending', 'Free Sponsorship'];
+const DISTRIBUTION_OPERATIONS = {
+  meetingAttendance: {
+    label: 'Meeting Attendance',
+    group: 'Kit Distribution Day',
+    statusField: 'meetingAttendance',
+    timeField: 'meetingAttendanceTime',
+    byField: 'meetingAttendanceBy',
+    completedLabel: 'Meeting Attendance',
+  },
+  kitCollection: {
+    label: 'Kit Collection',
+    group: 'Kit Distribution Day',
+    statusField: 'kitIssued',
+    remarkField: 'remarks',
+    completedLabel: 'Kit Issued',
+  },
+  eventAttendance: {
+    label: 'Event Attendance',
+    group: 'Mahotsava Event Day',
+    statusField: 'eventAttendance',
+    timeField: 'eventAttendanceTime',
+    byField: 'eventAttendanceBy',
+    completedLabel: 'Event Attendance',
+  },
+  madalakkiDistribution: {
+    label: 'Madalakki Distribution',
+    group: 'Mahotsava Event Day',
+    statusField: 'madalakkiGiven',
+    timeField: 'madalakkiTime',
+    byField: 'madalakkiBy',
+    completedLabel: 'Madalakki Given',
+  },
+  photoFrameDistribution: {
+    label: 'Photo Frame Distribution',
+    group: 'Mahotsava Event Day',
+    statusField: 'photoFrameGiven',
+    timeField: 'photoFrameTime',
+    byField: 'photoFrameBy',
+    completedLabel: 'Photo Frame Given',
+  },
+};
+const DISTRIBUTION_REQUIRED_COLUMNS = [
+  'QR Token',
+  'Meeting Attendance',
+  'Meeting Attendance Time',
+  'Meeting Attendance By',
+  'Event Attendance',
+  'Event Attendance Time',
+  'Event Attendance By',
+  'Madalakki Given',
+  'Madalakki Time',
+  'Madalakki By',
+  'Photo Frame Given',
+  'Photo Frame Time',
+  'Photo Frame By',
+];
 const PARTICIPANT_SORT_OPTIONS = [
   { value: 'latest', label: 'Latest Registration' },
   { value: 'seat-asc', label: 'Seat Number (Ascending)' },
@@ -332,6 +392,19 @@ function normalizeRow(row, headerMap, source) {
     receiptNo: getCell(row, headerMap, ['Receipt No']),
     receiptDate: getCell(row, headerMap, ['Receipt Date']),
     receiptGenerated: boolFrom(getCell(row, headerMap, ['Receipt Generated'])),
+    qrToken: getCell(row, headerMap, ['QR Token']),
+    meetingAttendance: boolFrom(getCell(row, headerMap, ['Meeting Attendance'])),
+    meetingAttendanceTime: getCell(row, headerMap, ['Meeting Attendance Time', 'Meeting Attendance Date/Time']),
+    meetingAttendanceBy: getCell(row, headerMap, ['Meeting Attendance By']),
+    eventAttendance: boolFrom(getCell(row, headerMap, ['Event Attendance'])),
+    eventAttendanceTime: getCell(row, headerMap, ['Event Attendance Time', 'Event Attendance Date/Time']),
+    eventAttendanceBy: getCell(row, headerMap, ['Event Attendance By']),
+    madalakkiGiven: boolFrom(getCell(row, headerMap, ['Madalakki Given'])),
+    madalakkiTime: getCell(row, headerMap, ['Madalakki Time', 'Madalakki Date/Time']),
+    madalakkiBy: getCell(row, headerMap, ['Madalakki By', 'Madalakki Given By']),
+    photoFrameGiven: boolFrom(getCell(row, headerMap, ['Photo Frame Given'])),
+    photoFrameTime: getCell(row, headerMap, ['Photo Frame Time', 'Photo Frame Date/Time']),
+    photoFrameBy: getCell(row, headerMap, ['Photo Frame By', 'Photo Frame Given By']),
     remarks: getCell(row, headerMap, ['Remarks']),
     contribution,
     balance,
@@ -773,6 +846,65 @@ function downloadBlob(blob, filename) {
   link.click();
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function qrTokenToPng(token) {
+  return QRCode.toDataURL(token, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 640,
+    color: {
+      dark: '#331b16',
+      light: '#fffaf0',
+    },
+  });
+}
+
+async function downloadQrPng(participant) {
+  const token = String(participant.qrToken || '').trim();
+  if (!token) throw new Error('QR token missing for this participant');
+  const dataUrl = await qrTokenToPng(token);
+  const eventName = participant.eventType === 'shashtipoorthi' ? 'Shashtipoorthi' : 'Bhimaratha';
+  const seat = String(participant.seatNo || 'No-Seat').replace(/\s+/g, '').replace(/[^a-z0-9-]+/gi, '-');
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = `MVST-QR-${eventName}-${seat}.png`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+async function scanDistributionQr({ token, operation, actor }) {
+  const response = await fetch('/api/distribution/scan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-mvst-user': actor,
+    },
+    body: JSON.stringify({ token, operation, actor }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.ok) {
+    const error = new Error(payload.error || 'Save Failed');
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function distributionCompleted(row, operationKey) {
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  return Boolean(operation && row?.[operation.statusField]);
+}
+
+function distributionTimestamp(row, operationKey) {
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  return operation?.timeField ? row?.[operation.timeField] || '' : '';
+}
+
+function distributionCompletedBy(row, operationKey) {
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  return operation?.byField ? row?.[operation.byField] || '' : '';
 }
 
 function isBulkZipSupported() {
@@ -1620,6 +1752,12 @@ function useParticipants() {
       }
       applyPayload(payload);
       setStatus(`${payload.message || 'Saved to Google Sheet'}. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
+      return payload;
+    },
+    scanDistribution: async ({ token, operation, actor }) => {
+      const payload = await scanDistributionQr({ token, operation, actor });
+      applyPayload(payload);
+      setStatus(`Distribution scan saved. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
       return payload;
     },
     refresh: () => load(true),
@@ -3435,8 +3573,350 @@ function BalanceReceivableModal({ rows, filter, setFilter, totalBalance, onClose
   );
 }
 
+function DistributionDashboard({ rows, operationKey, onOpenList }) {
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  const completed = rows.filter((row) => distributionCompleted(row, operationKey));
+  const pending = rows.filter((row) => !distributionCompleted(row, operationKey));
+  return (
+    <div className="stats-grid distribution-stats-grid">
+      <StatCard icon={UsersRound} label="Total Registrations" value={rows.length} onClick={() => onOpenList('total', operationKey)} />
+      <StatCard icon={CheckCircle2} label={`${operation.completedLabel}`} value={completed.length} tone="success" onClick={() => onOpenList('completed', operationKey)} />
+      <StatCard icon={AlertTriangle} label={`${operation.label} Pending`} value={pending.length} tone="warning" onClick={() => onOpenList('pending', operationKey)} />
+    </div>
+  );
+}
+
+function DistributionListModal({ rows, operationKey, filterType, eventFilter, setEventFilter, onClose }) {
+  const operation = DISTRIBUTION_OPERATIONS[operationKey];
+  const filteredRows = rows
+    .filter((row) => eventFilter === 'All' || row.eventType === eventFilter)
+    .filter((row) => {
+      if (filterType === 'completed') return distributionCompleted(row, operationKey);
+      if (filterType === 'pending') return !distributionCompleted(row, operationKey);
+      return true;
+    });
+
+  return (
+    <div className="balance-modal-backdrop" role="dialog" aria-modal="true" aria-label="Distribution participant list">
+      <div className="balance-modal distribution-modal">
+        <div className="balance-modal-head">
+          <div>
+            <span>{operation.label}</span>
+            <strong>{filteredRows.length} participants</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close distribution list"><X size={18} /></button>
+        </div>
+        <div className="balance-filter-row">
+          {['All', 'shashtipoorthi', 'bhimaratha'].map((item) => (
+            <button key={item} type="button" className={eventFilter === item ? 'active' : ''} onClick={() => setEventFilter(item)}>
+              {item === 'All' ? 'All' : EVENTS[item].shortLabel}
+            </button>
+          ))}
+        </div>
+        <div className="balance-list">
+          {filteredRows.map((participant) => (
+            <article className="balance-card" key={participant.id}>
+              <div className="balance-card-main">
+                <span>{EVENTS[participant.eventType]?.shortLabel}</span>
+                <strong>{participantDisplayName(participant)}</strong>
+                <small>Seat {participant.seatNo || 'Not entered'}</small>
+              </div>
+              <div className="receipt-meta-grid">
+                <p><span>Status</span>{distributionCompleted(participant, operationKey) ? 'Completed' : 'Pending'}</p>
+                <p><span>Date/Time</span>{distributionTimestamp(participant, operationKey) || '-'}</p>
+                <p><span>Completed By</span>{distributionCompletedBy(participant, operationKey) || '-'}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QRPreviewPanel({ participant }) {
+  const [qrUrl, setQrUrl] = useState('');
+  const [message, setMessage] = useState('');
+
+  async function previewQr() {
+    setMessage('');
+    try {
+      setQrUrl(await qrTokenToPng(participant.qrToken));
+    } catch (error) {
+      setMessage(error.message || 'Unable to generate QR');
+    }
+  }
+
+  async function downloadQr() {
+    setMessage('');
+    try {
+      await downloadQrPng(participant);
+      setMessage('QR PNG downloaded. Use the same QR on both spouse ID cards.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to download QR');
+    }
+  }
+
+  return (
+    <div className="qr-preview-card">
+      <div>
+        <strong>{participantDisplayName(participant)}</strong>
+        <span>{EVENTS[participant.eventType]?.shortLabel} · Seat {participant.seatNo || 'Not entered'}</span>
+      </div>
+      {qrUrl ? <img src={qrUrl} alt="Registration QR preview" /> : null}
+      <div className="qr-preview-actions">
+        <button type="button" onClick={previewQr}><QrCode size={16} /> Preview QR</button>
+        <button type="button" onClick={downloadQr}><Download size={16} /> Download QR PNG</button>
+      </div>
+      {message ? <small>{message}</small> : null}
+    </div>
+  );
+}
+
+function QRVideoScanner({ disabled, onScan }) {
+  const [videoElement, setVideoElement] = useState(null);
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    window.__mvstQrScanHandler = onScan;
+    return () => {
+      if (window.__mvstQrScanHandler === onScan) delete window.__mvstQrScanHandler;
+    };
+  }, [onScan]);
+
+  useEffect(() => {
+    if (!videoElement || disabled || !('BarcodeDetector' in window)) return undefined;
+    let cancelled = false;
+    let stream = null;
+    let timeoutId = null;
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+
+    async function start() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        videoElement.srcObject = stream;
+        await videoElement.play();
+        setStatus('Camera scanner active. Point at the QR code.');
+        scanLoop();
+      } catch (error) {
+        setStatus('Camera permission blocked. Use manual token entry.');
+      }
+    }
+
+    async function scanLoop() {
+      if (cancelled || disabled) return;
+      try {
+        const codes = await detector.detect(videoElement);
+        const token = codes[0]?.rawValue;
+        if (token) {
+          window.__mvstQrScanHandler?.(token);
+          timeoutId = setTimeout(scanLoop, 2200);
+          return;
+        }
+      } catch (error) {
+        setStatus('Camera scan failed. Use manual token entry.');
+      }
+      timeoutId = setTimeout(scanLoop, 350);
+    }
+
+    start();
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      if (videoElement) videoElement.srcObject = null;
+    };
+  }, [videoElement, disabled]);
+
+  if (!('BarcodeDetector' in window)) {
+    return <div className="camera-fallback"><Camera size={20} /><span>Camera QR scanning is not available in this browser.</span></div>;
+  }
+
+  return (
+    <div className="camera-scanner">
+      <video ref={setVideoElement} muted playsInline aria-label="QR scanner camera preview" />
+      <small>{status || 'Starting camera scanner...'}</small>
+    </div>
+  );
+}
+
+function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
+  const [activeOperation, setActiveOperation] = useState('meetingAttendance');
+  const [operatorName, setOperatorName] = useState(localStorage.getItem('mvstOperatorName') || '');
+  const [manualToken, setManualToken] = useState('');
+  const [search, setSearch] = useState('');
+  const [scanState, setScanState] = useState({ type: 'idle', message: 'Select operation and scan a QR.' });
+  const [isSaving, setIsSaving] = useState(false);
+  const [listState, setListState] = useState(null);
+  const [eventFilter, setEventFilter] = useState('All');
+  const [selectedQrParticipant, setSelectedQrParticipant] = useState(null);
+  const operation = DISTRIBUTION_OPERATIONS[activeOperation];
+  const searchableRows = rows.filter((row) => {
+    const text = [participantDisplayName(row), row.seatNo, row.mobileNumber, EVENTS[row.eventType]?.shortLabel].join(' ').toLowerCase();
+    return !search.trim() || text.includes(search.trim().toLowerCase());
+  });
+  const scannerSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
+
+  useEffect(() => {
+    if (operatorName) localStorage.setItem('mvstOperatorName', operatorName);
+  }, [operatorName]);
+
+  useEffect(() => {
+    if (scanState.type === 'success' || scanState.type === 'duplicate' || scanState.type === 'error') {
+      const timeout = setTimeout(() => setScanState({ type: 'idle', message: 'Ready for next QR scan.' }), 2000);
+      return () => clearTimeout(timeout);
+    }
+    return undefined;
+  }, [scanState]);
+
+  async function handleTokenScan(token) {
+    if (isSaving) return;
+    if (!operatorName.trim()) {
+      setScanState({ type: 'error', message: 'Operator name is required before scanning.' });
+      return;
+    }
+    if (!writeEnabled) {
+      setScanState({ type: 'error', message: 'Read-only mode. Distribution scan cannot be saved.' });
+      return;
+    }
+    setIsSaving(true);
+    setScanState({ type: 'saving', message: 'Saving scan to Google Sheet...' });
+    try {
+      const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation, actor: operatorName.trim() });
+      const participant = result.participant;
+      if (result.status === 'already-completed') {
+        setScanState({
+          type: 'duplicate',
+          message: `Already Completed · ${operation.label} · ${participantDisplayName(participant)} · Seat ${participant.seatNo || '-'} · ${result.completedAt || '-'} · ${result.completedBy || '-'}`,
+        });
+      } else {
+        setScanState({
+          type: 'success',
+          message: `Completed Successfully · ${operation.completedLabel} · ${participantDisplayName(participant)} · ${EVENTS[participant.eventType]?.shortLabel} · Seat ${participant.seatNo || '-'} · ${result.completedAt}`,
+        });
+      }
+      setManualToken('');
+    } catch (error) {
+      setScanState({ type: 'error', message: error.message || 'Save Failed. Status was not changed. Please scan again.' });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openList(filterType, operationKey) {
+    setListState({ filterType, operationKey });
+    setEventFilter('All');
+  }
+
+  return (
+    <section className="management-section qr-distribution-section">
+      <div className="section-heading">
+        <div>
+          <p>QR Operations</p>
+          <h2>Scan and auto-save volunteer operations</h2>
+        </div>
+      </div>
+
+      <div className="distribution-audit-card">
+        <strong>Read-only Sheet audit completed</strong>
+        <span>Current sheets already have Kit Issued and Remarks. Kit Collection reuses those fields. Only genuinely missing QR/attendance/event-day columns are listed below.</span>
+        <details>
+          <summary>Required columns</summary>
+          <div className="distribution-column-list">
+            {DISTRIBUTION_REQUIRED_COLUMNS.map((column) => <span key={column}>{column}</span>)}
+          </div>
+        </details>
+      </div>
+
+      <div className="distribution-groups">
+        <article className="distribution-group-card">
+          <p>📅 Kit Distribution Day</p>
+          <button className={activeOperation === 'meetingAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('meetingAttendance')}>Meeting Attendance</button>
+          <button className={activeOperation === 'kitCollection' ? 'active' : ''} type="button" onClick={() => setActiveOperation('kitCollection')}>Kit Collection</button>
+        </article>
+        <article className="distribution-group-card">
+          <p>🌸 Mahotsava Day</p>
+          <button className={activeOperation === 'eventAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('eventAttendance')}>Event Attendance</button>
+          <button className={activeOperation === 'madalakkiDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('madalakkiDistribution')}>Madalakki Distribution</button>
+          <button className={activeOperation === 'photoFrameDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('photoFrameDistribution')}>Photo Frame Distribution</button>
+        </article>
+      </div>
+
+      <div className="distribution-dashboard-block">
+        <p className="event-label">Kit Distribution Day</p>
+        <DistributionDashboard rows={rows} operationKey="meetingAttendance" onOpenList={openList} />
+        <DistributionDashboard rows={rows} operationKey="kitCollection" onOpenList={openList} />
+        <p className="event-label">Mahotsava Event Day</p>
+        <DistributionDashboard rows={rows} operationKey="eventAttendance" onOpenList={openList} />
+        <DistributionDashboard rows={rows} operationKey="madalakkiDistribution" onOpenList={openList} />
+        <DistributionDashboard rows={rows} operationKey="photoFrameDistribution" onOpenList={openList} />
+      </div>
+
+      <div className="distribution-scanner-card">
+        <div className="distribution-scanner-head">
+          <div>
+            <span>Selected Operation</span>
+            <strong>{operation.label}</strong>
+          </div>
+          <label className="search-field operator-field">
+            <Keyboard size={17} />
+            <input value={operatorName} onChange={(event) => setOperatorName(event.target.value)} placeholder="Volunteer / user name" />
+          </label>
+        </div>
+        <div className={`scan-status ${scanState.type}`}>
+          <Camera size={18} />
+          <span>{scanState.message}</span>
+        </div>
+        <QRVideoScanner disabled={isSaving || !operatorName.trim() || !writeEnabled} onScan={handleTokenScan} />
+        <div className="manual-scan-row">
+          <label className="search-field">
+            <QrCode size={17} />
+            <input value={manualToken} onChange={(event) => setManualToken(event.target.value)} placeholder="Manual QR token entry" disabled={isSaving} />
+          </label>
+          <button type="button" onClick={() => handleTokenScan(manualToken)} disabled={isSaving || !manualToken.trim()}>
+            {isSaving ? 'Saving' : 'Scan Token'}
+          </button>
+        </div>
+        <small>{scannerSupported ? 'Camera QR scanning can be enabled in supported browsers. Manual token entry remains available for owner/admin fallback.' : 'Camera QR scanning is not available in this browser. Use manual token entry, seat search, or participant search.'}</small>
+      </div>
+
+      <div className="qr-tools-grid">
+        <div className="controls">
+          <label className="search-field">
+            <Search size={17} />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search seat, name, mobile for QR preview" />
+          </label>
+        </div>
+        <div className="qr-preview-list">
+          {searchableRows.slice(0, 8).map((participant) => (
+            <button key={participant.id} type="button" className={selectedQrParticipant?.id === participant.id ? 'active' : ''} onClick={() => setSelectedQrParticipant(participant)}>
+              <strong>{participantDisplayName(participant)}</strong>
+              <span>{EVENTS[participant.eventType]?.shortLabel} · Seat {participant.seatNo || 'Not entered'}</span>
+            </button>
+          ))}
+        </div>
+        {selectedQrParticipant ? <QRPreviewPanel participant={selectedQrParticipant} /> : null}
+      </div>
+
+      {listState ? (
+        <DistributionListModal
+          rows={rows}
+          operationKey={listState.operationKey}
+          filterType={listState.filterType}
+          eventFilter={eventFilter}
+          setEventFilter={setEventFilter}
+          onClose={() => setListState(null)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 function App() {
-  const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
+  const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, scanDistribution, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
   const requirementState = useSponsorshipRequirements();
   const groupConfig = useWhatsAppGroupConfig();
@@ -3866,6 +4346,10 @@ function App() {
             <UsersRound size={18} />
             <span>WhatsApp Groups</span>
           </button>
+          <button className={activeView === 'qr-distribution' ? 'active' : ''} type="button" onClick={() => setActiveView('qr-distribution')}>
+            <QrCode size={18} />
+            <span>QR Operations</span>
+          </button>
           <button className={activeView === 'shashtipoorthi' ? 'active' : ''} type="button" onClick={() => openEventView('shashtipoorthi')}>
             <HeartHandshake size={18} />
             <span>Shashtipoorthi Shanthi</span>
@@ -4021,6 +4505,8 @@ function App() {
           ) : null}
 
           {activeView === 'whatsapp-groups' ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
+
+          {activeView === 'qr-distribution' ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} /> : null}
 
           {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
