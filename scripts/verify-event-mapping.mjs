@@ -838,6 +838,27 @@ assert.ok(frontend.includes('scanDistributionQr'), 'QR scans must call the backe
 assert.ok(frontend.includes('Saving scan to Google Sheet'), 'QR scan must not show success until save is in progress/confirmed');
 assert.ok(frontend.includes('Already Completed'), 'QR duplicate scans must show Already Completed');
 assert.ok(frontend.includes('Operator name is required before scanning.'), 'QR scan must require operator identity before saving');
+assert.ok(frontend.includes('VolunteerDistributionMonitor'), 'QR Operations must include volunteer distribution monitor');
+assert.ok(frontend.includes('Meeting Attendance Pending'), 'Volunteer monitor must filter Meeting Attendance pending');
+assert.ok(frontend.includes('Kit Pending'), 'Volunteer monitor must filter Kit pending');
+assert.ok(frontend.includes('Event Attendance Pending'), 'Volunteer monitor must filter Event Attendance pending');
+assert.ok(frontend.includes('Madalakki Pending'), 'Volunteer monitor must filter Madalakki pending');
+assert.ok(frontend.includes('Photo Frame Pending'), 'Volunteer monitor must filter Photo Frame pending');
+assert.ok(frontend.includes('href={`tel:+${mobile}`}'), 'Volunteer monitor must provide call links for valid mobiles');
+assert.ok(frontend.includes('No payment, receipt, donor, or campaign data is shown here.'), 'Volunteer monitor must state sensitive data is excluded');
+const volunteerMonitorBody = frontend.slice(
+  frontend.indexOf('function VolunteerDistributionMonitor'),
+  frontend.indexOf('function QRVideoScanner'),
+);
+assert.ok(volunteerMonitorBody.includes('participant.groomName'), 'Volunteer monitor must show husband name');
+assert.ok(volunteerMonitorBody.includes('participant.brideName'), 'Volunteer monitor must show wife name');
+assert.ok(volunteerMonitorBody.includes('participant.mobileNumber'), 'Volunteer monitor must show mobile number');
+assert.ok(volunteerMonitorBody.includes('participant.seatNo'), 'Volunteer monitor must show seat number');
+assert.ok(volunteerMonitorBody.includes('EVENTS[participant.eventType]?.shortLabel'), 'Volunteer monitor must show event type');
+assert.ok(!volunteerMonitorBody.includes('paidAmount'), 'Volunteer monitor must not show payment amount');
+assert.ok(!volunteerMonitorBody.includes('paymentStatus'), 'Volunteer monitor must not show payment status');
+assert.ok(!volunteerMonitorBody.includes('receiptNo'), 'Volunteer monitor must not show receipt numbers');
+assert.ok(!volunteerMonitorBody.includes('makeWhatsAppUrl'), 'Volunteer monitor must not expose WhatsApp campaigns');
 assert.ok(backend.includes('QR_TOKEN_VERSION'), 'Backend must generate opaque QR tokens server-side');
 assert.ok(backend.includes("statusField: 'kitIssued'"), 'Backend Kit Collection must reuse existing Kit Issued column');
 assert.ok(!backend.includes("kitCollected: ['Kit Collected']"), 'Backend must not require a new Kit Collected column');

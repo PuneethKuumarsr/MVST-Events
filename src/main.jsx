@@ -150,6 +150,14 @@ const DISTRIBUTION_REQUIRED_COLUMNS = [
   'Photo Frame Time',
   'Photo Frame By',
 ];
+const VOLUNTEER_STATUS_FILTERS = [
+  { value: 'all', label: 'All Participants' },
+  { value: 'meetingAttendance', label: 'Meeting Attendance Pending' },
+  { value: 'kitCollection', label: 'Kit Pending' },
+  { value: 'eventAttendance', label: 'Event Attendance Pending' },
+  { value: 'madalakkiDistribution', label: 'Madalakki Pending' },
+  { value: 'photoFrameDistribution', label: 'Photo Frame Pending' },
+];
 const PARTICIPANT_SORT_OPTIONS = [
   { value: 'latest', label: 'Latest Registration' },
   { value: 'seat-asc', label: 'Seat Number (Ascending)' },
@@ -3673,6 +3681,73 @@ function QRPreviewPanel({ participant }) {
   );
 }
 
+function VolunteerDistributionMonitor({ rows }) {
+  const [filter, setFilter] = useState('all');
+  const [eventFilter, setEventFilter] = useState('All');
+  const visibleRows = sortParticipants(rows, 'seat-asc')
+    .filter((row) => eventFilter === 'All' || row.eventType === eventFilter)
+    .filter((row) => filter === 'all' || !distributionCompleted(row, filter));
+
+  return (
+    <div className="volunteer-monitor">
+      <div className="section-heading compact-heading">
+        <div>
+          <p>Volunteer Monitor</p>
+          <h2>Read-only participant distribution status</h2>
+        </div>
+      </div>
+      <div className="balance-filter-row volunteer-filter-row">
+        {VOLUNTEER_STATUS_FILTERS.map((item) => (
+          <button key={item.value} type="button" className={filter === item.value ? 'active' : ''} onClick={() => setFilter(item.value)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="balance-filter-row volunteer-filter-row">
+        {['All', 'shashtipoorthi', 'bhimaratha'].map((item) => (
+          <button key={item} type="button" className={eventFilter === item ? 'active' : ''} onClick={() => setEventFilter(item)}>
+            {item === 'All' ? 'Both Events' : EVENTS[item].shortLabel}
+          </button>
+        ))}
+      </div>
+      <div className="volunteer-list-summary">
+        <span>Visible participants: <b>{visibleRows.length}</b></span>
+        <span>No payment, receipt, donor, or campaign data is shown here.</span>
+      </div>
+      <div className="volunteer-participant-list">
+        {visibleRows.map((participant) => {
+          const mobile = normalizeIndianMobileNumber(participant.mobileNumber);
+          const validMobile = mobileValidationStatus(participant.mobileNumber).status === 'ok';
+          return (
+            <article className="volunteer-participant-card" key={participant.id}>
+              <div className="volunteer-participant-head">
+                <span>{EVENTS[participant.eventType]?.shortLabel}</span>
+                <strong>Seat {participant.seatNo || 'Not entered'}</strong>
+              </div>
+              <div className="volunteer-name-grid">
+                <p><span>Husband</span>{participant.groomName || 'Not entered'}</p>
+                <p><span>Wife</span>{participant.brideName || 'Not entered'}</p>
+              </div>
+              <div className="volunteer-call-row">
+                <span>{participant.mobileNumber || 'Mobile missing'}</span>
+                {validMobile ? <a href={`tel:+${mobile}`}>📞 Call</a> : <small>Valid mobile required</small>}
+              </div>
+              <div className="volunteer-status-grid">
+                {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
+                  <span key={key} className={distributionCompleted(participant, key) ? 'done' : 'pending'}>
+                    {operation.completedLabel}: {distributionCompleted(participant, key) ? 'Done' : 'Pending'}
+                  </span>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+        {!visibleRows.length ? <p className="balance-empty">No participants match this volunteer filter.</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function QRVideoScanner({ disabled, onScan }) {
   const [videoElement, setVideoElement] = useState(null);
   const [status, setStatus] = useState('');
@@ -3882,6 +3957,8 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
         </div>
         <small>{scannerSupported ? 'Camera QR scanning can be enabled in supported browsers. Manual token entry remains available for owner/admin fallback.' : 'Camera QR scanning is not available in this browser. Use manual token entry, seat search, or participant search.'}</small>
       </div>
+
+      <VolunteerDistributionMonitor rows={rows} />
 
       <div className="qr-tools-grid">
         <div className="controls">

@@ -1696,6 +1696,129 @@ main {
   gap: 7px;
 }
 
+.volunteer-monitor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.82);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.compact-heading {
+  margin-bottom: 0;
+}
+
+.volunteer-filter-row {
+  justify-content: flex-start;
+}
+
+.volunteer-list-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.volunteer-participant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.volunteer-participant-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 12px;
+}
+
+.volunteer-participant-head,
+.volunteer-call-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.volunteer-participant-head span {
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.volunteer-participant-head strong {
+  color: var(--maroon-deep);
+  font-size: 1.05rem;
+}
+
+.volunteer-name-grid,
+.volunteer-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.volunteer-name-grid p {
+  margin: 0;
+  border-radius: 8px;
+  background: #f7ebcf;
+  padding: 9px;
+  color: var(--maroon-deep);
+  font-weight: 850;
+}
+
+.volunteer-name-grid span {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.volunteer-call-row {
+  border-radius: 8px;
+  background: rgba(240, 220, 168, 0.35);
+  padding: 9px;
+  color: var(--maroon-deep);
+  font-weight: 850;
+}
+
+.volunteer-call-row a {
+  border-radius: 8px;
+  background: var(--maroon);
+  color: #fff8e8;
+  padding: 8px 11px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.volunteer-call-row small {
+  color: var(--red);
+  font-weight: 850;
+}
+
+.volunteer-status-grid span {
+  border-radius: 999px;
+  padding: 7px 9px;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.volunteer-status-grid .done {
+  background: rgba(45, 122, 79, 0.12);
+  color: var(--green);
+}
+
+.volunteer-status-grid .pending {
+  background: rgba(169, 101, 18, 0.12);
+  color: var(--amber);
+}
+
 @media (max-width: 620px) {
   .bulk-actions button,
   .bulk-preview-head button,
@@ -1738,7 +1861,9 @@ main {
   .distribution-scanner-head,
   .manual-scan-row,
   .qr-preview-list,
-  .distribution-stats-grid {
+  .distribution-stats-grid,
+  .volunteer-name-grid,
+  .volunteer-status-grid {
     grid-template-columns: 1fr;
   }
 
