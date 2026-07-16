@@ -155,7 +155,7 @@ assert.ok(frontend.includes("throw new Error('Valid event-wise receipt number is
 assert.ok(frontend.includes("throw new Error('Registration timestamp missing')"), 'Receipt generator must reject missing timestamp internally');
 assert.ok(frontend.includes('const activeReceiptNo = validReceiptNumber ? savedReceiptNo : suggestedReceiptNo'), 'Receipt preview/download must use suggested event-wise receipt number without saving it');
 assert.ok(frontend.includes('rows.filter((row) => row.eventType === participant.eventType)'), 'Receipt number suggestions must follow all event registrations, not only paid rows');
-assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(rows, currentParticipant)'), 'Bulk receipt generation must assign event-wise suggested receipt numbers from all event registrations');
+assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(rows, participant)'), 'Bulk receipt generation must assign event-wise suggested receipt numbers from all event registrations');
 assert.ok(backend.includes('await loadFromGoogleApi().then'), 'Backend must reload Google Sheets data before registration updates');
 assert.ok(backend.includes('Seat ${parsedSeat.normalized} is already allotted. Suggested next available seat:'), 'Backend must block duplicate seat saves');
 assert.ok(backend.includes('Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no:'), 'Backend must block duplicate receipt saves');
@@ -175,10 +175,14 @@ assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No field
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
 assert.ok(frontend.includes('Generate Receipt'), 'Dashboard must show Generate Receipt button');
 assert.ok(frontend.includes('Download Receipt'), 'Dashboard must show Download Receipt button');
-assert.ok(frontend.includes('Bulk Generate Receipts'), 'Dashboard must show Bulk Generate Receipts button');
+assert.ok(frontend.includes('Bulk Generate Receipts ZIP'), 'Dashboard must show Bulk Generate Receipts ZIP button');
 assert.ok(frontend.includes('Receipt WhatsApp Queue'), 'Dashboard must provide one-by-one receipt WhatsApp queue');
 assert.ok(frontend.includes('Shashtipoorthi Receipts'), 'Receipt WhatsApp queue must have Shashtipoorthi event action');
 assert.ok(frontend.includes('Bheemaratha Receipts'), 'Receipt WhatsApp queue must have Bheemaratha event action');
+assert.ok(frontend.includes("import JSZip from 'jszip'"), 'Bulk receipt generation must use a client-side ZIP library');
+assert.ok(frontend.includes('function dataUrlToBlob(dataUrl)'), 'Bulk ZIP generation must convert receipt data URLs to blobs');
+assert.ok(frontend.includes('function isBulkZipSupported()'), 'Bulk ZIP generation must detect unsupported mobile browsers');
+assert.ok(frontend.includes('Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.'), 'Mobile browsers must see desktop ZIP guidance instead of Load failed');
 assert.ok(frontend.includes('buildReceiptSendQueue'), 'Receipt WhatsApp queue must build an event-specific eligible participant list');
 assert.ok(frontend.includes('Confirm & Start'), 'Receipt WhatsApp queue must require confirmation before opening WhatsApp');
 assert.ok(frontend.includes('Receipt Sent'), 'Receipt WhatsApp queue must save only after explicit Receipt Sent confirmation');
@@ -207,6 +211,16 @@ const markReceiptSentBody = frontend.slice(
 );
 assert.ok(markReceiptSentBody.includes('await saveRegistration(item.participant.id, { receiptNo })'), 'Receipt Sent must save Receipt No after confirmation');
 assert.ok(!markReceiptSentBody.includes('receiptGenerated'), 'Receipt queue must not write Receipt Generated status');
+const bulkReceiptBody = frontend.slice(
+  frontend.indexOf('async function generateBulkReceipts'),
+  frontend.indexOf('return (', frontend.indexOf('async function generateBulkReceipts')),
+);
+assert.ok(bulkReceiptBody.includes("zip.generateAsync({ type: 'blob' })"), 'Bulk receipt generation must produce one ZIP blob');
+assert.ok(bulkReceiptBody.includes('downloadBlob(zipBlob, receiptZipFileName(activeEvent))'), 'Bulk receipt generation must trigger only one ZIP download');
+assert.ok(!bulkReceiptBody.includes('saveRegistration'), 'Bulk receipt generation must not save Receipt No or any Sheet state');
+assert.ok(!bulkReceiptBody.includes('receiptGenerated'), 'Bulk receipt generation must not write Receipt Generated status');
+assert.ok(bulkReceiptBody.includes('failures.push'), 'Bulk receipt generation must continue after one receipt fails');
+assert.ok(bulkReceiptBody.includes('Prepared: ${preparedCount}. Failed: ${failures.length}'), 'Bulk receipt generation must report prepared and failed counts');
 assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
 assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
 assert.ok(frontend.includes('Number(participant.balance || 0) === 0'), 'Receipt eligibility must require zero balance');
@@ -561,6 +575,25 @@ assert.equal(
   'SP26-4',
   'B-01 keeps SP26-4 after becoming Full Paid',
 );
+const bulkZipRowsForTest = [
+  { id: 'zip-ready-no-mobile', eventType: 'shashtipoorthi', timestamp: '7/7/2026 10:00:00', seatNo: 'D-01', paymentStatus: 'Full Paid', balance: 0, receiptGenerated: false, mobileNumber: '' },
+  { id: 'zip-ready-mobile', eventType: 'shashtipoorthi', timestamp: '7/8/2026 10:00:00', seatNo: 'D-02', paymentStatus: 'Full Paid', balance: 0, receiptGenerated: false, mobileNumber: '6360716397' },
+];
+const bulkZipEligibleForTest = bulkZipRowsForTest.filter((row) =>
+  row.eventType === 'shashtipoorthi' &&
+  receiptEligibilityForTest(row) &&
+  Boolean(row.timestamp) &&
+  Boolean(row.seatNo) &&
+  !row.receiptGenerated,
+);
+assert.equal(bulkZipEligibleForTest.length, 2, 'Bulk ZIP generation must not exclude missing-mobile Full Paid rows');
+const whatsappQueueEligibleForTest = bulkZipRowsForTest.filter((row) =>
+  receiptEligibilityForTest(row) &&
+  normalizeIndianMobileNumberForTest(row.mobileNumber).length === 12 &&
+  Boolean(row.seatNo) &&
+  Boolean(row.timestamp),
+);
+assert.equal(whatsappQueueEligibleForTest.length, 1, 'Receipt WhatsApp Queue must still require valid mobile');
 
 const registrationTimestampDateForTest = (timestamp) => {
   const raw = String(timestamp || '').trim();

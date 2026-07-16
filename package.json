@@ -1,28 +1,29 @@
 {
-    "name":  "mvst-events",
-    "version":  "0.1.0",
-    "private":  true,
-    "type":  "module",
-    "scripts":  {
-                    "build":  "vite build",
-                    "preview":  "vite preview --host 0.0.0.0",
-                    "test":  "node scripts/verify-event-mapping.mjs",
-                    "dev:api":  "node server/index.js",
-                    "dev:frontend":  "vite --host 0.0.0.0",
-                    "dev:host":  "vite --host 0.0.0.0",
-                    "start":  "node server/index.js",
-                    "server":  "node server/index.js",
-                    "dev":  "vite --host 0.0.0.0"
-                },
-    "dependencies":  {
-                         "@vitejs/plugin-react":  "latest",
-                         "cors":  "^2.8.6",
-                         "dotenv":  "^17.4.2",
-                         "express":  "^5.2.1",
-                         "googleapis":  "^173.0.0",
-                         "lucide-react":  "latest",
-                         "react":  "latest",
-                         "react-dom":  "latest",
-                         "vite":  "latest"
-                     }
+    "name": "mvst-events",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "preview": "vite preview --host 0.0.0.0",
+        "test": "node scripts/verify-event-mapping.mjs",
+        "dev:api": "node server/index.js",
+        "dev:frontend": "vite --host 0.0.0.0",
+        "dev:host": "vite --host 0.0.0.0",
+        "start": "node server/index.js",
+        "server": "node server/index.js",
+        "dev": "vite --host 0.0.0.0"
+    },
+    "dependencies": {
+        "@vitejs/plugin-react": "latest",
+        "cors": "^2.8.6",
+        "dotenv": "^17.4.2",
+        "express": "^5.2.1",
+        "googleapis": "^173.0.0",
+        "jszip": "^3.10.1",
+        "lucide-react": "latest",
+        "react": "latest",
+        "react-dom": "latest",
+        "vite": "latest"
+    }
 }

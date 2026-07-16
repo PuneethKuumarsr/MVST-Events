@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import JSZip from 'jszip';
 import {
   BadgeCheck,
   CalendarDays,
@@ -747,6 +748,13 @@ function dataUrlToFile(dataUrl, filename) {
   return new File([bytes], filename, { type: mime });
 }
 
+function dataUrlToBlob(dataUrl) {
+  const [header, encoded] = dataUrl.split(',');
+  const mime = header.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
+  const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+  return new Blob([bytes], { type: mime });
+}
+
 function downloadReceipt(dataUrl, participant, receiptNo) {
   const link = document.createElement('a');
   link.href = dataUrl;
@@ -754,6 +762,35 @@ function downloadReceipt(dataUrl, participant, receiptNo) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function isBulkZipSupported() {
+  const userAgent = navigator.userAgent || '';
+  const isIos = /iPad|iPhone|iPod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(userAgent);
+  return !isIos && !isAndroid;
+}
+
+function receiptZipFileName(eventType) {
+  const eventName = eventType === 'shashtipoorthi' ? 'Shashtipoorthi' : 'Bheemaratha';
+  return `MVST-${eventName}-Receipts-${ACTIVE_EVENT_YEAR}.zip`;
+}
+
+function receiptZipEntryName(participant, receiptNo) {
+  const receipt = normalizeReceiptNumber(receiptNo, participant.eventType) || String(receiptNo || 'Receipt');
+  const seat = String(participant.seatNo || 'No-Seat').replace(/\s+/g, '').replace(/[^a-z0-9-]+/gi, '-');
+  return `${receipt}-${seat}.jpg`;
 }
 
 function buildBulkReceiptRows(rows, eventType) {
@@ -3398,6 +3435,7 @@ function App() {
     ? mobileValidationStatus(currentReceiptQueueItem.participant.mobileNumber).status
     : 'Not started';
   const receiptQueueRemaining = receiptQueueStarted ? Math.max(receiptQueue.length - receiptQueueIndex - 1, 0) : receiptQueue.length;
+  const bulkZipSupported = isBulkZipSupported();
 
   function prepareBulkQueue(queueType) {
     setBulkQueue(buildBulkQueue(rows, queueType));
@@ -3603,8 +3641,8 @@ function App() {
   }
 
   async function generateBulkReceipts() {
-    if (!writeEnabled) {
-      setBulkReceiptMessage('Read-only mode');
+    if (!bulkZipSupported) {
+      setBulkReceiptMessage('Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.');
       return;
     }
     const eligibleRows = buildBulkReceiptRows(rows, activeEvent);
@@ -3614,26 +3652,39 @@ function App() {
     }
     setBulkReceiptGenerating(true);
     setBulkReceiptMessage('');
-    let workingRows = rows;
-    let generatedCount = 0;
+    const zip = new JSZip();
+    const failures = [];
+    let preparedCount = 0;
     try {
-      for (const participant of eligibleRows) {
-        const currentParticipant = workingRows.find((row) => row.id === participant.id) || participant;
-        const receiptNo = suggestedReceiptNumber(rows, currentParticipant);
-        const dataUrl = await generateReceiptJpg(currentParticipant, receiptNo);
-        downloadReceipt(dataUrl, currentParticipant, receiptNo);
-        const payload = await saveRegistration(currentParticipant.id, {
-          receiptNo,
-          receiptGenerated: true,
-        });
-        workingRows = payload.rows || workingRows.map((row) =>
-          row.id === currentParticipant.id ? { ...row, receiptNo, receiptGenerated: true } : row,
-        );
-        generatedCount += 1;
+      for (let index = 0; index < eligibleRows.length; index += 1) {
+        const participant = eligibleRows[index];
+        const receiptNo = suggestedReceiptNumber(rows, participant);
+        setBulkReceiptMessage(`Preparing receipt ${index + 1} of ${eligibleRows.length}...`);
+        try {
+          const dataUrl = await generateReceiptJpg(participant, receiptNo);
+          zip.file(receiptZipEntryName(participant, receiptNo), dataUrlToBlob(dataUrl));
+          preparedCount += 1;
+        } catch (error) {
+          failures.push({
+            receiptNo,
+            seatNo: participant.seatNo || 'No Seat',
+          });
+        }
       }
-      setBulkReceiptMessage('Generated ' + generatedCount + ' receipt(s) and saved to Google Sheet');
+      if (!preparedCount) {
+        setBulkReceiptMessage('No receipt JPGs could be prepared. Please use individual receipt preview to check the first failed row.');
+        return;
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      downloadBlob(zipBlob, receiptZipFileName(activeEvent));
+      const failureText = failures.length
+        ? ` Prepared: ${preparedCount}. Failed: ${failures.length}. Failed receipt: ${failures[0].receiptNo} / Seat ${failures[0].seatNo}`
+        : `${preparedCount} receipt JPGs prepared successfully.`;
+      setBulkReceiptMessage(failureText);
     } catch (error) {
-      setBulkReceiptMessage(error.message || 'Unable to generate bulk receipts');
+      setBulkReceiptMessage(error.message === 'Load failed'
+        ? 'Bulk ZIP download failed in this browser. Use Receipt WhatsApp Queue on mobile or try desktop Chrome.'
+        : error.message || 'Unable to generate bulk receipts');
     } finally {
       setBulkReceiptGenerating(false);
     }
@@ -3882,11 +3933,17 @@ function App() {
             <p>Bulk Receipt Generation</p>
             <span>{eventDisplayName(activeEvent)} eligible: {buildBulkReceiptRows(rows, activeEvent).length}</span>
           </div>
-          <button type="button" onClick={generateBulkReceipts} disabled={!writeEnabled || bulkReceiptGenerating}>
-            <FileText size={16} /> {bulkReceiptGenerating ? 'Generating Receipts' : 'Bulk Generate Receipts'}
-          </button>
+          {bulkZipSupported ? (
+            <button type="button" onClick={generateBulkReceipts} disabled={bulkReceiptGenerating}>
+              <FileText size={16} /> {bulkReceiptGenerating ? 'Generating ZIP' : 'Bulk Generate Receipts ZIP'}
+            </button>
+          ) : (
+            <button type="button" onClick={() => prepareReceiptSendQueue(activeEvent)}>
+              <Share2 size={16} /> Open Receipt WhatsApp Queue
+            </button>
+          )}
           {bulkReceiptMessage ? <small>{bulkReceiptMessage}</small> : null}
-          {!writeEnabled ? <small>Read-only mode</small> : null}
+          {!bulkZipSupported ? <small>Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.</small> : null}
         </div>
 
         <div className="receipt-bulk-panel receipt-send-panel">
