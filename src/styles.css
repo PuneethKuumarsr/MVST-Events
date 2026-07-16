@@ -1279,6 +1279,172 @@ main {
   font-weight: 800;
 }
 
+.balance-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(36, 18, 18, 0.55);
+}
+
+.balance-modal {
+  width: min(960px, 100%);
+  max-height: min(86vh, 820px);
+  overflow: auto;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: 0 24px 70px rgba(55, 21, 26, 0.28);
+  padding: 16px;
+}
+
+.balance-modal-head,
+.balance-summary-row,
+.balance-filter-row,
+.balance-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.balance-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  justify-content: space-between;
+  margin: -16px -16px 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 250, 240, 0.98);
+}
+
+.balance-modal-head span,
+.balance-card-main span,
+.balance-card-money small {
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.balance-modal-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--maroon-deep);
+  font-size: 1.25rem;
+}
+
+.balance-modal-head button,
+.balance-filter-row button,
+.balance-card-actions button,
+.balance-card-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 8px;
+  padding: 8px 11px;
+  font-weight: 850;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.balance-modal-head button,
+.balance-filter-row button {
+  background: #fffaf0;
+  color: var(--maroon);
+}
+
+.balance-filter-row button.active,
+.balance-card-actions button,
+.balance-card-actions a {
+  background: var(--maroon);
+  color: #fff8e8;
+}
+
+.balance-summary-row {
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 245, 211, 0.58);
+  color: var(--ink-soft);
+}
+
+.balance-filter-row {
+  margin-bottom: 12px;
+}
+
+.balance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.balance-card {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(260px, 1.1fr) minmax(140px, 0.8fr);
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.balance-card-main strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--maroon-deep);
+  font-size: 1rem;
+}
+
+.balance-card-main small,
+.balance-card-mobile small {
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.balance-card-money {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.balance-card-money span {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 245, 211, 0.72);
+}
+
+.balance-card-money b,
+.balance-card-mobile span {
+  color: var(--maroon-deep);
+}
+
+.balance-card-mobile {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  font-weight: 850;
+}
+
+.balance-card-actions {
+  grid-column: 1 / -1;
+}
+
+.balance-empty {
+  margin: 0;
+  padding: 14px;
+  color: var(--ink-soft);
+  font-weight: 850;
+}
+
 @media (max-width: 620px) {
   .bulk-actions button,
   .bulk-preview-head button,
@@ -1289,6 +1455,32 @@ main {
   .bulk-preview-list div,
   .bulk-preview-list button {
     grid-template-columns: 1fr;
+  }
+
+  .balance-modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .balance-modal {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+    border-width: 0;
+  }
+
+  .balance-card {
+    grid-template-columns: 1fr;
+  }
+
+  .balance-card-money {
+    grid-template-columns: 1fr;
+  }
+
+  .balance-card-actions button,
+  .balance-card-actions a,
+  .balance-filter-row button {
+    width: 100%;
   }
 }
 

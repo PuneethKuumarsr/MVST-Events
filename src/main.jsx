@@ -3328,6 +3328,91 @@ function SeatGuidanceSection({ rows }) {
   );
 }
 
+const BALANCE_FILTERS = ['All', 'Shashtipoorthi', 'Bhimaratha', 'Part Paid', 'Pending'];
+
+function balanceRowMatchesFilter(row, filter) {
+  if (filter === 'Shashtipoorthi') return row.eventType === 'shashtipoorthi';
+  if (filter === 'Bhimaratha') return row.eventType === 'bhimaratha';
+  if (filter === 'Part Paid') return row.paymentStatus === 'Part Paid';
+  if (filter === 'Pending') return row.paymentStatus === 'Pending';
+  return true;
+}
+
+function BalanceReceivableModal({ rows, filter, setFilter, totalBalance, onClose, onOpenParticipant, onEditPayment }) {
+  const visibleRows = rows.filter((row) => balanceRowMatchesFilter(row, filter));
+  const visibleTotal = visibleRows.reduce((sum, row) => sum + Number(row.balance || 0), 0);
+
+  return (
+    <div className="balance-modal-backdrop" role="dialog" aria-modal="true" aria-label="Balance receivable participants">
+      <div className="balance-modal">
+        <div className="balance-modal-head">
+          <div>
+            <span>Balance Receivable</span>
+            <strong>{formatCurrency(totalBalance)}</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close balance receivable list">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="balance-summary-row">
+          <span>Participants with Balance: <b>{visibleRows.length}</b></span>
+          <span>Total Balance Receivable: <b>{formatCurrency(visibleTotal)}</b></span>
+        </div>
+
+        <div className="balance-filter-row">
+          {BALANCE_FILTERS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={filter === item ? 'active' : ''}
+              onClick={() => setFilter(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        <div className="balance-list">
+          {visibleRows.length ? visibleRows.map((participant) => {
+            const mobileValidation = mobileValidationStatus(participant.mobileNumber);
+            const canSendBalance = mobileValidation.status === 'ok';
+            return (
+              <article className="balance-card" key={participant.id}>
+                <div className="balance-card-main">
+                  <span>{EVENTS[participant.eventType]?.shortLabel || participant.eventType}</span>
+                  <strong>{participantDisplayName(participant)}</strong>
+                  <small>Seat {participant.seatNo || 'Not entered'} · {participant.paymentStatus}</small>
+                </div>
+                <div className="balance-card-money">
+                  <span><small>Total</small><b>{formatCurrency(participant.contribution)}</b></span>
+                  <span><small>Received</small><b>{formatCurrency(participant.paidAmount)}</b></span>
+                  <span><small>Balance</small><b>{formatCurrency(participant.balance)}</b></span>
+                </div>
+                <div className="balance-card-mobile">
+                  <span>{participant.mobileNumber || 'Mobile missing'}</span>
+                  <small>{mobileValidation.status === 'ok' ? 'Valid mobile' : mobileValidation.issue}</small>
+                </div>
+                <div className="balance-card-actions">
+                  <button type="button" onClick={() => onOpenParticipant(participant)}>Open Participant</button>
+                  {canSendBalance ? (
+                    <a href={makeWhatsAppUrl(participant, 'balance')} target="_blank" rel="noreferrer">
+                      Send Balance WhatsApp
+                    </a>
+                  ) : null}
+                  <button type="button" onClick={() => onEditPayment(participant)}>Edit Payment</button>
+                </div>
+              </article>
+            );
+          }) : (
+            <p className="balance-empty">No participants match this balance filter.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
@@ -3359,6 +3444,8 @@ function App() {
   const [receiptQueueSentCount, setReceiptQueueSentCount] = useState(0);
   const [receiptQueueSkippedCount, setReceiptQueueSkippedCount] = useState(0);
   const [receiptQueueSkippedIds, setReceiptQueueSkippedIds] = useState(() => new Set());
+  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
+  const [balanceModalFilter, setBalanceModalFilter] = useState('All');
 
   const summary = useMemo(() => {
     const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
@@ -3394,6 +3481,27 @@ function App() {
   const mobileIssueRows = useMemo(
     () => mobileValidationRows.filter((row) => row.hasIssue),
     [mobileValidationRows],
+  );
+
+  const balanceReceivableRows = useMemo(() => {
+    return [...rows]
+      .filter((row) => Number(row.balance || 0) > 0)
+      .filter((row) => !isFreeSponsorship(row))
+      .sort((a, b) => {
+        const balanceDifference = Number(b.balance || 0) - Number(a.balance || 0);
+        if (balanceDifference !== 0) return balanceDifference;
+        const timeA = timestampValue(a.timestamp);
+        const timeB = timestampValue(b.timestamp);
+        if (timeA !== null && timeB !== null && timeA !== timeB) return timeB - timeA;
+        if (timeA !== null && timeB === null) return -1;
+        if (timeA === null && timeB !== null) return 1;
+        return participantDisplayName(a).localeCompare(participantDisplayName(b));
+      });
+  }, [rows]);
+
+  const balanceReceivableTotal = useMemo(
+    () => balanceReceivableRows.reduce((sum, row) => sum + Number(row.balance || 0), 0),
+    [balanceReceivableRows],
   );
 
   const newRegistrationRows = useMemo(
@@ -3640,6 +3748,20 @@ function App() {
     setKitFilter('All');
   }
 
+  function openParticipantFromBalance(participant) {
+    openEventView(participant.eventType);
+    setQuery(participant.groomName || participant.brideName || participant.mobileNumber || '');
+    setPaymentFilter('All');
+    setVerifiedFilter('All');
+    setKitFilter('All');
+    setBalanceModalOpen(false);
+    requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
+  }
+
+  function editPaymentFromBalance(participant) {
+    openParticipantFromBalance(participant);
+  }
+
   async function generateBulkReceipts() {
     if (!bulkZipSupported) {
       setBulkReceiptMessage('Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.');
@@ -3791,7 +3913,7 @@ function App() {
                   <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" onClick={() => openEventView('bhimaratha')} />
                   <StatCard icon={IndianRupee} label="Expected collection" value={formatCurrency(summary.expected)} />
                   <StatCard icon={IndianRupee} label="Received collection" value={formatCurrency(summary.received)} tone="success" />
-                  <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" />
+                  <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" onClick={() => setBalanceModalOpen(true)} />
                 </div>
               </section>
 
@@ -3881,6 +4003,18 @@ function App() {
           {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
           {activeView === 'previous-donors' ? <PreviousDonorsCampaign donorState={donorState} /> : null}
+
+          {balanceModalOpen ? (
+            <BalanceReceivableModal
+              rows={balanceReceivableRows}
+              filter={balanceModalFilter}
+              setFilter={setBalanceModalFilter}
+              totalBalance={balanceReceivableTotal}
+              onClose={() => setBalanceModalOpen(false)}
+              onOpenParticipant={openParticipantFromBalance}
+              onEditPayment={editPaymentFromBalance}
+            />
+          ) : null}
 
           {activeView === 'shashtipoorthi' || activeView === 'bhimaratha' ? (
             <section className="management-section" id="participant-management-dashboard">

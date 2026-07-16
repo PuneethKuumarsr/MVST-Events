@@ -75,6 +75,17 @@ assert.ok(frontend.includes('isFreeSponsorshipStatus'), 'Frontend must identify 
 assert.ok(frontend.includes('sheetPaymentStatus'), 'CSV fallback must read the Payment Status column from the sheet');
 assert.ok(frontend.includes('balance = isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Free Sponsorship participants must not show a balance receivable');
 assert.ok(frontend.includes('goToFreeSponsorship'), 'Free Sponsorship summary card must jump to filtered participants');
+assert.ok(frontend.includes('function BalanceReceivableModal'), 'Balance Receivable card must open a detailed modal');
+assert.ok(frontend.includes('label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" onClick={() => setBalanceModalOpen(true)}'), 'Balance Receivable summary card must be clickable');
+assert.ok(frontend.includes('Number(row.balance || 0) > 0'), 'Balance modal must include only positive balances');
+assert.ok(frontend.includes('!isFreeSponsorship(row)'), 'Balance modal must exclude Free Sponsorship rows');
+assert.ok(frontend.includes('Number(b.balance || 0) - Number(a.balance || 0)'), 'Balance modal must sort highest balance first');
+assert.ok(frontend.includes('const visibleTotal = visibleRows.reduce((sum, row) => sum + Number(row.balance || 0), 0)'), 'Balance modal total must sum the displayed rows');
+assert.ok(frontend.includes('Send Balance WhatsApp'), 'Balance modal must include balance WhatsApp action');
+assert.ok(frontend.includes("makeWhatsAppUrl(participant, 'balance')"), 'Balance modal WhatsApp action must use existing balance template');
+assert.ok(frontend.includes('canSendBalance ?'), 'Balance modal must hide balance WhatsApp for invalid mobiles');
+assert.ok(frontend.includes('Edit Payment'), 'Balance modal must include Edit Payment action');
+assert.ok(frontend.includes('BALANCE_FILTERS'), 'Balance modal must provide filters');
 assert.ok(backend.includes('FREE_SPONSORSHIP_STATUS'), 'Backend must support Free Sponsorship payment status');
 assert.ok(backend.includes('isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Backend must set Free Sponsorship balance to zero');
 assert.ok(frontend.includes('Duplicate mobile number'), 'Mobile report must flag duplicate mobile numbers');
@@ -435,6 +446,23 @@ const receiptEligibilityCases = [
 for (const [participant, expected, label] of receiptEligibilityCases) {
   assert.equal(receiptEligibilityForTest(participant), expected, `Receipt eligibility failed for ${label}`);
 }
+
+const balanceRowsForTest = [
+  { id: 'part-paid', eventType: 'shashtipoorthi', paymentStatus: 'Part Paid', contribution: 30000, paidAmount: 10000, balance: 20000, timestamp: '7/10/2026 10:00:00' },
+  { id: 'pending', eventType: 'bhimaratha', paymentStatus: 'Pending', contribution: 20000, paidAmount: 0, balance: 20000, timestamp: '7/11/2026 10:00:00' },
+  { id: 'full-paid', eventType: 'bhimaratha', paymentStatus: 'Full Paid', contribution: 20000, paidAmount: 20000, balance: 0, timestamp: '7/12/2026 10:00:00' },
+  { id: 'free', eventType: 'shashtipoorthi', paymentStatus: 'Free Sponsorship', contribution: 30000, paidAmount: 0, balance: 0, timestamp: '7/13/2026 10:00:00' },
+];
+const balanceListForTest = [...balanceRowsForTest]
+  .filter((row) => Number(row.balance || 0) > 0)
+  .filter((row) => String(row.paymentStatus || '').toLowerCase() !== 'free sponsorship')
+  .sort((a, b) => {
+    const balanceDifference = Number(b.balance || 0) - Number(a.balance || 0);
+    if (balanceDifference !== 0) return balanceDifference;
+    return timestampValueForTest(b.timestamp) - timestampValueForTest(a.timestamp);
+  });
+assert.deepEqual(balanceListForTest.map((row) => row.id), ['pending', 'part-paid'], 'Balance modal must include Part Paid/Pending and sort by balance then newest timestamp');
+assert.equal(balanceListForTest.reduce((sum, row) => sum + Number(row.balance || 0), 0), 40000, 'Balance modal total must equal the dashboard balance total');
 
 const receiptPrefixesForTest = {
   bhimaratha: 'BS26',
