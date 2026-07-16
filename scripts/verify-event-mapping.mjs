@@ -122,6 +122,15 @@ assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt G
 assert.ok(frontend.includes('Generate Receipt'), 'Dashboard must show Generate Receipt button');
 assert.ok(frontend.includes('Download Receipt'), 'Dashboard must show Download Receipt button');
 assert.ok(frontend.includes('Bulk Generate Receipts'), 'Dashboard must show Bulk Generate Receipts button');
+assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
+assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
+assert.ok(frontend.includes('Number(participant.balance || 0) === 0'), 'Receipt eligibility must require zero balance');
+assert.ok(frontend.includes('!isFreeSponsorship(participant)'), 'Receipt eligibility must exclude Free Sponsorship participants');
+assert.ok(frontend.includes('throw new Error(receiptUnavailableMessage(participant))'), 'Receipt generator must reject ineligible rows internally');
+assert.ok(frontend.includes('Receipt will be available after the full amount is received.'), 'Ineligible participants must see receipt availability guidance');
+assert.ok(frontend.includes('Total Amount'), 'Receipt panel must show total amount');
+assert.ok(frontend.includes('Amount Received'), 'Receipt panel must show amount received');
+assert.ok(frontend.includes('<span>Balance</span>{formatCurrency(participant.balance)}</p>'), 'Receipt panel must show balance');
 assert.ok(frontend.includes('SP26'), 'Frontend must define Shashtipoorthi SP26 receipt prefix');
 assert.ok(frontend.includes('BS26'), 'Frontend must define Bhimaratha BS26 receipt prefix');
 assert.ok(frontend.includes('shastipoorthi-receipt.jpeg'), 'Frontend must use original Shashtipoorthi receipt template');
@@ -198,6 +207,22 @@ const mobileValidationExamples = [
 ];
 for (const [input, expected] of mobileValidationExamples) {
   assert.equal(mobileValidationForTest(input), expected);
+}
+
+const receiptEligibilityForTest = (participant) =>
+  String(participant.paymentStatus || '').trim() === 'Full Paid' &&
+  Number(participant.balance || 0) === 0 &&
+  String(participant.paymentStatus || '').trim().toLowerCase() !== 'free sponsorship';
+
+const receiptEligibilityCases = [
+  [{ paymentStatus: 'Full Paid', balance: 0 }, true, 'Full Paid with zero balance'],
+  [{ paymentStatus: 'Part Paid', balance: 20000 }, false, 'Part Paid with balance'],
+  [{ paymentStatus: 'Pending', balance: 30000 }, false, 'Pending with balance'],
+  [{ paymentStatus: 'Free Sponsorship', balance: 0 }, false, 'Free Sponsorship'],
+  [{ paymentStatus: 'Full Paid', balance: 1 }, false, 'Full Paid with positive balance'],
+];
+for (const [participant, expected, label] of receiptEligibilityCases) {
+  assert.equal(receiptEligibilityForTest(participant), expected, `Receipt eligibility failed for ${label}`);
 }
 
 const sampleCouple = {

@@ -400,6 +400,7 @@ function normalizeRows(values, source) {
         paymentSentDate: getCell(row, headerMap, ['Payment Sent Date']),
         seatNo: getCell(row, headerMap, ['Seat No']),
         receiptNo: getCell(row, headerMap, ['Receipt No']),
+        receiptDate: getCell(row, headerMap, ['Receipt Date']),
         receiptGenerated: boolFrom(getCell(row, headerMap, ['Receipt Generated'])),
         contribution,
         balance,

@@ -20,9 +20,11 @@ import {
   RefreshCw,
   Save,
   Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   UsersRound,
+  X,
 } from 'lucide-react';
 import { buildWhatsAppMessage, normalizeWhatsAppMessage } from './whatsappMessages.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
@@ -282,6 +284,7 @@ function normalizeRow(row, headerMap, source) {
     paymentSentDate: getCell(row, headerMap, ['Payment Sent Date']),
     seatNo: getCell(row, headerMap, ['Seat No']),
     receiptNo: getCell(row, headerMap, ['Receipt No']),
+    receiptDate: getCell(row, headerMap, ['Receipt Date']),
     receiptGenerated: boolFrom(getCell(row, headerMap, ['Receipt Generated'])),
     remarks: getCell(row, headerMap, ['Remarks']),
     contribution,
@@ -412,11 +415,10 @@ function nextReceiptNumber(rows, eventType) {
 }
 
 function receiptFileName(participant, receiptNo) {
-  const cleanName = participantDisplayName(participant)
-    .replace(/[^a-z0-9]+/gi, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase() || 'participant';
-  return receiptNo + '-' + cleanName + '.jpg';
+  const event = eventDisplayName(participant.eventType).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'Event';
+  const seat = String(participant.seatNo || 'No-Seat').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const receipt = String(receiptNo || participant.receiptNo || 'No-Receipt').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  return `MVST-Receipt-${event}-${seat}-${receipt}.jpg`;
 }
 
 function loadReceiptImage(src) {
@@ -434,34 +436,147 @@ function drawReceiptText(ctx, textValue, x, y, fontSize, align = 'left') {
   ctx.fillStyle = '#1f1714';
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.72)';
-  ctx.shadowBlur = 3;
-  ctx.lineWidth = Math.max(2, Math.round(fontSize / 12));
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.shadowColor = 'rgba(255, 255, 255, 0.58)';
+  ctx.shadowBlur = 2;
+  ctx.lineWidth = Math.max(1.3, fontSize / 16);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.58)';
   ctx.strokeText(textValue, x, y);
   ctx.fillText(textValue, x, y);
   ctx.restore();
 }
 
+function fitReceiptText(ctx, textValue, box, options = {}) {
+  const {
+    maxFont = 22,
+    minFont = 11,
+    align = 'left',
+    weight = 700,
+    family = 'Arial, sans-serif',
+  } = options;
+  const text = String(textValue || '').trim();
+  if (!text) return;
+  let fontSize = maxFont;
+  ctx.save();
+  while (fontSize > minFont) {
+    ctx.font = `${weight} ${fontSize}px ${family}`;
+    if (ctx.measureText(text).width <= box.width) break;
+    fontSize -= 1;
+  }
+  ctx.restore();
+  const x = align === 'center' ? box.x + box.width / 2 : align === 'right' ? box.x + box.width : box.x;
+  const y = box.y + box.height / 2;
+  drawReceiptText(ctx, text, x, y, fontSize, align);
+}
+
+function receiptDateForParticipant(participant) {
+  const sourceDate = String(participant.receiptDate || '').trim();
+  if (sourceDate) return sourceDate;
+  return new Date().toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function isReceiptEligible(participant) {
+  return (
+    String(participant.paymentStatus || '').trim() === 'Full Paid' &&
+    Number(participant.balance || 0) === 0 &&
+    !isFreeSponsorship(participant)
+  );
+}
+
+function receiptUnavailableMessage(participant) {
+  if (isFreeSponsorship(participant)) {
+    return 'Payment receipt is not available for Free Sponsorship because no money was received.';
+  }
+  return 'Receipt will be available after the full amount is received.';
+}
+
+function amountForReceipt(participant) {
+  if (isFreeSponsorship(participant)) return 0;
+  return Number(participant.paidAmount || participant.contribution || 0);
+}
+
+function integerToIndianWords(value) {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const belowHundred = (number) => number < 20 ? ones[number] : [tens[Math.floor(number / 10)], ones[number % 10]].filter(Boolean).join(' ');
+  const belowThousand = (number) => {
+    const hundred = Math.floor(number / 100);
+    const rest = number % 100;
+    return [hundred ? `${ones[hundred]} Hundred` : '', rest ? belowHundred(rest) : ''].filter(Boolean).join(' ');
+  };
+  const number = Math.max(0, Math.floor(Number(value || 0)));
+  if (number === 0) return 'Zero';
+  const parts = [];
+  const crore = Math.floor(number / 10000000);
+  const lakh = Math.floor((number % 10000000) / 100000);
+  const thousand = Math.floor((number % 100000) / 1000);
+  const rest = number % 1000;
+  if (crore) parts.push(`${belowThousand(crore)} Crore`);
+  if (lakh) parts.push(`${belowThousand(lakh)} Lakh`);
+  if (thousand) parts.push(`${belowThousand(thousand)} Thousand`);
+  if (rest) parts.push(belowThousand(rest));
+  return parts.join(' ');
+}
+
+function amountInWords(value) {
+  return `${integerToIndianWords(value)} Rupees Only`;
+}
+
 async function generateReceiptJpg(participant, receiptNo) {
+  if (!isReceiptEligible(participant)) {
+    throw new Error(receiptUnavailableMessage(participant));
+  }
   const template = RECEIPT_TEMPLATES[participant.eventType];
   if (!template) throw new Error('Receipt template is not configured for this event');
   const image = await loadReceiptImage(template);
+  const outputWidth = 3000;
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const scale = outputWidth / sourceWidth;
   const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
+  canvas.width = outputWidth;
+  canvas.height = Math.round(sourceHeight * scale);
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  ctx.scale(scale, scale);
 
-  const width = canvas.width;
-  const height = canvas.height;
-  const smallFont = Math.max(18, Math.round(width * 0.023));
-  const nameFont = Math.max(22, Math.round(width * 0.029));
-  drawReceiptText(ctx, 'Receipt No: ' + receiptNo, width * 0.68, height * 0.14, smallFont);
-  drawReceiptText(ctx, 'Seat No: ' + (participant.seatNo || ''), width * 0.68, height * 0.2, smallFont);
-  drawReceiptText(ctx, 'Couple Name: ' + participantDisplayName(participant), width * 0.5, height * 0.52, nameFont, 'center');
+  const receiptDate = receiptDateForParticipant(participant);
+  const amount = amountForReceipt(participant);
+  const words = amountInWords(amount);
+  const coupleName = participantDisplayName(participant);
+  const numericAmount = amount ? formatCurrency(amount).replace('.00', '') : '₹0';
+  const fieldSet = [
+    { text: receiptNo, box: { x: 94, y: 221, width: 76, height: 29 }, options: { maxFont: 18, minFont: 10, align: 'center' } },
+    { text: receiptDate, box: { x: 382, y: 223, width: 88, height: 24 }, options: { maxFont: 15, minFont: 9, align: 'center' } },
+    { text: coupleName, box: { x: 83, y: 268, width: 384, height: 29 }, options: { maxFont: 16, minFont: 9 } },
+    { text: words, box: { x: 71, y: 330, width: 346, height: 27 }, options: { maxFont: 15, minFont: 8 } },
+    { text: participant.seatNo || '', box: { x: 111, y: 405, width: 148, height: 34 }, options: { maxFont: 23, minFont: 11, align: 'center' } },
+    { text: numericAmount, box: { x: 87, y: 453, width: 148, height: 36 }, options: { maxFont: 26, minFont: 12, align: 'center' } },
+    { text: receiptNo, box: { x: 563, y: 247, width: 92, height: 31 }, options: { maxFont: 19, minFont: 10, align: 'center' } },
+    { text: receiptDate, box: { x: 1388, y: 265, width: 143, height: 28 }, options: { maxFont: 17, minFont: 10, align: 'center' } },
+    { text: coupleName, box: { x: 637, y: 340, width: 813, height: 31 }, options: { maxFont: 21, minFont: 10 } },
+    { text: words, box: { x: 554, y: 389, width: 789, height: 29 }, options: { maxFont: 19, minFont: 9 } },
+    { text: participant.seatNo || '', box: { x: 968, y: 443, width: 174, height: 37 }, options: { maxFont: 25, minFont: 12, align: 'center' } },
+    { text: numericAmount, box: { x: 583, y: 448, width: 135, height: 33 }, options: { maxFont: 25, minFont: 12, align: 'center' } },
+  ];
+  fieldSet.forEach((field) => fitReceiptText(ctx, field.text, field.box, field.options));
 
   return canvas.toDataURL('image/jpeg', 0.95);
+}
+
+function dataUrlToFile(dataUrl, filename) {
+  const [header, base64] = dataUrl.split(',');
+  const mimeMatch = header.match(/data:([^;]+)/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], filename, { type: mime });
 }
 
 function downloadReceipt(dataUrl, participant, receiptNo) {
@@ -475,7 +590,7 @@ function downloadReceipt(dataUrl, participant, receiptNo) {
 
 function buildBulkReceiptRows(rows, eventType) {
   return rows.filter((row) =>
-    row.eventType === eventType && String(row.seatNo || '').trim() && !row.receiptGenerated,
+    row.eventType === eventType && isReceiptEligible(row) && String(row.seatNo || '').trim() && !row.receiptGenerated,
   );
 }
 
@@ -1429,22 +1544,24 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   const [receiptDataUrl, setReceiptDataUrl] = useState('');
   const [receiptNo, setReceiptNo] = useState(participant.receiptNo || '');
   const [generating, setGenerating] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const mobileValidation = mobileValidationStatus(participant.mobileNumber);
+  const canShareWhatsApp = mobileValidation.status === 'ok';
+  const receiptEligible = isReceiptEligible(participant);
+  const hasSeatNo = Boolean(String(participant.seatNo || '').trim());
 
   useEffect(() => {
     setReceiptNo(participant.receiptNo || '');
     setReceiptDataUrl('');
+    setPreviewOpen(false);
     setMessage('');
   }, [participant]);
 
-  async function handleGenerateReceipt() {
-    if (!writeEnabled || !participant.id) {
-      setMessage('Read-only mode');
-      return;
-    }
+  async function ensureReceiptImage({ saveToSheet = false } = {}) {
     if (!String(participant.seatNo || '').trim()) {
       setMessage('Seat No is required before receipt generation');
-      return;
+      return null;
     }
     setGenerating(true);
     setMessage('');
@@ -1453,16 +1570,63 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       const dataUrl = await generateReceiptJpg(participant, nextNo);
       setReceiptDataUrl(dataUrl);
       setReceiptNo(nextNo);
-      await onSave(participant.id, {
-        receiptNo: nextNo,
-        receiptGenerated: true,
-      });
-      setMessage('Receipt generated and saved to Google Sheet');
+      if (saveToSheet) {
+        if (!writeEnabled || !participant.id) {
+          setMessage('Read-only mode');
+          return dataUrl;
+        }
+        await onSave(participant.id, {
+          receiptNo: nextNo,
+          receiptGenerated: true,
+        });
+        setMessage('Receipt generated and saved to Google Sheet');
+      }
+      return dataUrl;
     } catch (error) {
       setMessage(error.message || 'Unable to generate receipt');
+      return null;
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function handlePreviewReceipt() {
+    const dataUrl = receiptDataUrl || await ensureReceiptImage();
+    if (dataUrl) setPreviewOpen(true);
+  }
+
+  async function handleDownloadReceipt() {
+    const dataUrl = receiptDataUrl || await ensureReceiptImage({ saveToSheet: true });
+    if (!dataUrl) return;
+    downloadReceipt(dataUrl, participant, receiptNo || participant.receiptNo || nextReceiptNumber(rows, participant.eventType));
+  }
+
+  async function handleShareReceipt() {
+    if (!canShareWhatsApp) {
+      setMessage('Valid mobile number is required for WhatsApp sharing');
+      return;
+    }
+    const dataUrl = receiptDataUrl || await ensureReceiptImage({ saveToSheet: true });
+    if (!dataUrl) return;
+    const currentReceiptNo = receiptNo || participant.receiptNo || nextReceiptNumber(rows, participant.eventType);
+    const filename = receiptFileName(participant, currentReceiptNo);
+    const file = dataUrlToFile(dataUrl, filename);
+    const shareText = `MVST receipt for ${participantDisplayName(participant)} - ${currentReceiptNo}`;
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'MVST Receipt', text: shareText });
+        setMessage('Receipt shared. Please confirm it in WhatsApp.');
+        return;
+      } catch (shareError) {
+        setMessage('Share cancelled or blocked. Downloading receipt and opening WhatsApp Web fallback.');
+      }
+    } else {
+      setMessage('Image auto-attach is not supported here. Receipt downloaded; attach it manually in WhatsApp Web.');
+    }
+    downloadReceipt(dataUrl, participant, currentReceiptNo);
+    const normalizedMobile = normalizeIndianMobileNumber(participant.mobileNumber);
+    const encodedText = encodeURIComponent(shareText + '\n\nPlease find the receipt image attached manually.');
+    window.open(`https://web.whatsapp.com/send?phone=${normalizedMobile}&text=${encodedText}`, '_blank', 'noopener,noreferrer');
   }
 
   return (
@@ -1477,16 +1641,52 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       <div className="receipt-meta-grid">
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
         <p><span>Receipt No</span>{participant.receiptNo || receiptNo || 'Not generated'}</p>
+        <p><span>Total Amount</span>{formatCurrency(participant.contribution)}</p>
+        <p><span>Amount Received</span>{formatCurrency(participant.paidAmount)}</p>
+        <p><span>Balance</span>{formatCurrency(participant.balance)}</p>
       </div>
-      <div className="receipt-actions-row">
-        <button type="button" onClick={handleGenerateReceipt} disabled={!writeEnabled || generating || !String(participant.seatNo || '').trim()}>
-          <FileText size={16} /> {generating ? 'Generating' : 'Generate Receipt'}
-        </button>
-        <button type="button" onClick={() => downloadReceipt(receiptDataUrl, participant, receiptNo || participant.receiptNo)} disabled={!receiptDataUrl}>
-          <Download size={16} /> Download Receipt
-        </button>
-      </div>
+      {receiptEligible ? (
+        <div className="receipt-actions-row">
+          <button type="button" onClick={handlePreviewReceipt} disabled={generating || !hasSeatNo}>
+            <FileText size={16} /> {generating ? 'Generating' : 'Preview Receipt'}
+          </button>
+          <button type="button" onClick={handleDownloadReceipt} disabled={generating || !hasSeatNo}>
+            <Download size={16} /> Download Receipt JPG
+          </button>
+          <button type="button" onClick={handleShareReceipt} disabled={generating || !hasSeatNo || !canShareWhatsApp}>
+            <Share2 size={16} /> Share to WhatsApp
+          </button>
+        </div>
+      ) : (
+        <div className="receipt-unavailable">
+          <AlertTriangle size={16} />
+          <span>{receiptUnavailableMessage(participant)}</span>
+        </div>
+      )}
+      {previewOpen ? (
+        <div className="receipt-modal-backdrop" role="dialog" aria-modal="true" aria-label="Receipt preview">
+          <div className="receipt-modal">
+            <div className="receipt-modal-head">
+              <div>
+                <span>Receipt Preview</span>
+                <strong>{receiptNo || participant.receiptNo || 'Receipt preview'}</strong>
+              </div>
+              <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close receipt preview">
+                <X size={18} />
+              </button>
+            </div>
+            {receiptDataUrl ? <img src={receiptDataUrl} alt="Completed receipt preview" /> : null}
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => setPreviewOpen(false)}>Close</button>
+              <button type="button" onClick={handleDownloadReceipt}><Download size={16} /> Download Receipt JPG</button>
+              <button type="button" onClick={handleShareReceipt} disabled={!canShareWhatsApp}><Share2 size={16} /> Share to WhatsApp</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {message ? <small>{message}</small> : null}
+      {receiptEligible && !canShareWhatsApp ? <small>WhatsApp share disabled: {mobileValidation.issue}</small> : null}
+      {receiptEligible && !hasSeatNo ? <small>Seat No is required before receipt generation</small> : null}
       {!writeEnabled ? <small>Read-only mode</small> : null}
     </div>
   );
