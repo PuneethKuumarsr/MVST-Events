@@ -39,6 +39,7 @@ const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
   bhimaratha: bhimarathaReceiptTemplate,
 };
+const RECEIPT_PREFIXES = { bhimaratha: 'BS26', shashtipoorthi: 'SP26' };
 const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const receiptLayouts = {
   shashtipoorthi: {
@@ -439,33 +440,39 @@ function exportMobileIssues(rows) {
   URL.revokeObjectURL(url);
 }
 
-function receiptNumberValue(receiptNo) {
+function receiptPrefix(eventType) {
+  return RECEIPT_PREFIXES[eventType] || 'RC26';
+}
+
+function receiptNumberValue(receiptNo, eventType) {
   const raw = String(receiptNo || '').trim();
-  if (!/^[1-9]\d*$/.test(raw)) return null;
-  return Number(raw);
+  const prefix = receiptPrefix(eventType);
+  const match = raw.match(new RegExp(`^${prefix}-(\\d{3})$`));
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+function formatReceiptNumber(eventType, number) {
+  return `${receiptPrefix(eventType)}-${String(number).padStart(3, '0')}`;
 }
 
 function hasValidReceiptBookNumber(participant) {
-  return receiptNumberValue(participant?.receiptNo) !== null;
+  return receiptNumberValue(participant?.receiptNo, participant?.eventType) !== null;
 }
 
-function nextReceiptNumber(rows) {
-  const maxNumber = rows.reduce((max, row) => Math.max(max, receiptNumberValue(row.receiptNo) || 0), 0);
-  return String(maxNumber + 1);
-}
-
-function receiptBookAudit(rows) {
+function receiptBookAudit(rows, eventType) {
+  const eventRows = rows.filter((row) => row.eventType === eventType);
   const counts = new Map();
   const malformed = [];
   let blank = 0;
   let highest = 0;
-  rows.forEach((row) => {
+  eventRows.forEach((row) => {
     const raw = String(row.receiptNo || '').trim();
     if (!raw) {
       blank += 1;
       return;
     }
-    const number = receiptNumberValue(raw);
+    const number = receiptNumberValue(raw, eventType);
     if (!number) {
       malformed.push(row);
       return;
@@ -478,22 +485,57 @@ function receiptBookAudit(rows) {
     blank,
     malformed,
     duplicateReceipts,
-    lastUsed: highest ? String(highest) : 'None',
-    suggestedNext: String(highest + 1),
+    lastUsed: highest ? formatReceiptNumber(eventType, highest) : 'None',
+    suggestedNext: formatReceiptNumber(eventType, highest + 1),
   };
+}
+
+function sortReceiptSequenceRows(rows) {
+  return [...rows].sort((a, b) => {
+    const timeA = timestampValue(a.timestamp);
+    const timeB = timestampValue(b.timestamp);
+    if (timeA !== null && timeB !== null && timeA !== timeB) return timeA - timeB;
+    if (timeA !== null && timeB === null) return -1;
+    if (timeA === null && timeB !== null) return 1;
+    return compareSeatNumbers(a, b, 'desc');
+  });
+}
+
+function suggestedReceiptNumber(rows, participant) {
+  if (hasValidReceiptBookNumber(participant)) return participant.receiptNo;
+  const eventRows = sortReceiptSequenceRows(
+    rows.filter((row) => row.eventType === participant.eventType && isReceiptEligible(row)),
+  );
+  const usedNumbers = new Set(
+    eventRows
+      .map((row) => receiptNumberValue(row.receiptNo, participant.eventType))
+      .filter(Boolean),
+  );
+  let nextNumber = 1;
+  for (const row of eventRows) {
+    const existing = receiptNumberValue(row.receiptNo, participant.eventType);
+    if (existing) continue;
+    while (usedNumbers.has(nextNumber)) nextNumber += 1;
+    const suggestion = formatReceiptNumber(participant.eventType, nextNumber);
+    usedNumbers.add(nextNumber);
+    if (row.id === participant.id) return suggestion;
+  }
+  while (usedNumbers.has(nextNumber)) nextNumber += 1;
+  return formatReceiptNumber(participant.eventType, nextNumber);
 }
 
 function receiptConflictMessage(rows, participant, receiptNo) {
   const raw = String(receiptNo || '').trim();
   if (!raw) return '';
-  const number = receiptNumberValue(raw);
-  if (!number) return `Invalid receipt-book number. Suggested next available receipt no: ${receiptBookAudit(rows).suggestedNext}`;
+  const number = receiptNumberValue(raw, participant.eventType);
+  if (!number) return `Invalid event-wise receipt number. Suggested next available receipt no: ${suggestedReceiptNumber(rows, participant)}`;
   const conflict = rows.find((row) =>
     row.id !== participant.id &&
-    receiptNumberValue(row.receiptNo) === number,
+    row.eventType === participant.eventType &&
+    receiptNumberValue(row.receiptNo, participant.eventType) === number,
   );
   if (!conflict) return '';
-  return `Receipt No. ${raw} is already used. Suggested next available receipt no: ${receiptBookAudit(rows).suggestedNext}`;
+  return `Receipt No. ${raw} is already used. Suggested next available receipt no: ${suggestedReceiptNumber(rows, participant)}`;
 }
 
 function receiptFileName(participant, receiptNo) {
@@ -641,8 +683,8 @@ async function generateReceiptJpg(participant, receiptNo) {
   if (!isReceiptEligible(participant)) {
     throw new Error(receiptUnavailableMessage(participant));
   }
-  if (!hasValidReceiptBookNumber({ receiptNo })) {
-    throw new Error('Receipt Number Not Assigned');
+  if (receiptNumberValue(receiptNo, participant.eventType) === null) {
+    throw new Error('Valid event-wise receipt number is required');
   }
   const receiptDate = receiptDateForParticipant(participant);
   if (!receiptDate) {
@@ -706,7 +748,6 @@ function buildBulkReceiptRows(rows, eventType) {
   return sortParticipants(rows.filter((row) =>
     row.eventType === eventType &&
     isReceiptEligible(row) &&
-    hasValidReceiptBookNumber(row) &&
     Boolean(receiptDateForParticipant(row)) &&
     String(row.seatNo || '').trim() &&
     !row.receiptGenerated,
@@ -1803,10 +1844,11 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   const paymentReceiptEligible = isReceiptEligible(participant);
   const validReceiptNumber = hasValidReceiptBookNumber(participant);
   const validTimestampDate = receiptDateForParticipant(participant);
-  const receiptReady = paymentReceiptEligible && validReceiptNumber && Boolean(validTimestampDate);
+  const suggestedReceiptNo = suggestedReceiptNumber(rows, participant);
+  const activeReceiptNo = validReceiptNumber ? participant.receiptNo : suggestedReceiptNo;
+  const receiptReady = paymentReceiptEligible && Boolean(activeReceiptNo) && Boolean(validTimestampDate);
   const hasSeatNo = Boolean(String(participant.seatNo || '').trim());
-  const suggestedReceiptNo = nextReceiptNumber(rows);
-  const receiptAudit = receiptBookAudit(rows);
+  const receiptAudit = receiptBookAudit(rows, participant.eventType);
 
   useEffect(() => {
     setReceiptNo(participant.receiptNo || '');
@@ -1822,7 +1864,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     }
     setGenerating(true);
     setMessage('');
-    const nextNo = participant.receiptNo;
+    const nextNo = activeReceiptNo;
     try {
       const dataUrl = await generateReceiptJpg(participant, nextNo);
       setReceiptDataUrl(dataUrl);
@@ -1844,7 +1886,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   async function handleDownloadReceipt() {
     const dataUrl = receiptDataUrl || await ensureReceiptImage();
     if (!dataUrl) return;
-    downloadReceipt(dataUrl, participant, receiptNo || participant.receiptNo);
+    downloadReceipt(dataUrl, participant, receiptNo || activeReceiptNo);
   }
 
   async function handleShareReceipt() {
@@ -1854,7 +1896,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     }
     const dataUrl = receiptDataUrl || await ensureReceiptImage();
     if (!dataUrl) return;
-    const currentReceiptNo = receiptNo || participant.receiptNo;
+    const currentReceiptNo = receiptNo || activeReceiptNo;
     const filename = receiptFileName(participant, currentReceiptNo);
     const file = dataUrlToFile(dataUrl, filename);
     const shareText = `MVST receipt for ${participantDisplayName(participant)} - ${currentReceiptNo}`;
@@ -1892,7 +1934,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       setMessage('Seat No is required before receipt generation');
       return;
     }
-    const nextNo = validReceiptNumber ? participant.receiptNo : suggestedReceiptNo;
+    const nextNo = activeReceiptNo;
     const conflictMessage = receiptConflictMessage(rows, participant, nextNo);
     if (conflictMessage) {
       setMessage(conflictMessage);
@@ -1919,13 +1961,14 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       <div className="receipt-panel-head">
         <div>
           <span>Receipt Management</span>
-          <strong>{validReceiptNumber ? participant.receiptNo : 'Receipt Number Not Assigned'}</strong>
+          <strong>{validReceiptNumber ? participant.receiptNo : `Suggested ${suggestedReceiptNo}`}</strong>
         </div>
         {participant.receiptGenerated ? <StatusPill tone="success">&#9989; Receipt Generated</StatusPill> : <StatusPill tone="neutral">Receipt Pending</StatusPill>}
       </div>
       <div className="receipt-meta-grid">
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
-        <p><span>Receipt No</span>{validReceiptNumber ? participant.receiptNo : 'Receipt Number Not Assigned'}</p>
+        <p><span>Receipt No</span>{validReceiptNumber ? participant.receiptNo : 'Not saved yet'}</p>
+        {!validReceiptNumber ? <p><span>Suggested Receipt No.</span>{suggestedReceiptNo}</p> : null}
         <p><span>Last Used Receipt No.</span>{receiptAudit.lastUsed}</p>
         <p><span>Suggested Next Receipt No.</span>{receiptAudit.suggestedNext}</p>
         <p><span>Receipt Date Source</span>{validTimestampDate || 'Registration timestamp missing'}</p>
@@ -1951,7 +1994,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       ) : (
         <div className="receipt-unavailable">
           <AlertTriangle size={16} />
-          <span>{!paymentReceiptEligible ? receiptUnavailableMessage(participant) : !validTimestampDate ? 'Registration timestamp missing' : 'Receipt Number Not Assigned'}</span>
+          <span>{!paymentReceiptEligible ? receiptUnavailableMessage(participant) : !validTimestampDate ? 'Registration timestamp missing' : 'Valid event-wise receipt number is required'}</span>
         </div>
       )}
       {paymentReceiptEligible && validTimestampDate && !validReceiptNumber ? (
@@ -1967,7 +2010,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
             <div className="receipt-modal-head">
               <div>
                 <span>Receipt Preview</span>
-                <strong>{participant.receiptNo || 'Receipt preview'}</strong>
+                <strong>{receiptNo || activeReceiptNo || 'Receipt preview'}</strong>
               </div>
               <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close receipt preview">
                 <X size={18} />
@@ -3407,10 +3450,11 @@ function App() {
     try {
       for (const participant of eligibleRows) {
         const currentParticipant = workingRows.find((row) => row.id === participant.id) || participant;
-        const receiptNo = currentParticipant.receiptNo;
+        const receiptNo = suggestedReceiptNumber(workingRows, currentParticipant);
         const dataUrl = await generateReceiptJpg(currentParticipant, receiptNo);
         downloadReceipt(dataUrl, currentParticipant, receiptNo);
         const payload = await saveRegistration(currentParticipant.id, {
+          receiptNo,
           receiptGenerated: true,
         });
         workingRows = payload.rows || workingRows.map((row) =>

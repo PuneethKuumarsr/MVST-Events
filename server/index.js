@@ -92,6 +92,10 @@ const EVENTS = {
     contribution: 20000,
   },
 };
+const RECEIPT_PREFIXES = {
+  bhimaratha: 'BS26',
+  shashtipoorthi: 'SP26',
+};
 
 const SHEETS = [
   {
@@ -230,15 +234,21 @@ function nextAvailableSeat(rows, eventType) {
   return nextSeatAfter(parsedSeats[0]);
 }
 
-function receiptNumericValue(receiptNo) {
-  const raw = String(receiptNo || '').trim();
-  if (!/^[1-9]\d*$/.test(raw)) return null;
-  return Number(raw);
+function receiptPrefix(eventType) {
+  return RECEIPT_PREFIXES[eventType] || 'RC26';
 }
 
-function nextAvailableReceiptNo(rows) {
-  const highest = rows.reduce((max, row) => Math.max(max, receiptNumericValue(row.receiptNo) || 0), 0);
-  return String(highest + 1);
+function receiptNumericValue(receiptNo, eventType) {
+  const raw = String(receiptNo || '').trim();
+  const match = raw.match(new RegExp(`^${receiptPrefix(eventType)}-(\\d{3})$`));
+  return match ? Number(match[1]) : null;
+}
+
+function nextAvailableReceiptNo(rows, eventType) {
+  const highest = rows
+    .filter((row) => row.eventType === eventType)
+    .reduce((max, row) => Math.max(max, receiptNumericValue(row.receiptNo, eventType) || 0), 0);
+  return `${receiptPrefix(eventType)}-${String(highest + 1).padStart(3, '0')}`;
 }
 
 function isReceiptEligible(row) {
@@ -904,18 +914,19 @@ async function updateRegistration(registrationId, updates) {
         error.statusCode = 409;
         throw error;
       }
-      const parsedReceipt = receiptNumericValue(nextReceiptRaw);
+      const parsedReceipt = receiptNumericValue(nextReceiptRaw, currentRow.eventType);
       if (parsedReceipt === null) {
-        const error = new Error(`Invalid receipt-book number. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows)}`);
+        const error = new Error(`Invalid event-wise receipt number. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows, currentRow.eventType)}`);
         error.statusCode = 409;
         throw error;
       }
       const conflict = cache.rows.find((row) =>
         row.id !== currentRow.id &&
-        receiptNumericValue(row.receiptNo) === parsedReceipt,
+        row.eventType === currentRow.eventType &&
+        receiptNumericValue(row.receiptNo, currentRow.eventType) === parsedReceipt,
       );
       if (conflict) {
-        const error = new Error(`Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows)}`);
+        const error = new Error(`Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows, currentRow.eventType)}`);
         error.statusCode = 409;
         throw error;
       }
