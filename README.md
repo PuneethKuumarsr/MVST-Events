@@ -51,6 +51,8 @@ GOOGLE_SHEETS_RANGE=Form Responses 1!A:AZ
 AUTH_BOOTSTRAP_ADMIN_NAME=
 AUTH_BOOTSTRAP_ADMIN_MOBILE=
 AUTH_BOOTSTRAP_ADMIN_PIN=
+MONGODB_URI=
+MONGODB_DB=mvst_seva_portal
 VITE_DEVELOPER_MODE=false
 ```
 
@@ -63,6 +65,125 @@ Authentication is required before any dashboard content is shown. On first start
 - `AUTH_BOOTSTRAP_ADMIN_PIN`
 
 The PIN must be 4 or 6 digits. Only a scrypt hash is stored under `server/data/users.json`, which is ignored by Git. After the first PST Admin login, use **User Access** in the app to add volunteers, crew, reset PINs, or disable users.
+
+## MongoDB Atlas Preparation
+
+MongoDB is optional in this preparation phase. Google Sheets remains the source for registrations, donors, receipts, seats, WhatsApp workflows, and current event operations.
+
+MongoDB is prepared only for:
+
+- `users`
+- `sessions`
+- `qr_tokens`
+- `distribution_logs`
+
+No participant, donor, booking, receipt, payment, or sponsorship data is migrated to MongoDB.
+
+### Folder Structure
+
+- `server/db/mongo.js` - MongoDB connection helper.
+- `server/models/User.js` - PST Admin, volunteer, and crew login users.
+- `server/models/Session.js` - HttpOnly-cookie session backing store.
+- `server/models/QrToken.js` - hashed QR-token metadata, one token per couple.
+- `server/models/DistributionLog.js` - QR operation audit logs.
+
+### Models
+
+`users`
+
+- `_id`
+- `name`
+- `mobile`
+- `role` (`PST_ADMIN`, `VOLUNTEER`, `CREW`)
+- `pinHash`
+- `active`
+- `lastLogin`
+- `createdAt`
+- `updatedAt`
+
+`sessions`
+
+- `tokenHash`
+- `userId`
+- `loginAt`
+- `expiresAt`
+- `lastActivity`
+
+`qr_tokens`
+
+- `tokenHash`
+- `tokenVersion`
+- `participantId`
+- `eventType`
+- `rowNumber`
+- `active`
+- `createdAt`
+- `updatedAt`
+
+`distribution_logs`
+
+- `participantId`
+- `eventType`
+- `rowNumber`
+- `operation`
+- `status`
+- `operatorUserId`
+- `operatorName`
+- `occurredAt`
+
+### Atlas Setup Guide
+
+1. Go to MongoDB Atlas and create a free account using the owner's email address.
+2. Create a free M0 cluster.
+3. Create a database user with a strong password. Do not reuse your Google password.
+4. In Network Access, allow Render outbound access. For the first deployment you may use Atlas's `0.0.0.0/0` option, then restrict later if you move to fixed outbound IPs.
+5. Copy the Node.js connection string.
+6. Replace the password and database name in the connection string.
+7. In Render, add:
+   - `MONGODB_URI`
+   - `MONGODB_DB=mvst_seva_portal`
+   - `AUTH_BOOTSTRAP_ADMIN_NAME`
+   - `AUTH_BOOTSTRAP_ADMIN_MOBILE`
+   - `AUTH_BOOTSTRAP_ADMIN_PIN`
+8. Deploy.
+9. Login once as PST Admin.
+10. Add volunteers and crew from **User Access**.
+
+Do not commit the Atlas URI, database password, bootstrap mobile, bootstrap PIN, or generated user data.
+
+### Local Development
+
+Without `MONGODB_URI`, authentication falls back to the ignored local file:
+
+```text
+server/data/users.json
+```
+
+With `MONGODB_URI`, users and sessions are stored in MongoDB instead.
+
+To verify the MongoDB foundation after adding Atlas credentials:
+
+```bash
+npm run verify:mongo
+```
+
+This verifies connection to `mvst_seva_portal`, creates/checks only:
+
+- `users`
+- `sessions`
+- `qr_tokens`
+- `distribution_logs`
+
+It uses temporary synthetic records and deletes them after the check. It does not migrate Google Sheets data and does not create participant collections.
+
+### Rollback Plan
+
+If MongoDB is unavailable:
+
+1. Remove or unset `MONGODB_URI`.
+2. Restart the service.
+3. The app falls back to the ignored local auth store.
+4. Google Sheets data and all existing MVST workflows remain unchanged.
 
 ## Google Cloud Setup
 

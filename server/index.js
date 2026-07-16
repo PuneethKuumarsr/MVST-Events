@@ -6,6 +6,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { connectMongo, isMongoConfigured } from './db/mongo.js';
+import { DistributionLog } from './models/DistributionLog.js';
+import { QrToken } from './models/QrToken.js';
+import { Session } from './models/Session.js';
+import { User } from './models/User.js';
 
 dotenv.config();
 
@@ -572,6 +577,48 @@ function rowQrToken(row) {
   return String(row.qrToken || '').trim() || generateQrToken(row);
 }
 
+async function recordQrToken(row) {
+  if (!isMongoConfigured() || !row?.id) return;
+  try {
+    await connectMongo();
+    await QrToken.updateOne(
+      { participantId: row.id },
+      {
+        $set: {
+          tokenHash: tokenHash(rowQrToken(row)),
+          tokenVersion: QR_TOKEN_VERSION,
+          participantId: row.id,
+          eventType: row.eventType,
+          rowNumber: row.rowNumber || null,
+          active: true,
+        },
+      },
+      { upsert: true },
+    );
+  } catch {
+    // QR token persistence is optional infrastructure; Sheets remains the source of truth.
+  }
+}
+
+async function recordDistributionLog({ row, operationKey, status, operatorUser }) {
+  if (!isMongoConfigured() || !row?.id || !operatorUser?.id) return;
+  try {
+    await connectMongo();
+    await DistributionLog.create({
+      participantId: row.id,
+      eventType: row.eventType,
+      rowNumber: row.rowNumber || null,
+      operation: operationKey,
+      status,
+      operatorUserId: operatorUser.id,
+      operatorName: operatorUser.name || operatorUser.mobile,
+      occurredAt: new Date(),
+    });
+  } catch {
+    // Distribution logs are supplemental; do not undo or mask confirmed Sheet writes.
+  }
+}
+
 function indiaDateTime() {
   return new Date().toLocaleString('en-IN', {
     timeZone: 'Asia/Kolkata',
@@ -604,9 +651,39 @@ function sanitizeAuthUser(user) {
   };
 }
 
+function storageRole(role) {
+  const normalized = normalizeRole(role);
+  if (normalized === ROLE_PST) return 'PST_ADMIN';
+  if (normalized === ROLE_CREW) return 'CREW';
+  return 'VOLUNTEER';
+}
+
+function displayRole(role) {
+  const raw = String(role || '').trim();
+  if (raw === 'PST_ADMIN') return ROLE_PST;
+  if (raw === 'CREW') return ROLE_CREW;
+  if (raw === 'VOLUNTEER') return ROLE_VOLUNTEER;
+  return normalizeRole(raw);
+}
+
+function normalizeAuthRecord(user) {
+  if (!user) return null;
+  return {
+    id: String(user._id || user.id || ''),
+    name: user.name || '',
+    mobile: user.mobile || '',
+    role: displayRole(user.role),
+    active: user.active !== false,
+    passwordHash: user.pinHash || user.passwordHash || '',
+    lastLogin: user.lastLogin ? new Date(user.lastLogin).toISOString() : '',
+  };
+}
+
 function normalizeRole(role) {
   const raw = String(role || '').trim().toLowerCase();
   if (raw === 'pst' || raw === 'pst admin' || raw === 'admin') return ROLE_PST;
+  if (raw === 'pst_admin') return ROLE_PST;
+  if (raw === 'volunteer') return ROLE_VOLUNTEER;
   if (raw === 'crew') return ROLE_CREW;
   return ROLE_VOLUNTEER;
 }
@@ -643,22 +720,101 @@ function writeAuthUsers(users) {
   fs.writeFileSync(authUsersPath, JSON.stringify({ users }, null, 2));
 }
 
-function ensureBootstrapUser() {
-  const users = readAuthUsers();
-  if (users.length || !process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE || !process.env.AUTH_BOOTSTRAP_ADMIN_PIN) return users;
-  if (!validatePin(process.env.AUTH_BOOTSTRAP_ADMIN_PIN)) return users;
-  const mobile = normalizeMobileForAuth(process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE);
-  const bootstrap = {
-    id: crypto.randomUUID(),
-    name: process.env.AUTH_BOOTSTRAP_ADMIN_NAME || 'PST Admin',
-    mobile,
-    role: ROLE_PST,
+async function listAuthUsers() {
+  if (isMongoConfigured()) {
+    await connectMongo();
+    const users = await User.find({}).sort({ createdAt: 1 }).lean();
+    return users.map(normalizeAuthRecord);
+  }
+  return readAuthUsers().map(normalizeAuthRecord);
+}
+
+async function findAuthUserByMobile(mobile) {
+  const normalizedMobile = normalizeMobileForAuth(mobile);
+  if (isMongoConfigured()) {
+    await connectMongo();
+    return normalizeAuthRecord(await User.findOne({ mobile: normalizedMobile }).lean());
+  }
+  return readAuthUsers().map(normalizeAuthRecord).find((user) => user.mobile === normalizedMobile) || null;
+}
+
+async function createAuthUserRecord({ name, mobile, role, pin }) {
+  const record = {
+    name: String(name || 'Volunteer').trim(),
+    mobile: normalizeMobileForAuth(mobile),
+    role: normalizeRole(role),
     active: true,
-    passwordHash: hashPin(process.env.AUTH_BOOTSTRAP_ADMIN_PIN),
+    passwordHash: hashPin(pin),
     lastLogin: '',
   };
-  writeAuthUsers([bootstrap]);
-  return [bootstrap];
+  if (isMongoConfigured()) {
+    await connectMongo();
+    const user = await User.create({
+      name: record.name,
+      mobile: record.mobile,
+      role: storageRole(record.role),
+      active: true,
+      pinHash: record.passwordHash,
+    });
+    return normalizeAuthRecord(user.toObject());
+  }
+  const users = readAuthUsers().map(normalizeAuthRecord);
+  if (users.some((user) => user.mobile === record.mobile)) {
+    const error = new Error('Mobile already exists');
+    error.statusCode = 409;
+    throw error;
+  }
+  const nextUser = { ...record, id: crypto.randomUUID() };
+  writeAuthUsers([...users, nextUser]);
+  return nextUser;
+}
+
+async function updateAuthUserRecord(id, updates) {
+  if (isMongoConfigured()) {
+    await connectMongo();
+    const patch = {};
+    if (updates.name !== undefined) patch.name = String(updates.name || '').trim();
+    if (updates.role !== undefined) patch.role = storageRole(updates.role);
+    if (updates.active !== undefined) patch.active = Boolean(updates.active);
+    if (updates.pin !== undefined) patch.pinHash = hashPin(updates.pin);
+    const user = await User.findByIdAndUpdate(id, patch, { new: true }).lean();
+    return normalizeAuthRecord(user);
+  }
+  const users = readAuthUsers().map(normalizeAuthRecord);
+  const nextUsers = users.map((user) => {
+    if (user.id !== id) return user;
+    const next = { ...user };
+    if (updates.name !== undefined) next.name = String(updates.name || '').trim();
+    if (updates.role !== undefined) next.role = normalizeRole(updates.role);
+    if (updates.active !== undefined) next.active = Boolean(updates.active);
+    if (updates.pin !== undefined) next.passwordHash = hashPin(updates.pin);
+    return next;
+  });
+  writeAuthUsers(nextUsers);
+  return nextUsers.find((user) => user.id === id) || null;
+}
+
+async function updateLastLogin(userId, date) {
+  if (isMongoConfigured()) {
+    await connectMongo();
+    await User.findByIdAndUpdate(userId, { lastLogin: date });
+    return;
+  }
+  const users = readAuthUsers().map(normalizeAuthRecord);
+  writeAuthUsers(users.map((user) => (user.id === userId ? { ...user, lastLogin: date.toISOString() } : user)));
+}
+
+async function ensureBootstrapUser() {
+  const users = await listAuthUsers();
+  if (users.length || !process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE || !process.env.AUTH_BOOTSTRAP_ADMIN_PIN) return users;
+  if (!validatePin(process.env.AUTH_BOOTSTRAP_ADMIN_PIN)) return users;
+  await createAuthUserRecord({
+    name: process.env.AUTH_BOOTSTRAP_ADMIN_NAME || 'PST Admin',
+    mobile: process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE,
+    role: ROLE_PST,
+    pin: process.env.AUTH_BOOTSTRAP_ADMIN_PIN,
+  });
+  return listAuthUsers();
 }
 
 function parseCookies(req) {
@@ -693,18 +849,47 @@ function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
-function createSession(user) {
+function tokenHash(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+async function createSession(user) {
   const sessionId = crypto.randomBytes(32).toString('base64url');
   const duration = SESSION_DURATIONS[user.role] || SESSION_DURATIONS[ROLE_VOLUNTEER];
+  const expiresAt = new Date(Date.now() + duration);
+  if (isMongoConfigured()) {
+    await connectMongo();
+    await Session.create({
+      tokenHash: tokenHash(sessionId),
+      userId: user.id,
+      loginAt: new Date(),
+      expiresAt,
+      lastActivity: new Date(),
+    });
+    return { sessionId, duration };
+  }
   sessions.set(sessionId, {
     user: sanitizeAuthUser(user),
-    expiresAt: Date.now() + duration,
+    expiresAt: expiresAt.getTime(),
   });
   return { sessionId, duration };
 }
 
-function authFromRequest(req) {
+async function authFromRequest(req) {
   const sessionId = parseCookies(req)[SESSION_COOKIE];
+  if (isMongoConfigured()) {
+    await connectMongo();
+    const session = sessionId ? await Session.findOne({ tokenHash: tokenHash(sessionId) }).lean() : null;
+    if (!session) return null;
+    if (Date.now() > new Date(session.expiresAt).getTime()) {
+      await Session.deleteOne({ _id: session._id });
+      return null;
+    }
+    const user = normalizeAuthRecord(await User.findOne({ _id: session.userId, active: true }).lean());
+    if (!user) return null;
+    await Session.updateOne({ _id: session._id }, { lastActivity: new Date() });
+    return sanitizeAuthUser(user);
+  }
   const session = sessionId ? sessions.get(sessionId) : null;
   if (!session) return null;
   if (Date.now() > session.expiresAt) {
@@ -714,19 +899,27 @@ function authFromRequest(req) {
   return session.user;
 }
 
-function requireAuth(req, res, next) {
-  const user = authFromRequest(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  req.user = user;
-  return next();
+async function requireAuth(req, res, next) {
+  try {
+    const user = await authFromRequest(req);
+    if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    req.user = user;
+    return next();
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Authentication unavailable' });
+  }
 }
 
-function requirePst(req, res, next) {
-  const user = authFromRequest(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  if (user.role !== ROLE_PST) return res.status(403).json({ ok: false, error: 'Forbidden' });
-  req.user = user;
-  return next();
+async function requirePst(req, res, next) {
+  try {
+    const user = await authFromRequest(req);
+    if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    if (user.role !== ROLE_PST) return res.status(403).json({ ok: false, error: 'Forbidden' });
+    req.user = user;
+    return next();
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Authentication unavailable' });
+  }
 }
 
 function isPstUser(user) {
@@ -1342,7 +1535,8 @@ async function updateRegistration(registrationId, updates) {
   return loadRegistrations();
 }
 
-async function scanDistributionToken({ token, operationKey, actor }) {
+async function scanDistributionToken({ token, operationKey, actorUser }) {
+  const actor = actorUser?.name || actorUser?.mobile;
   if (!actor || !String(actor).trim()) {
     const error = new Error('Unauthenticated scan blocked. Operator name is required.');
     error.statusCode = 401;
@@ -1377,6 +1571,7 @@ async function scanDistributionToken({ token, operationKey, actor }) {
     error.statusCode = 404;
     throw error;
   }
+  await recordQrToken(currentRow);
 
   const source = sourceForEvent(currentRow.eventType);
   if (!source?.spreadsheetId) {
@@ -1402,6 +1597,12 @@ async function scanDistributionToken({ token, operationKey, actor }) {
   }
 
   if (currentRow[operation.statusField]) {
+    await recordDistributionLog({
+      row: currentRow,
+      operationKey,
+      status: 'already-completed',
+      operatorUser: actorUser,
+    });
     return {
       status: 'already-completed',
       operation: operation.label,
@@ -1443,6 +1644,12 @@ async function scanDistributionToken({ token, operationKey, actor }) {
 
   const next = await loadRegistrations();
   const updatedRow = next.rows.find((row) => row.id === currentRow.id) || currentRow;
+  await recordDistributionLog({
+    row: updatedRow,
+    operationKey,
+    status: 'completed',
+    operatorUser: actorUser,
+  });
   return {
     status: 'completed',
     operation: operation.label,
@@ -1533,77 +1740,78 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', app: 'MVST Events' });
 });
 
-app.get('/api/auth/me', (req, res) => {
-  const user = authFromRequest(req);
-  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  return res.json({ ok: true, user });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const mobile = normalizeMobileForAuth(req.body?.mobile);
-  const pin = String(req.body?.pin || '');
-  if (!mobile || !validatePin(pin)) return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
-
-  const users = ensureBootstrapUser();
-  const user = users.find((item) => item.mobile === mobile);
-  if (!user || user.active === false || !verifyPin(pin, user.passwordHash)) {
-    return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    await ensureBootstrapUser();
+    const user = await authFromRequest(req);
+    if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return res.json({ ok: true, user });
+  } catch {
+    return res.status(500).json({ ok: false, error: 'Authentication unavailable' });
   }
-
-  user.lastLogin = indiaDateTime();
-  writeAuthUsers(users);
-  const { sessionId, duration } = createSession(user);
-  setSessionCookie(req, res, sessionId, duration);
-  return res.json({ ok: true, user: sanitizeAuthUser(user), expiresInMs: duration });
 });
 
-app.post('/api/auth/logout', requireAuth, (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const mobile = normalizeMobileForAuth(req.body?.mobile);
+    const pin = String(req.body?.pin || '');
+    if (!mobile || !validatePin(pin)) return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+
+    await ensureBootstrapUser();
+    const user = await findAuthUserByMobile(mobile);
+    if (!user || user.active === false || !verifyPin(pin, user.passwordHash)) {
+      return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+    }
+
+    await updateLastLogin(user.id, new Date());
+    const { sessionId, duration } = await createSession(user);
+    setSessionCookie(req, res, sessionId, duration);
+    return res.json({ ok: true, user: sanitizeAuthUser({ ...user, lastLogin: new Date().toISOString() }), expiresInMs: duration });
+  } catch {
+    return res.status(500).json({ ok: false, error: 'Authentication unavailable' });
+  }
+});
+
+app.post('/api/auth/logout', requireAuth, async (req, res) => {
   const sessionId = parseCookies(req)[SESSION_COOKIE];
-  if (sessionId) sessions.delete(sessionId);
+  if (sessionId && isMongoConfigured()) {
+    await connectMongo();
+    await Session.deleteOne({ tokenHash: tokenHash(sessionId) });
+  } else if (sessionId) {
+    sessions.delete(sessionId);
+  }
   clearSessionCookie(res);
   return res.json({ ok: true });
 });
 
-app.get('/api/users', requirePst, (req, res) => {
-  const users = ensureBootstrapUser().map(sanitizeAuthUser);
+app.get('/api/users', requirePst, async (req, res) => {
+  const users = (await ensureBootstrapUser()).map(sanitizeAuthUser);
   res.json({ ok: true, rows: users });
 });
 
-app.post('/api/users', requirePst, (req, res) => {
+app.post('/api/users', requirePst, async (req, res) => {
   const { name, mobile: rawMobile, role: rawRole, pin, active = true } = req.body || {};
   const mobile = normalizeMobileForAuth(rawMobile);
   if (!name || !mobile || !validatePin(pin)) return res.status(400).json({ ok: false, error: 'Name, valid mobile and 4/6 digit PIN are required.' });
-  const users = ensureBootstrapUser();
-  if (users.some((user) => user.mobile === mobile)) return res.status(409).json({ ok: false, error: 'User mobile already exists.' });
-  const user = {
-    id: crypto.randomUUID(),
-    name: String(name).trim(),
-    mobile,
-    role: normalizeRole(rawRole),
-    active: Boolean(active),
-    passwordHash: hashPin(pin),
-    lastLogin: '',
-  };
-  users.push(user);
-  writeAuthUsers(users);
-  res.json({ ok: true, user: sanitizeAuthUser(user), rows: users.map(sanitizeAuthUser) });
+  try {
+    const user = await createAuthUserRecord({ name, mobile, role: rawRole, pin });
+    if (active === false) await updateAuthUserRecord(user.id, { active: false });
+    const rows = (await listAuthUsers()).map(sanitizeAuthUser);
+    return res.json({ ok: true, user: sanitizeAuthUser(user), rows });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to create user.' });
+  }
 });
 
-app.patch('/api/users/:id', requirePst, (req, res) => {
-  const users = ensureBootstrapUser();
-  const user = users.find((item) => item.id === req.params.id);
-  if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
+app.patch('/api/users/:id', requirePst, async (req, res) => {
   const updates = req.body || {};
-  if (Object.prototype.hasOwnProperty.call(updates, 'name')) user.name = String(updates.name || '').trim();
-  if (Object.prototype.hasOwnProperty.call(updates, 'mobile')) user.mobile = normalizeMobileForAuth(updates.mobile);
-  if (Object.prototype.hasOwnProperty.call(updates, 'role')) user.role = normalizeRole(updates.role);
-  if (Object.prototype.hasOwnProperty.call(updates, 'active')) user.active = Boolean(updates.active);
-  if (Object.prototype.hasOwnProperty.call(updates, 'pin')) {
-    if (!validatePin(updates.pin)) return res.status(400).json({ ok: false, error: 'PIN must be 4 or 6 digits.' });
-    user.passwordHash = hashPin(updates.pin);
+  if (Object.prototype.hasOwnProperty.call(updates, 'pin') && !validatePin(updates.pin)) {
+    return res.status(400).json({ ok: false, error: 'PIN must be 4 or 6 digits.' });
   }
-  writeAuthUsers(users);
-  return res.json({ ok: true, user: sanitizeAuthUser(user), rows: users.map(sanitizeAuthUser) });
+  const user = await updateAuthUserRecord(req.params.id, updates);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
+  const rows = (await listAuthUsers()).map(sanitizeAuthUser);
+  return res.json({ ok: true, user: sanitizeAuthUser(user), rows });
 });
 
 app.get('/api/registrations', requireAuth, async (req, res) => {
@@ -1703,7 +1911,7 @@ app.post('/api/distribution/scan', requireAuth, async (req, res) => {
     const result = await scanDistributionToken({
       token: req.body?.token,
       operationKey: req.body?.operation,
-      actor: req.user.name || req.user.mobile,
+      actorUser: req.user,
     });
     res.json({
       ok: true,
