@@ -82,8 +82,11 @@ assert.ok(frontend.includes('!isFreeSponsorship(row)'), 'Balance modal must excl
 assert.ok(frontend.includes('Number(b.balance || 0) - Number(a.balance || 0)'), 'Balance modal must sort highest balance first');
 assert.ok(frontend.includes('const visibleTotal = visibleRows.reduce((sum, row) => sum + Number(row.balance || 0), 0)'), 'Balance modal total must sum the displayed rows');
 assert.ok(frontend.includes('Send Balance WhatsApp'), 'Balance modal must include balance WhatsApp action');
-assert.ok(frontend.includes("makeWhatsAppUrl(participant, 'balance')"), 'Balance modal WhatsApp action must use existing balance template');
-assert.ok(frontend.includes('canSendBalance ?'), 'Balance modal must hide balance WhatsApp for invalid mobiles');
+assert.ok(frontend.includes("makeWhatsAppUrl(participant, 'balance')"), 'Balance modal WhatsApp action must use approved balance reminder template');
+assert.ok(frontend.includes('function buildBalanceReminderMessage'), 'Balance reminders must use a dedicated approved template');
+assert.ok(frontend.includes('Valid mobile required'), 'Balance modal must show invalid-mobile guidance');
+assert.ok(frontend.includes("['Part Paid', 'Pending'].includes(participant.paymentStatus)"), 'Balance WhatsApp action must be limited to Part Paid and Pending');
+assert.ok(frontend.includes('!isFreeSponsorship(participant)'), 'Balance WhatsApp action must exclude Free Sponsorship participants');
 assert.ok(frontend.includes('Edit Payment'), 'Balance modal must include Edit Payment action');
 assert.ok(frontend.includes('BALANCE_FILTERS'), 'Balance modal must provide filters');
 assert.ok(backend.includes('FREE_SPONSORSHIP_STATUS'), 'Backend must support Free Sponsorship payment status');
@@ -463,6 +466,63 @@ const balanceListForTest = [...balanceRowsForTest]
   });
 assert.deepEqual(balanceListForTest.map((row) => row.id), ['pending', 'part-paid'], 'Balance modal must include Part Paid/Pending and sort by balance then newest timestamp');
 assert.equal(balanceListForTest.reduce((sum, row) => sum + Number(row.balance || 0), 0), 40000, 'Balance modal total must equal the dashboard balance total');
+const formatCurrencyForBalanceTest = (value) => new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+}).format(value || 0);
+const eventDisplayForBalanceTest = (eventType) => eventType === 'shashtipoorthi'
+  ? 'Samoohika Shashtipoorthi Shanthi'
+  : 'Samoohika Bhimaratha Shanthi';
+const participantNameForBalanceTest = (participant) => [participant.groomName, participant.brideName].filter(Boolean).join(' & ');
+const buildBalanceReminderMessageForTest = (participant) => `🙏 Jai Vasavi 🙏
+Dear ${participantNameForBalanceTest(participant)},
+Thank you for registering for the ${eventDisplayForBalanceTest(participant.eventType)}.
+Our records show:
+Total Sponsorship Amount: ${formatCurrencyForBalanceTest(participant.contribution)}
+Amount Received: ${formatCurrencyForBalanceTest(participant.paidAmount)}
+Balance Payable: ${formatCurrencyForBalanceTest(participant.balance)}
+We kindly request you to clear the above balance on or before the Kit Distribution Meeting on 19-07-2026.
+On receipt of the full payment, your seat confirmation, receipt, and kit collection formalities will be completed.
+For any clarification, please contact us.
+Thank you.
+🙏 Jai Vasavi 🙏
+Mane Manege Vasavi Seva Trust (R.), Bengaluru`;
+const balanceMessageParticipant = {
+  id: 'shashtipoorthi:19',
+  qrToken: 'mvstqr:v1:not-for-message',
+  eventType: 'shashtipoorthi',
+  groomName: 'Sample Groom',
+  brideName: 'Sample Bride',
+  contribution: 30000,
+  paidAmount: 10000,
+  balance: 20000,
+  paymentStatus: 'Part Paid',
+  seatNo: 'D-04',
+  receiptNo: 'SP26-19',
+};
+const balanceReminder = buildBalanceReminderMessageForTest(balanceMessageParticipant);
+assert.ok(balanceReminder.includes('Dear Sample Groom & Sample Bride,'), 'Balance reminder must include participant name');
+assert.ok(balanceReminder.includes('Samoohika Shashtipoorthi Shanthi'), 'Balance reminder must include event name');
+assert.ok(balanceReminder.includes('Total Sponsorship Amount: ₹30,000'), 'Balance reminder must format total amount');
+assert.ok(balanceReminder.includes('Amount Received: ₹10,000'), 'Balance reminder must format received amount');
+assert.ok(balanceReminder.includes('Balance Payable: ₹20,000'), 'Balance reminder must format balance amount');
+assert.ok(balanceReminder.includes('seat confirmation, receipt, and kit collection formalities'), 'Balance reminder must defer seat/receipt/kit formalities until full payment');
+assert.ok(!balanceReminder.includes('D-04'), 'Balance reminder must not disclose seat number');
+assert.ok(!balanceReminder.includes('SP26-19'), 'Balance reminder must not disclose receipt number');
+assert.ok(!balanceReminder.includes('shashtipoorthi:19'), 'Balance reminder must not disclose internal registration id');
+assert.ok(!balanceReminder.includes('mvstqr'), 'Balance reminder must not disclose QR token');
+const balanceActionEligibleForTest = (participant, mobileStatus = 'ok') =>
+  Number(participant.balance || 0) > 0 &&
+  ['Part Paid', 'Pending'].includes(participant.paymentStatus) &&
+  participant.paymentStatus !== 'Free Sponsorship' &&
+  mobileStatus === 'ok';
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Part Paid', balance: 20000 }, 'ok'), true, 'Part Paid participant must get balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Pending', balance: 30000 }, 'ok'), true, 'Pending participant must get balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Full Paid', balance: 0 }, 'ok'), false, 'Full Paid participant must not get balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Free Sponsorship', balance: 0 }, 'ok'), false, 'Free Sponsorship participant must not get balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Part Paid', balance: 0 }, 'ok'), false, 'Balance zero must hide balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Pending', balance: 30000 }, 'issue'), false, 'Invalid mobile must block balance action');
 
 const receiptPrefixesForTest = {
   bhimaratha: 'BS26',

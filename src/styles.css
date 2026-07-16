@@ -1438,6 +1438,17 @@ main {
   grid-column: 1 / -1;
 }
 
+.action-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border-radius: 8px;
+  background: rgba(163, 55, 55, 0.1);
+  color: var(--red);
+  padding: 8px 11px;
+  font-weight: 850;
+}
+
 .balance-empty {
   margin: 0;
   padding: 14px;

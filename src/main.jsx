@@ -1179,7 +1179,25 @@ function buildGroupMobileNumbersText(preview) {
     .map((contact) => `+${contact.mobileNumber}`)
     .join('\n');
 }
+
+function buildBalanceReminderMessage(participant) {
+  return `🙏 Jai Vasavi 🙏
+Dear ${participantDisplayName(participant)},
+Thank you for registering for the ${eventDisplayName(participant.eventType)}.
+Our records show:
+Total Sponsorship Amount: ${formatCurrency(participant.contribution)}
+Amount Received: ${formatCurrency(participant.paidAmount)}
+Balance Payable: ${formatCurrency(participant.balance)}
+We kindly request you to clear the above balance on or before the Kit Distribution Meeting on 19-07-2026.
+On receipt of the full payment, your seat confirmation, receipt, and kit collection formalities will be completed.
+For any clarification, please contact us.
+Thank you.
+🙏 Jai Vasavi 🙏
+Mane Manege Vasavi Seva Trust (R.), Bengaluru`;
+}
+
 function makeWhatsAppMessage(participant, kind) {
+  if (kind === 'balance') return buildBalanceReminderMessage(participant);
   return buildWhatsAppMessage(participant, kind);
 }
 
@@ -3376,7 +3394,11 @@ function BalanceReceivableModal({ rows, filter, setFilter, totalBalance, onClose
         <div className="balance-list">
           {visibleRows.length ? visibleRows.map((participant) => {
             const mobileValidation = mobileValidationStatus(participant.mobileNumber);
-            const canSendBalance = mobileValidation.status === 'ok';
+            const balanceActionEligible =
+              Number(participant.balance || 0) > 0 &&
+              ['Part Paid', 'Pending'].includes(participant.paymentStatus) &&
+              !isFreeSponsorship(participant);
+            const canSendBalance = balanceActionEligible && mobileValidation.status === 'ok';
             return (
               <article className="balance-card" key={participant.id}>
                 <div className="balance-card-main">
@@ -3399,7 +3421,7 @@ function BalanceReceivableModal({ rows, filter, setFilter, totalBalance, onClose
                     <a href={makeWhatsAppUrl(participant, 'balance')} target="_blank" rel="noreferrer">
                       Send Balance WhatsApp
                     </a>
-                  ) : null}
+                  ) : balanceActionEligible ? <span className="action-note">Valid mobile required</span> : null}
                   <button type="button" onClick={() => onEditPayment(participant)}>Edit Payment</button>
                 </div>
               </article>
