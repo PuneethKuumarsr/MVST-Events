@@ -333,7 +333,7 @@ main {
 
 .controls {
   display: grid;
-  grid-template-columns: 1.3fr repeat(3, minmax(150px, 0.7fr));
+  grid-template-columns: 1.4fr repeat(4, minmax(145px, 0.65fr));
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -849,6 +849,10 @@ main {
   font-weight: 850;
 }
 
+.save-message.warning {
+  color: var(--maroon);
+}
+
 .readonly-panel {
   padding: 10px 12px;
   color: var(--ink-soft);
@@ -952,6 +956,55 @@ main {
   color: var(--maroon);
   padding: 10px 12px;
   font-weight: 850;
+}
+
+.seat-guidance-section {
+  width: min(100% - 28px, 1120px);
+  margin: 0 auto 18px;
+}
+
+.seat-guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.seat-guidance-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.seat-guidance-head p {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.seat-guidance-head strong {
+  color: var(--maroon-deep);
+  font-size: 1.05rem;
+}
+
+.seat-warning-list {
+  display: grid;
+  gap: 7px;
+}
+
+.seat-warning-list span,
+.seat-guidance-card small {
+  border: 1px solid rgba(187, 135, 46, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 243, 212, 0.52);
+  color: var(--maroon);
+  padding: 8px 10px;
+  font-weight: 800;
 }
 
 .receipt-modal-backdrop {
@@ -1469,7 +1522,8 @@ main {
 @media (max-width: 760px) {
   .group-action-grid,
   .group-preview-grid,
-  .group-preview-lists {
+  .group-preview-lists,
+  .seat-guidance-grid {
     grid-template-columns: 1fr;
   }
 }

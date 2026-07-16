@@ -108,6 +108,50 @@ assert.ok(frontend.includes('Awaiting treasurer payment confirmation'), 'New Reg
 assert.ok(frontend.includes('newRegistrationRows'), 'Frontend must keep unverified registrations in a separate list');
 assert.ok(frontend.includes('.filter((row) => row.treasurerVerified)'), 'Regular participant tabs must show only treasurer-verified registrations');
 assert.ok(frontend.includes('Form Timestamp'), 'Participant cards must show form timestamp for cross verification');
+assert.ok(frontend.includes('PARTICIPANT_SORT_OPTIONS'), 'Participant pages must define sort options');
+assert.ok(frontend.includes('Latest Registration'), 'Participant sort must include Latest Registration option');
+assert.ok(frontend.includes('Seat Number (Ascending)'), 'Participant sort must include seat ascending option');
+assert.ok(frontend.includes('Seat Number (Descending)'), 'Participant sort must include seat descending option');
+assert.ok(frontend.includes('Participant Name (A-Z)'), 'Participant sort must include participant name option');
+assert.ok(frontend.includes("const [participantSort, setParticipantSort] = useState('latest')"), 'Latest Registration must be the default participant sort');
+assert.ok(frontend.includes('function sortParticipants(rows, sortMode = \'latest\')'), 'Frontend must sort participants through a reusable helper');
+assert.ok(frontend.includes('timestampValue(a.timestamp)'), 'Latest Registration sort must use Google Form timestamp');
+assert.ok(frontend.includes("return compareSeatNumbers(a, b, 'desc')"), 'Latest Registration sort must fall back to descending seat number');
+assert.ok(frontend.includes('sortParticipants(eventRows.filter((row) => isSeatAfterBaseline(row.seatNo)), \'latest\')'), 'WhatsApp future participants must use latest-first ordering');
+assert.ok(frontend.includes('sortParticipants(rows.filter((row) =>'), 'Bulk receipt participant selection must use sorted eligible rows');
+assert.ok(frontend.includes('function parseSeatValue(seatNo)'), 'Frontend must parse normalized seat values');
+assert.ok(frontend.includes('function nextSeatAfter(parsedSeat)'), 'Frontend must calculate next seat transitions');
+assert.ok(frontend.includes('function seatAuditForEvent(rows, eventType)'), 'Frontend must audit event-specific seat sequences');
+assert.ok(frontend.includes('Last Accepted Seat'), 'Dashboard must show last accepted seat');
+assert.ok(frontend.includes('Suggested Next Seat'), 'Dashboard must show suggested next seat');
+assert.ok(frontend.includes('Occupied in Current Row'), 'Dashboard must show occupied seats in current row');
+assert.ok(frontend.includes('Seat ${parsed.normalized} is already allotted. Suggested next available seat:'), 'Seat save must block duplicates and suggest the next seat');
+assert.ok(frontend.includes('function receiptBookAudit(rows)'), 'Frontend must audit physical receipt-book numbers');
+assert.ok(frontend.includes('Last Used Receipt No.'), 'Receipt panel must show last used receipt number');
+assert.ok(frontend.includes('Suggested Next Receipt No.'), 'Receipt panel must show suggested next receipt number');
+assert.ok(frontend.includes('Save Receipt No'), 'Receipt number must be saved by explicit user action');
+assert.ok(frontend.includes('do not reserve receipt number'), 'Receipt preview/download/share must not reserve receipt numbers');
+assert.ok(frontend.includes('Receipt Number Not Assigned'), 'Missing physical receipt-book number must block receipt generation');
+assert.ok(frontend.includes('registrationTimestampDate'), 'Receipt date must be derived from registration timestamp');
+assert.ok(frontend.includes("timeZone: 'Asia/Kolkata'"), 'Receipt timestamp parsing must use Asia/Kolkata');
+assert.ok(frontend.includes('const receiptLayouts = {'), 'Receipt field coordinates must live in a reusable layout config');
+assert.ok(frontend.includes('shashtipoorthi: {'), 'Receipt layout config must include Shashtipoorthi coordinates');
+assert.ok(frontend.includes('bhimaratha: {'), 'Receipt layout config must include Bhimaratha coordinates');
+assert.ok(frontend.includes("const RECEIPT_TEXT_COLOR = '#0B2D5C'"), 'Receipt text must use dark navy blue');
+assert.ok(frontend.includes('function receiptCoupleNameLines'), 'Receipt name rendering must support one-line/two-line fitting');
+assert.ok(frontend.includes('Sri. ${groomName} & Smt. ${brideName}'), 'Receipt couple name must preserve Sri. and Smt. on one line');
+assert.ok(frontend.includes('`& Smt. ${brideName}`'), 'Receipt couple name must preserve Smt. on wrapped second line');
+assert.ok(frontend.includes("replace(/\\s+-\\s+/g, ' ')"), 'Receipt names must replace accidental separator hyphens with spaces');
+assert.ok(!frontend.includes('numericAmount'), 'Receipt generator must not draw numeric amount overlay');
+assert.ok(!frontend.includes('amountInWords'), 'Receipt generator must not draw amount-in-words overlay');
+assert.ok(frontend.includes("throw new Error('Receipt Number Not Assigned')"), 'Receipt generator must reject missing receipt-book number internally');
+assert.ok(frontend.includes("throw new Error('Registration timestamp missing')"), 'Receipt generator must reject missing timestamp internally');
+assert.ok(!frontend.includes('participant.receiptNo || nextReceiptNumber(rows, participant.eventType)'), 'Receipt preview/download must not substitute a suggested/event receipt number');
+assert.ok(!frontend.includes('receiptNo: receiptNo,'), 'Bulk receipt generation must not auto-save/consume a suggested receipt number');
+assert.ok(backend.includes('await loadFromGoogleApi().then'), 'Backend must reload Google Sheets data before registration updates');
+assert.ok(backend.includes('Seat ${parsedSeat.normalized} is already allotted. Suggested next available seat:'), 'Backend must block duplicate seat saves');
+assert.ok(backend.includes('Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no:'), 'Backend must block duplicate receipt saves');
+assert.ok(backend.includes('/^[1-9]\\d*$/.test(raw)'), 'Backend must accept only plain numeric physical receipt-book numbers');
 assert.ok(frontend.includes('scrollToSection'), 'Dashboard summary cards must support jump navigation');
 assert.ok(frontend.includes('id="new-registrations-dashboard"'), 'New Registrations section must have a jump target');
 assert.ok(frontend.includes('id="participant-management-dashboard"'), 'Participant Management section must have a jump target');
@@ -131,8 +175,7 @@ assert.ok(frontend.includes('Receipt will be available after the full amount is 
 assert.ok(frontend.includes('Total Amount'), 'Receipt panel must show total amount');
 assert.ok(frontend.includes('Amount Received'), 'Receipt panel must show amount received');
 assert.ok(frontend.includes('<span>Balance</span>{formatCurrency(participant.balance)}</p>'), 'Receipt panel must show balance');
-assert.ok(frontend.includes('SP26'), 'Frontend must define Shashtipoorthi SP26 receipt prefix');
-assert.ok(frontend.includes('BS26'), 'Frontend must define Bhimaratha BS26 receipt prefix');
+assert.ok(!frontend.includes('RECEIPT_PREFIXES'), 'Receipt numbers must not use event-code prefixes');
 assert.ok(frontend.includes('shastipoorthi-receipt.jpeg'), 'Frontend must use original Shashtipoorthi receipt template');
 assert.ok(frontend.includes('bhimaratha-receipt.jpeg'), 'Frontend must use original Bhimaratha receipt template');
 assert.ok(frontend.includes("toDataURL('image/jpeg'"), 'Receipt output must be generated as JPG');
@@ -209,6 +252,119 @@ for (const [input, expected] of mobileValidationExamples) {
   assert.equal(mobileValidationForTest(input), expected);
 }
 
+const lettersToNumberForTest = (letters) => String(letters || '').toUpperCase().split('').reduce((value, letter) => value * 26 + (letter.charCodeAt(0) - 64), 0);
+const numberToLettersForTest = (value) => {
+  let number = Number(value || 0);
+  let letters = '';
+  while (number > 0) {
+    number -= 1;
+    letters = String.fromCharCode(65 + (number % 26)) + letters;
+    number = Math.floor(number / 26);
+  }
+  return letters || 'A';
+};
+const parseSeatForTest = (seatNo) => {
+  const match = String(seatNo || '').trim().toUpperCase().match(/^([A-Z]+)\s*-?\s*(\d{1,2})$/);
+  if (!match) return null;
+  const rowNumber = lettersToNumberForTest(match[1]);
+  const seatNumber = Number(match[2]);
+  if (!rowNumber || seatNumber < 1 || seatNumber > 6) return null;
+  return { row: match[1], rowNumber, seatNumber, normalized: `${match[1]}-${String(seatNumber).padStart(2, '0')}`, rank: rowNumber * 100 + seatNumber };
+};
+const nextSeatAfterForTest = (seatNo) => {
+  const parsed = parseSeatForTest(seatNo);
+  if (!parsed) return 'A-01';
+  const rowNumber = parsed.seatNumber >= 6 ? parsed.rowNumber + 1 : parsed.rowNumber;
+  const seatNumber = parsed.seatNumber >= 6 ? 1 : parsed.seatNumber + 1;
+  return `${numberToLettersForTest(rowNumber)}-${String(seatNumber).padStart(2, '0')}`;
+};
+const seatAuditForTest = (rows, eventType) => {
+  const counts = new Map();
+  const rowSeatCounts = new Map();
+  const invalidSeats = [];
+  const missingSeats = [];
+  let highest = null;
+  rows.filter((row) => row.eventType === eventType).forEach((row) => {
+    if (!String(row.seatNo || '').trim()) {
+      missingSeats.push(row);
+      return;
+    }
+    const parsed = parseSeatForTest(row.seatNo);
+    if (!parsed) {
+      invalidSeats.push(row);
+      return;
+    }
+    counts.set(parsed.normalized, (counts.get(parsed.normalized) || 0) + 1);
+    rowSeatCounts.set(parsed.row, (rowSeatCounts.get(parsed.row) || 0) + 1);
+    if (!highest || parsed.rank > highest.rank) highest = parsed;
+  });
+  const currentRow = highest?.row || 'A';
+  return {
+    suggestedNextSeat: highest ? nextSeatAfterForTest(highest.normalized) : 'A-01',
+    currentRow,
+    occupiedInCurrentRow: highest ? rowSeatCounts.get(currentRow) || 0 : 0,
+    duplicateSeats: [...counts.entries()].filter(([, count]) => count > 1),
+    invalidSeats,
+    missingSeats,
+  };
+};
+
+const seatTransitionCases = [
+  ['A-01', 'A-02'],
+  ['A-06', 'B-01'],
+  ['D-05', 'D-06'],
+  ['D-06', 'E-01'],
+  ['Z-06', 'AA-01'],
+  ['D - 06', 'E-01'],
+  ['d-1', 'D-02'],
+  ['', 'A-01'],
+];
+for (const [input, expected] of seatTransitionCases) {
+  assert.equal(nextSeatAfterForTest(input), expected);
+}
+assert.equal(parseSeatForTest('D 01').normalized, 'D-01');
+assert.equal(parseSeatForTest('D-07'), null);
+assert.equal(parseSeatForTest('bad'), null);
+
+const seatAuditRows = [
+  { eventType: 'shashtipoorthi', seatNo: 'A-06' },
+  { eventType: 'shashtipoorthi', seatNo: 'B-01' },
+  { eventType: 'shashtipoorthi', seatNo: 'B - 01' },
+  { eventType: 'shashtipoorthi', seatNo: '' },
+  { eventType: 'shashtipoorthi', seatNo: 'Q-11' },
+  { eventType: 'bhimaratha', seatNo: 'A-01' },
+];
+const shashtiSeatAudit = seatAuditForTest(seatAuditRows, 'shashtipoorthi');
+const bheemaSeatAudit = seatAuditForTest(seatAuditRows, 'bhimaratha');
+assert.equal(shashtiSeatAudit.suggestedNextSeat, 'B-02');
+assert.equal(shashtiSeatAudit.duplicateSeats[0][0], 'B-01');
+assert.equal(shashtiSeatAudit.currentRow, 'B');
+assert.equal(shashtiSeatAudit.occupiedInCurrentRow, 2);
+assert.equal(shashtiSeatAudit.missingSeats.length, 1);
+assert.equal(shashtiSeatAudit.invalidSeats.length, 1);
+assert.equal(bheemaSeatAudit.suggestedNextSeat, 'A-02');
+
+const timestampValueForTest = (timestamp) => {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return null;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  const match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return null;
+  return new Date(Number(match[3].length === 2 ? `20${match[3]}` : match[3]), Number(match[2]) - 1, Number(match[1]), Number(match[4] || 0), Number(match[5] || 0), Number(match[6] || 0)).getTime();
+};
+const sortLatestForTest = (rows) => [...rows].sort((a, b) => {
+  const timeA = timestampValueForTest(a.timestamp);
+  const timeB = timestampValueForTest(b.timestamp);
+  if (timeA !== null && timeB !== null && timeA !== timeB) return timeB - timeA;
+  return (parseSeatForTest(b.seatNo)?.rank || 0) - (parseSeatForTest(a.seatNo)?.rank || 0);
+});
+assert.deepEqual(sortLatestForTest([
+  { id: 'old', timestamp: '01/07/2026 10:00:00', seatNo: 'D-06' },
+  { id: 'new', timestamp: '02/07/2026 10:00:00', seatNo: 'A-01' },
+  { id: 'same-high-seat', timestamp: '02/07/2026 10:00:00', seatNo: 'D-06' },
+]).map((row) => row.id), ['same-high-seat', 'new', 'old']);
+
 const receiptEligibilityForTest = (participant) =>
   String(participant.paymentStatus || '').trim() === 'Full Paid' &&
   Number(participant.balance || 0) === 0 &&
@@ -224,6 +380,64 @@ const receiptEligibilityCases = [
 for (const [participant, expected, label] of receiptEligibilityCases) {
   assert.equal(receiptEligibilityForTest(participant), expected, `Receipt eligibility failed for ${label}`);
 }
+
+const receiptNumberForTest = (receiptNo) => {
+  const raw = String(receiptNo || '').trim();
+  return /^[1-9]\d*$/.test(raw) ? Number(raw) : null;
+};
+const receiptAuditForTest = (rows) => {
+  const counts = new Map();
+  let highest = 0;
+  rows.forEach((row) => {
+    const n = receiptNumberForTest(row.receiptNo);
+    if (!n) return;
+    highest = Math.max(highest, n);
+    counts.set(String(n), (counts.get(String(n)) || 0) + 1);
+  });
+  return { suggestedNext: highest + 1, duplicates: [...counts.entries()].filter(([, count]) => count > 1) };
+};
+const receiptAudit = receiptAuditForTest([
+  { eventType: 'shashtipoorthi', receiptNo: '184' },
+  { eventType: 'shashtipoorthi', receiptNo: '184' },
+  { eventType: 'shashtipoorthi', receiptNo: '186' },
+  { eventType: 'bhimaratha', receiptNo: 'BS26-002' },
+  { eventType: 'bhimaratha', receiptNo: 'D-06' },
+  { eventType: 'bhimaratha', id: 'bhimaratha:2', receiptNo: '' },
+]);
+assert.equal(receiptNumberForTest('184'), 184, 'Receipt number must come from Receipt No field');
+assert.equal(receiptNumberForTest('D-06'), null, 'Seat number must never be used as receipt number');
+assert.equal(receiptNumberForTest('BS26-002'), null, 'Registration/event code must never be used as receipt number');
+assert.equal(receiptNumberForTest('bhimaratha:2'), null, 'Participant ID must never be used as receipt number');
+assert.equal(receiptAudit.suggestedNext, 187);
+assert.equal(receiptAudit.duplicates[0][0], '184');
+const suggestionBeforePreview = receiptAudit.suggestedNext;
+const suggestionAfterPreview = receiptAudit.suggestedNext;
+assert.equal(suggestionAfterPreview, suggestionBeforePreview, 'Receipt suggestion must not be consumed by preview');
+
+const registrationTimestampDateForTest = (timestamp) => {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return null;
+  const indianDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (indianDate) {
+    const year = Number(indianDate[3].length === 2 ? `20${indianDate[3]}` : indianDate[3]);
+    return `${String(indianDate[1]).padStart(2, '0')}/${String(indianDate[2]).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
+  }
+  const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?!T)/);
+  if (isoDateOnly) return `${isoDateOnly[3]}/${isoDateOnly[2]}/${isoDateOnly[1]}`;
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(parsed);
+};
+assert.equal(registrationTimestampDateForTest('2026-07-14T18:42:10+05:30'), '14/07/2026', 'Receipt date must use timestamp date');
+assert.notEqual(registrationTimestampDateForTest('2026-07-14T18:42:10+05:30'), new Date().toLocaleDateString('en-GB'), 'Receipt date must not use today');
+assert.equal(registrationTimestampDateForTest('2026-07-14T00:10:00+05:30'), '14/07/2026', 'India timezone must not shift to previous day');
+assert.equal(registrationTimestampDateForTest(''), null, 'Missing timestamp must block generation');
+assert.equal(registrationTimestampDateForTest('not a timestamp'), null, 'Invalid timestamp must block generation');
 
 const sampleCouple = {
   eventType: 'shashtipoorthi',

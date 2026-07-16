@@ -35,10 +35,48 @@ const EVENT_DATE = 'Sunday, 02-Aug-2026';
 const DEVELOPER_MODE = import.meta.env.VITE_DEVELOPER_MODE === 'true';
 const ACTIVE_EVENT_YEAR = import.meta.env.VITE_ACTIVE_EVENT_YEAR || '2026';
 const WHATSAPP_GROUP_HANDLED_SEAT_BASELINE = import.meta.env.VITE_WHATSAPP_GROUP_HANDLED_SEAT_BASELINE || 'D-01';
-const RECEIPT_PREFIXES = { shashtipoorthi: 'SP26', bhimaratha: 'BS26' };
 const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
   bhimaratha: bhimarathaReceiptTemplate,
+};
+const RECEIPT_TEXT_COLOR = '#0B2D5C';
+const receiptLayouts = {
+  shashtipoorthi: {
+    receiptNo: [
+      { x: 94, y: 219, width: 76, height: 28 },
+      { x: 563, y: 245, width: 92, height: 30 },
+    ],
+    date: [
+      { x: 382, y: 220, width: 88, height: 23 },
+      { x: 1388, y: 262, width: 143, height: 27 },
+    ],
+    coupleName: [
+      { x: 82, y: 260, width: 386, height: 48 },
+      { x: 632, y: 330, width: 825, height: 52 },
+    ],
+    seatNo: [
+      { x: 116, y: 407, width: 138, height: 30 },
+      { x: 976, y: 446, width: 158, height: 31 },
+    ],
+  },
+  bhimaratha: {
+    receiptNo: [
+      { x: 94, y: 219, width: 76, height: 28 },
+      { x: 563, y: 245, width: 92, height: 30 },
+    ],
+    date: [
+      { x: 382, y: 220, width: 88, height: 23 },
+      { x: 1388, y: 262, width: 143, height: 27 },
+    ],
+    coupleName: [
+      { x: 82, y: 260, width: 386, height: 48 },
+      { x: 632, y: 330, width: 825, height: 52 },
+    ],
+    seatNo: [
+      { x: 116, y: 407, width: 138, height: 30 },
+      { x: 976, y: 446, width: 158, height: 31 },
+    ],
+  },
 };
 const WHATSAPP_GROUP_NAMES = {
   shashtipoorthi: 'Shastipoorthi Shanthi 02-08-2026',
@@ -50,6 +88,12 @@ const WHATSAPP_CONTACT_PREFIXES = {
   pst: 'MVST PST',
 };
 const PAYMENT_STATUSES = ['Full Paid', 'Part Paid', 'Pending', 'Free Sponsorship'];
+const PARTICIPANT_SORT_OPTIONS = [
+  { value: 'latest', label: 'Latest Registration' },
+  { value: 'seat-asc', label: 'Seat Number (Ascending)' },
+  { value: 'seat-desc', label: 'Seat Number (Descending)' },
+  { value: 'name-asc', label: 'Participant Name (A-Z)' },
+];
 
 const EVENTS = {
   shashtipoorthi: {
@@ -395,23 +439,61 @@ function exportMobileIssues(rows) {
   URL.revokeObjectURL(url);
 }
 
-function receiptPrefix(eventType) {
-  return RECEIPT_PREFIXES[eventType] || 'RC26';
+function receiptNumberValue(receiptNo) {
+  const raw = String(receiptNo || '').trim();
+  if (!/^[1-9]\d*$/.test(raw)) return null;
+  return Number(raw);
 }
 
-function receiptNumberValue(receiptNo, eventType) {
-  const prefix = receiptPrefix(eventType);
-  const pattern = '^' + prefix + '-(\\d+)$';
-  const match = String(receiptNo || '').trim().match(new RegExp(pattern));
-  return match ? Number(match[1]) : 0;
+function hasValidReceiptBookNumber(participant) {
+  return receiptNumberValue(participant?.receiptNo) !== null;
 }
 
-function nextReceiptNumber(rows, eventType) {
-  const prefix = receiptPrefix(eventType);
-  const maxNumber = rows
-    .filter((row) => row.eventType === eventType)
-    .reduce((max, row) => Math.max(max, receiptNumberValue(row.receiptNo, eventType)), 0);
-  return prefix + '-' + String(maxNumber + 1).padStart(3, '0');
+function nextReceiptNumber(rows) {
+  const maxNumber = rows.reduce((max, row) => Math.max(max, receiptNumberValue(row.receiptNo) || 0), 0);
+  return String(maxNumber + 1);
+}
+
+function receiptBookAudit(rows) {
+  const counts = new Map();
+  const malformed = [];
+  let blank = 0;
+  let highest = 0;
+  rows.forEach((row) => {
+    const raw = String(row.receiptNo || '').trim();
+    if (!raw) {
+      blank += 1;
+      return;
+    }
+    const number = receiptNumberValue(raw);
+    if (!number) {
+      malformed.push(row);
+      return;
+    }
+    highest = Math.max(highest, number);
+    counts.set(String(number), (counts.get(String(number)) || 0) + 1);
+  });
+  const duplicateReceipts = [...counts.entries()].filter(([, count]) => count > 1);
+  return {
+    blank,
+    malformed,
+    duplicateReceipts,
+    lastUsed: highest ? String(highest) : 'None',
+    suggestedNext: String(highest + 1),
+  };
+}
+
+function receiptConflictMessage(rows, participant, receiptNo) {
+  const raw = String(receiptNo || '').trim();
+  if (!raw) return '';
+  const number = receiptNumberValue(raw);
+  if (!number) return `Invalid receipt-book number. Suggested next available receipt no: ${receiptBookAudit(rows).suggestedNext}`;
+  const conflict = rows.find((row) =>
+    row.id !== participant.id &&
+    receiptNumberValue(row.receiptNo) === number,
+  );
+  if (!conflict) return '';
+  return `Receipt No. ${raw} is already used. Suggested next available receipt no: ${receiptBookAudit(rows).suggestedNext}`;
 }
 
 function receiptFileName(participant, receiptNo) {
@@ -430,16 +512,20 @@ function loadReceiptImage(src) {
   });
 }
 
-function drawReceiptText(ctx, textValue, x, y, fontSize, align = 'left') {
+function drawReceiptText(ctx, textValue, x, y, fontSize, align = 'left', options = {}) {
+  const {
+    weight = 600,
+    family = 'Georgia, "Times New Roman", serif',
+  } = options;
   ctx.save();
-  ctx.font = '700 ' + fontSize + 'px Arial, sans-serif';
-  ctx.fillStyle = '#1f1714';
+  ctx.font = `${weight} ${fontSize}px ${family}`;
+  ctx.fillStyle = RECEIPT_TEXT_COLOR;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(255, 255, 255, 0.58)';
   ctx.shadowBlur = 2;
   ctx.lineWidth = Math.max(1.3, fontSize / 16);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.58)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
   ctx.strokeText(textValue, x, y);
   ctx.fillText(textValue, x, y);
   ctx.restore();
@@ -450,32 +536,68 @@ function fitReceiptText(ctx, textValue, box, options = {}) {
     maxFont = 22,
     minFont = 11,
     align = 'left',
-    weight = 700,
-    family = 'Arial, sans-serif',
+    weight = 600,
+    family = 'Georgia, "Times New Roman", serif',
+    lineHeight = 1.22,
   } = options;
-  const text = String(textValue || '').trim();
-  if (!text) return;
+  const lines = Array.isArray(textValue)
+    ? textValue.map((line) => String(line || '').trim()).filter(Boolean)
+    : String(textValue || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return;
   let fontSize = maxFont;
   ctx.save();
   while (fontSize > minFont) {
     ctx.font = `${weight} ${fontSize}px ${family}`;
-    if (ctx.measureText(text).width <= box.width) break;
+    const longestLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const totalHeight = lines.length * fontSize * lineHeight;
+    if (longestLineWidth <= box.width && totalHeight <= box.height) break;
     fontSize -= 1;
   }
   ctx.restore();
   const x = align === 'center' ? box.x + box.width / 2 : align === 'right' ? box.x + box.width : box.x;
-  const y = box.y + box.height / 2;
-  drawReceiptText(ctx, text, x, y, fontSize, align);
+  const middleY = box.y + box.height / 2;
+  const lineGap = fontSize * lineHeight;
+  const firstY = middleY - ((lines.length - 1) * lineGap) / 2;
+  lines.forEach((line, index) => {
+    drawReceiptText(ctx, line, Math.round(x), Math.round(firstY + index * lineGap), fontSize, align, { weight, family });
+  });
 }
 
-function receiptDateForParticipant(participant) {
-  const sourceDate = String(participant.receiptDate || '').trim();
-  if (sourceDate) return sourceDate;
-  return new Date().toLocaleDateString('en-IN', {
+function formatDateParts(day, month, year) {
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
+}
+
+function registrationTimestampDate(timestamp) {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return null;
+
+  const indianDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (indianDate) {
+    const day = Number(indianDate[1]);
+    const month = Number(indianDate[2]);
+    const year = Number(indianDate[3].length === 2 ? `20${indianDate[3]}` : indianDate[3]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 2000) {
+      return formatDateParts(day, month, year);
+    }
+  }
+
+  const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?!T)/);
+  if (isoDateOnly) {
+    return formatDateParts(Number(isoDateOnly[3]), Number(isoDateOnly[2]), Number(isoDateOnly[1]));
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  });
+  }).format(parsed);
+}
+
+function receiptDateForParticipant(participant) {
+  return registrationTimestampDate(participant.timestamp);
 }
 
 function isReceiptEligible(participant) {
@@ -493,41 +615,38 @@ function receiptUnavailableMessage(participant) {
   return 'Receipt will be available after the full amount is received.';
 }
 
-function amountForReceipt(participant) {
-  if (isFreeSponsorship(participant)) return 0;
-  return Number(participant.paidAmount || participant.contribution || 0);
+function cleanReceiptNamePart(value) {
+  return String(value || '')
+    .replace(/\s+-\s+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
-function integerToIndianWords(value) {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const belowHundred = (number) => number < 20 ? ones[number] : [tens[Math.floor(number / 10)], ones[number % 10]].filter(Boolean).join(' ');
-  const belowThousand = (number) => {
-    const hundred = Math.floor(number / 100);
-    const rest = number % 100;
-    return [hundred ? `${ones[hundred]} Hundred` : '', rest ? belowHundred(rest) : ''].filter(Boolean).join(' ');
-  };
-  const number = Math.max(0, Math.floor(Number(value || 0)));
-  if (number === 0) return 'Zero';
-  const parts = [];
-  const crore = Math.floor(number / 10000000);
-  const lakh = Math.floor((number % 10000000) / 100000);
-  const thousand = Math.floor((number % 100000) / 1000);
-  const rest = number % 1000;
-  if (crore) parts.push(`${belowThousand(crore)} Crore`);
-  if (lakh) parts.push(`${belowThousand(lakh)} Lakh`);
-  if (thousand) parts.push(`${belowThousand(thousand)} Thousand`);
-  if (rest) parts.push(belowThousand(rest));
-  return parts.join(' ');
-}
-
-function amountInWords(value) {
-  return `${integerToIndianWords(value)} Rupees Only`;
+function receiptCoupleNameLines(ctx, participant, box) {
+  const groomName = cleanReceiptNamePart(participant.groomName) || 'Groom';
+  const brideName = cleanReceiptNamePart(participant.brideName);
+  const singleLine = brideName ? `Sri. ${groomName} & Smt. ${brideName}` : `Sri. ${groomName}`;
+  const family = 'Georgia, "Times New Roman", serif';
+  const weight = 600;
+  const testFontSize = 18;
+  ctx.save();
+  ctx.font = `${weight} ${testFontSize}px ${family}`;
+  const fitsSingleLine = ctx.measureText(singleLine).width <= box.width;
+  ctx.restore();
+  if (fitsSingleLine || !brideName) return [singleLine];
+  return [`Sri. ${groomName}`, `& Smt. ${brideName}`];
 }
 
 async function generateReceiptJpg(participant, receiptNo) {
   if (!isReceiptEligible(participant)) {
     throw new Error(receiptUnavailableMessage(participant));
+  }
+  if (!hasValidReceiptBookNumber({ receiptNo })) {
+    throw new Error('Receipt Number Not Assigned');
+  }
+  const receiptDate = receiptDateForParticipant(participant);
+  if (!receiptDate) {
+    throw new Error('Registration timestamp missing');
   }
   const template = RECEIPT_TEMPLATES[participant.eventType];
   if (!template) throw new Error('Receipt template is not configured for this event');
@@ -545,26 +664,21 @@ async function generateReceiptJpg(participant, receiptNo) {
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   ctx.scale(scale, scale);
 
-  const receiptDate = receiptDateForParticipant(participant);
-  const amount = amountForReceipt(participant);
-  const words = amountInWords(amount);
-  const coupleName = participantDisplayName(participant);
-  const numericAmount = amount ? formatCurrency(amount).replace('.00', '') : '₹0';
-  const fieldSet = [
-    { text: receiptNo, box: { x: 94, y: 221, width: 76, height: 29 }, options: { maxFont: 18, minFont: 10, align: 'center' } },
-    { text: receiptDate, box: { x: 382, y: 223, width: 88, height: 24 }, options: { maxFont: 15, minFont: 9, align: 'center' } },
-    { text: coupleName, box: { x: 83, y: 268, width: 384, height: 29 }, options: { maxFont: 16, minFont: 9 } },
-    { text: words, box: { x: 71, y: 330, width: 346, height: 27 }, options: { maxFont: 15, minFont: 8 } },
-    { text: participant.seatNo || '', box: { x: 111, y: 405, width: 148, height: 34 }, options: { maxFont: 23, minFont: 11, align: 'center' } },
-    { text: numericAmount, box: { x: 87, y: 453, width: 148, height: 36 }, options: { maxFont: 26, minFont: 12, align: 'center' } },
-    { text: receiptNo, box: { x: 563, y: 247, width: 92, height: 31 }, options: { maxFont: 19, minFont: 10, align: 'center' } },
-    { text: receiptDate, box: { x: 1388, y: 265, width: 143, height: 28 }, options: { maxFont: 17, minFont: 10, align: 'center' } },
-    { text: coupleName, box: { x: 637, y: 340, width: 813, height: 31 }, options: { maxFont: 21, minFont: 10 } },
-    { text: words, box: { x: 554, y: 389, width: 789, height: 29 }, options: { maxFont: 19, minFont: 9 } },
-    { text: participant.seatNo || '', box: { x: 968, y: 443, width: 174, height: 37 }, options: { maxFont: 25, minFont: 12, align: 'center' } },
-    { text: numericAmount, box: { x: 583, y: 448, width: 135, height: 33 }, options: { maxFont: 25, minFont: 12, align: 'center' } },
-  ];
-  fieldSet.forEach((field) => fitReceiptText(ctx, field.text, field.box, field.options));
+  const layout = receiptLayouts[participant.eventType];
+  if (!layout) throw new Error('Receipt layout is not configured for this event');
+  const safeSeatNo = String(participant.seatNo || '').trim();
+  const drawBoxes = (boxes, text, options) => boxes.forEach((box) => fitReceiptText(ctx, text, box, options));
+  drawBoxes(layout.receiptNo, receiptNo, { maxFont: 18, minFont: 10, align: 'center' });
+  drawBoxes(layout.date, receiptDate, { maxFont: 15, minFont: 9, align: 'center' });
+  drawBoxes(layout.seatNo, safeSeatNo, { maxFont: 23, minFont: 11, align: 'center' });
+  layout.coupleName.forEach((box) => {
+    fitReceiptText(ctx, receiptCoupleNameLines(ctx, participant, box), box, {
+      maxFont: box.width > 500 ? 20 : 16,
+      minFont: 8,
+      align: 'center',
+      lineHeight: 1.14,
+    });
+  });
 
   return canvas.toDataURL('image/jpeg', 0.95);
 }
@@ -589,9 +703,60 @@ function downloadReceipt(dataUrl, participant, receiptNo) {
 }
 
 function buildBulkReceiptRows(rows, eventType) {
-  return rows.filter((row) =>
-    row.eventType === eventType && isReceiptEligible(row) && String(row.seatNo || '').trim() && !row.receiptGenerated,
-  );
+  return sortParticipants(rows.filter((row) =>
+    row.eventType === eventType &&
+    isReceiptEligible(row) &&
+    hasValidReceiptBookNumber(row) &&
+    Boolean(receiptDateForParticipant(row)) &&
+    String(row.seatNo || '').trim() &&
+    !row.receiptGenerated,
+  ), 'latest');
+}
+
+function timestampValue(timestamp) {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return null;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  const match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+  const second = Number(match[6] || 0);
+  const parsed = new Date(year, month, day, hour, minute, second).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareSeatNumbers(a, b, direction = 'desc') {
+  const rankA = seatRank(a.seatNo);
+  const rankB = seatRank(b.seatNo);
+  if (rankA !== null && rankB !== null && rankA !== rankB) {
+    return direction === 'asc' ? rankA - rankB : rankB - rankA;
+  }
+  if (rankA !== null && rankB === null) return -1;
+  if (rankA === null && rankB !== null) return 1;
+  return participantDisplayName(a).localeCompare(participantDisplayName(b));
+}
+
+function sortParticipants(rows, sortMode = 'latest') {
+  return [...rows].sort((a, b) => {
+    if (sortMode === 'seat-asc') return compareSeatNumbers(a, b, 'asc');
+    if (sortMode === 'seat-desc') return compareSeatNumbers(a, b, 'desc');
+    if (sortMode === 'name-asc') return participantDisplayName(a).localeCompare(participantDisplayName(b));
+    const timeA = timestampValue(a.timestamp);
+    const timeB = timestampValue(b.timestamp);
+    if (timeA !== null && timeB !== null && timeA !== timeB) return timeB - timeA;
+    if (timeA !== null && timeB === null) return -1;
+    if (timeA === null && timeB !== null) return 1;
+    return compareSeatNumbers(a, b, 'desc');
+  });
+}
+
+function participantSortLabel(sortMode) {
+  return PARTICIPANT_SORT_OPTIONS.find((option) => option.value === sortMode)?.label || PARTICIPANT_SORT_OPTIONS[0].label;
 }
 
 function participantDisplayName(participant) {
@@ -614,11 +779,94 @@ function isFreeSponsorship(participant) {
   return isFreeSponsorshipStatus(participant.paymentStatus);
 }
 
-function seatRank(seatNo) {
-  const match = String(seatNo || '').trim().toUpperCase().match(/^([A-Z]+)[-\s]*(\d+)$/);
+function lettersToNumber(letters) {
+  return String(letters || '').toUpperCase().split('').reduce((value, letter) => value * 26 + (letter.charCodeAt(0) - 64), 0);
+}
+
+function numberToLetters(value) {
+  let number = Number(value || 0);
+  let letters = '';
+  while (number > 0) {
+    number -= 1;
+    letters = String.fromCharCode(65 + (number % 26)) + letters;
+    number = Math.floor(number / 26);
+  }
+  return letters || 'A';
+}
+
+function parseSeatValue(seatNo) {
+  const match = String(seatNo || '').trim().toUpperCase().match(/^([A-Z]+)\s*-?\s*(\d{1,2})$/);
   if (!match) return null;
-  const letters = match[1].split('').reduce((value, letter) => value * 26 + (letter.charCodeAt(0) - 64), 0);
-  return letters * 10000 + Number(match[2]);
+  const rowNumber = lettersToNumber(match[1]);
+  const seatNumber = Number(match[2]);
+  if (!rowNumber || seatNumber < 1 || seatNumber > 6) return null;
+  return {
+    row: match[1],
+    rowNumber,
+    seatNumber,
+    normalized: `${match[1]}-${String(seatNumber).padStart(2, '0')}`,
+    rank: rowNumber * 100 + seatNumber,
+  };
+}
+
+function nextSeatAfter(parsedSeat) {
+  if (!parsedSeat) return 'A-01';
+  const nextRowNumber = parsedSeat.seatNumber >= 6 ? parsedSeat.rowNumber + 1 : parsedSeat.rowNumber;
+  const nextSeatNumber = parsedSeat.seatNumber >= 6 ? 1 : parsedSeat.seatNumber + 1;
+  return `${numberToLetters(nextRowNumber)}-${String(nextSeatNumber).padStart(2, '0')}`;
+}
+
+function seatRank(seatNo) {
+  return parseSeatValue(seatNo)?.rank ?? null;
+}
+
+function seatAuditForEvent(rows, eventType) {
+  const counts = new Map();
+  const rowSeatCounts = new Map();
+  const invalidSeats = [];
+  const missingSeats = [];
+  let highest = null;
+  rows.filter((row) => row.eventType === eventType).forEach((row) => {
+    const rawSeat = String(row.seatNo || '').trim();
+    if (!rawSeat) {
+      missingSeats.push(row);
+      return;
+    }
+    const parsed = parseSeatValue(rawSeat);
+    if (!parsed) {
+      invalidSeats.push(row);
+      return;
+    }
+    counts.set(parsed.normalized, (counts.get(parsed.normalized) || 0) + 1);
+    rowSeatCounts.set(parsed.row, (rowSeatCounts.get(parsed.row) || 0) + 1);
+    if (!highest || parsed.rank > highest.rank) highest = parsed;
+  });
+  const duplicateSeats = [...counts.entries()].filter(([, count]) => count > 1);
+  const currentRow = highest?.row || 'A';
+  return {
+    lastAcceptedSeat: highest?.normalized || 'None',
+    suggestedNextSeat: nextSeatAfter(highest),
+    currentRow,
+    occupiedInCurrentRow: highest ? rowSeatCounts.get(currentRow) || 0 : 0,
+    duplicateSeats,
+    invalidSeats,
+    missingSeats,
+  };
+}
+
+function seatConflictMessage(rows, participant, seatNo) {
+  const parsed = parseSeatValue(seatNo);
+  if (!String(seatNo || '').trim()) return '';
+  if (!parsed) {
+    return `Invalid seat format. Suggested next available seat: ${seatAuditForEvent(rows, participant.eventType).suggestedNextSeat}`;
+  }
+  const conflict = rows.find((row) =>
+    row.id !== participant.id &&
+    row.eventType === participant.eventType &&
+    parseSeatValue(row.seatNo)?.normalized === parsed.normalized,
+  );
+  if (!conflict) return '';
+  return `Seat ${parsed.normalized} is already allotted. Suggested next available seat: ${seatAuditForEvent(rows, participant.eventType).suggestedNextSeat}`;
 }
 
 function isSeatAfterBaseline(seatNo, baseline = WHATSAPP_GROUP_HANDLED_SEAT_BASELINE) {
@@ -647,8 +895,8 @@ function buildBulkQueue(rows, queueType) {
 }
 
 function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
-  const eventRows = rows.filter((row) => row.eventType === eventType);
-  const futureRows = eventRows.filter((row) => isSeatAfterBaseline(row.seatNo));
+  const eventRows = sortParticipants(rows.filter((row) => row.eventType === eventType), 'latest');
+  const futureRows = sortParticipants(eventRows.filter((row) => isSeatAfterBaseline(row.seatNo)), 'latest');
   const seenMobiles = new Map();
   const validParticipants = [];
   const missingMobileParticipants = [];
@@ -1431,7 +1679,7 @@ function StatusPill({ children, tone }) {
   return <span className={`pill ${tone || ''}`}>{children}</span>;
 }
 
-function AdminEditPanel({ participant, writeEnabled, onSave }) {
+function AdminEditPanel({ participant, rows, writeEnabled, onSave }) {
   const [form, setForm] = useState({
     paidAmount: String(participant.paidAmount || 0),
     paymentStatus: participant.paymentStatus || 'Pending',
@@ -1460,10 +1708,13 @@ function AdminEditPanel({ participant, writeEnabled, onSave }) {
     setSaving(true);
     setMessage('');
     try {
+      const seatMessage = seatConflictMessage(rows, participant, form.seatNo);
+      if (seatMessage) throw new Error(seatMessage);
+      const parsedSeat = parseSeatValue(form.seatNo);
       await onSave(participant.id, {
         paidAmount: form.paidAmount,
         paymentStatus: form.paymentStatus,
-        seatNo: form.seatNo,
+        seatNo: parsedSeat ? parsedSeat.normalized : form.seatNo,
         treasurerVerified: form.treasurerVerified,
         kitIssued: form.kitIssued,
         remarks: form.remarks,
@@ -1535,6 +1786,7 @@ function AdminEditPanel({ participant, writeEnabled, onSave }) {
       <button className="save-button" type="button" onClick={handleSave} disabled={saving}>
         <Save size={16} /> {saving ? 'Saving' : 'Save'}
       </button>
+      {seatConflictMessage(rows, participant, form.seatNo) ? <span className="save-message warning">{seatConflictMessage(rows, participant, form.seatNo)}</span> : null}
       {message ? <span className="save-message">{message}</span> : null}
     </div>
   );
@@ -1548,8 +1800,13 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   const [message, setMessage] = useState('');
   const mobileValidation = mobileValidationStatus(participant.mobileNumber);
   const canShareWhatsApp = mobileValidation.status === 'ok';
-  const receiptEligible = isReceiptEligible(participant);
+  const paymentReceiptEligible = isReceiptEligible(participant);
+  const validReceiptNumber = hasValidReceiptBookNumber(participant);
+  const validTimestampDate = receiptDateForParticipant(participant);
+  const receiptReady = paymentReceiptEligible && validReceiptNumber && Boolean(validTimestampDate);
   const hasSeatNo = Boolean(String(participant.seatNo || '').trim());
+  const suggestedReceiptNo = nextReceiptNumber(rows);
+  const receiptAudit = receiptBookAudit(rows);
 
   useEffect(() => {
     setReceiptNo(participant.receiptNo || '');
@@ -1558,29 +1815,18 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     setMessage('');
   }, [participant]);
 
-  async function ensureReceiptImage({ saveToSheet = false } = {}) {
+  async function ensureReceiptImage() {
     if (!String(participant.seatNo || '').trim()) {
       setMessage('Seat No is required before receipt generation');
       return null;
     }
     setGenerating(true);
     setMessage('');
-    const nextNo = participant.receiptNo || nextReceiptNumber(rows, participant.eventType);
+    const nextNo = participant.receiptNo;
     try {
       const dataUrl = await generateReceiptJpg(participant, nextNo);
       setReceiptDataUrl(dataUrl);
       setReceiptNo(nextNo);
-      if (saveToSheet) {
-        if (!writeEnabled || !participant.id) {
-          setMessage('Read-only mode');
-          return dataUrl;
-        }
-        await onSave(participant.id, {
-          receiptNo: nextNo,
-          receiptGenerated: true,
-        });
-        setMessage('Receipt generated and saved to Google Sheet');
-      }
       return dataUrl;
     } catch (error) {
       setMessage(error.message || 'Unable to generate receipt');
@@ -1596,9 +1842,9 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   }
 
   async function handleDownloadReceipt() {
-    const dataUrl = receiptDataUrl || await ensureReceiptImage({ saveToSheet: true });
+    const dataUrl = receiptDataUrl || await ensureReceiptImage();
     if (!dataUrl) return;
-    downloadReceipt(dataUrl, participant, receiptNo || participant.receiptNo || nextReceiptNumber(rows, participant.eventType));
+    downloadReceipt(dataUrl, participant, receiptNo || participant.receiptNo);
   }
 
   async function handleShareReceipt() {
@@ -1606,9 +1852,9 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       setMessage('Valid mobile number is required for WhatsApp sharing');
       return;
     }
-    const dataUrl = receiptDataUrl || await ensureReceiptImage({ saveToSheet: true });
+    const dataUrl = receiptDataUrl || await ensureReceiptImage();
     if (!dataUrl) return;
-    const currentReceiptNo = receiptNo || participant.receiptNo || nextReceiptNumber(rows, participant.eventType);
+    const currentReceiptNo = receiptNo || participant.receiptNo;
     const filename = receiptFileName(participant, currentReceiptNo);
     const file = dataUrlToFile(dataUrl, filename);
     const shareText = `MVST receipt for ${participantDisplayName(participant)} - ${currentReceiptNo}`;
@@ -1629,23 +1875,65 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     window.open(`https://web.whatsapp.com/send?phone=${normalizedMobile}&text=${encodedText}`, '_blank', 'noopener,noreferrer');
   }
 
+  async function saveReceiptNumber() {
+    if (!writeEnabled || !participant.id) {
+      setMessage('Read-only mode');
+      return;
+    }
+    if (!paymentReceiptEligible) {
+      setMessage(receiptUnavailableMessage(participant));
+      return;
+    }
+    if (!validTimestampDate) {
+      setMessage('Registration timestamp missing');
+      return;
+    }
+    if (!hasSeatNo) {
+      setMessage('Seat No is required before receipt generation');
+      return;
+    }
+    const nextNo = validReceiptNumber ? participant.receiptNo : suggestedReceiptNo;
+    const conflictMessage = receiptConflictMessage(rows, participant, nextNo);
+    if (conflictMessage) {
+      setMessage(conflictMessage);
+      return;
+    }
+    setGenerating(true);
+    setMessage('');
+    try {
+      await onSave(participant.id, {
+        receiptNo: nextNo,
+        receiptGenerated: true,
+      });
+      setReceiptNo(nextNo);
+      setMessage('Receipt number saved to Google Sheet');
+    } catch (error) {
+      setMessage(error.message || 'Unable to save receipt number');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <div className="receipt-panel">
       <div className="receipt-panel-head">
         <div>
           <span>Receipt Management</span>
-          <strong>{participant.receiptNo || receiptNo || 'Receipt not generated'}</strong>
+          <strong>{validReceiptNumber ? participant.receiptNo : 'Receipt Number Not Assigned'}</strong>
         </div>
         {participant.receiptGenerated ? <StatusPill tone="success">&#9989; Receipt Generated</StatusPill> : <StatusPill tone="neutral">Receipt Pending</StatusPill>}
       </div>
       <div className="receipt-meta-grid">
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
-        <p><span>Receipt No</span>{participant.receiptNo || receiptNo || 'Not generated'}</p>
+        <p><span>Receipt No</span>{validReceiptNumber ? participant.receiptNo : 'Receipt Number Not Assigned'}</p>
+        <p><span>Last Used Receipt No.</span>{receiptAudit.lastUsed}</p>
+        <p><span>Suggested Next Receipt No.</span>{receiptAudit.suggestedNext}</p>
+        <p><span>Receipt Date Source</span>{validTimestampDate || 'Registration timestamp missing'}</p>
         <p><span>Total Amount</span>{formatCurrency(participant.contribution)}</p>
         <p><span>Amount Received</span>{formatCurrency(participant.paidAmount)}</p>
         <p><span>Balance</span>{formatCurrency(participant.balance)}</p>
       </div>
-      {receiptEligible ? (
+      {receiptReady ? (
         <div className="receipt-actions-row">
           <button type="button" onClick={handlePreviewReceipt} disabled={generating || !hasSeatNo}>
             <FileText size={16} /> {generating ? 'Generating' : 'Preview Receipt'}
@@ -1656,20 +1944,30 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
           <button type="button" onClick={handleShareReceipt} disabled={generating || !hasSeatNo || !canShareWhatsApp}>
             <Share2 size={16} /> Share to WhatsApp
           </button>
+          <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled || !hasSeatNo || participant.receiptGenerated}>
+            <Save size={16} /> {participant.receiptGenerated ? 'Receipt Saved' : 'Mark Receipt Generated'}
+          </button>
         </div>
       ) : (
         <div className="receipt-unavailable">
           <AlertTriangle size={16} />
-          <span>{receiptUnavailableMessage(participant)}</span>
+          <span>{!paymentReceiptEligible ? receiptUnavailableMessage(participant) : !validTimestampDate ? 'Registration timestamp missing' : 'Receipt Number Not Assigned'}</span>
         </div>
       )}
+      {paymentReceiptEligible && validTimestampDate && !validReceiptNumber ? (
+        <div className="receipt-actions-row">
+          <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled || !hasSeatNo}>
+            <Save size={16} /> Save Receipt No
+          </button>
+        </div>
+      ) : null}
       {previewOpen ? (
         <div className="receipt-modal-backdrop" role="dialog" aria-modal="true" aria-label="Receipt preview">
           <div className="receipt-modal">
             <div className="receipt-modal-head">
               <div>
                 <span>Receipt Preview</span>
-                <strong>{receiptNo || participant.receiptNo || 'Receipt preview'}</strong>
+                <strong>{participant.receiptNo || 'Receipt preview'}</strong>
               </div>
               <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close receipt preview">
                 <X size={18} />
@@ -1685,8 +1983,10 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
         </div>
       ) : null}
       {message ? <small>{message}</small> : null}
-      {receiptEligible && !canShareWhatsApp ? <small>WhatsApp share disabled: {mobileValidation.issue}</small> : null}
-      {receiptEligible && !hasSeatNo ? <small>Seat No is required before receipt generation</small> : null}
+      {paymentReceiptEligible && !validReceiptNumber ? <small>Preview, download, refresh, close, and WhatsApp share do not reserve receipt number {suggestedReceiptNo}. Use Save Receipt No when ready.</small> : null}
+      {paymentReceiptEligible && validReceiptNumber && !validTimestampDate ? <small>Registration timestamp missing</small> : null}
+      {receiptReady && !canShareWhatsApp ? <small>WhatsApp share disabled: {mobileValidation.issue}</small> : null}
+      {paymentReceiptEligible && !hasSeatNo ? <small>Seat No is required before receipt generation</small> : null}
       {!writeEnabled ? <small>Read-only mode</small> : null}
     </div>
   );
@@ -1787,7 +2087,7 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
         <p><span>Remarks</span>{participant.remarks || 'No remarks'}</p>
       </div>
 
-      <AdminEditPanel participant={participant} writeEnabled={writeEnabled} onSave={onSave} />
+      <AdminEditPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} />
 
       <ReceiptPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} />
 
@@ -2863,6 +3163,50 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
   );
 }
 
+function SeatGuidanceSection({ rows }) {
+  const audits = ['shashtipoorthi', 'bhimaratha'].map((eventType) => ({
+    eventType,
+    eventLabel: EVENTS[eventType].shortLabel,
+    audit: seatAuditForEvent(rows, eventType),
+  }));
+
+  return (
+    <section className="seat-guidance-section">
+      <div className="section-heading">
+        <div>
+          <p>Seat Guidance</p>
+          <h2>Last accepted seat and next-seat suggestion</h2>
+        </div>
+      </div>
+      <div className="seat-guidance-grid">
+        {audits.map(({ eventType, eventLabel, audit }) => (
+          <article className="seat-guidance-card" key={eventType}>
+            <div className="seat-guidance-head">
+              <p>{eventLabel}</p>
+              <strong>Suggested Next Seat: {audit.suggestedNextSeat}</strong>
+            </div>
+            <div className="receipt-meta-grid">
+              <p><span>Last Accepted Seat</span>{audit.lastAcceptedSeat}</p>
+              <p><span>Current Row</span>{audit.currentRow}</p>
+              <p><span>Occupied in Current Row</span>{audit.occupiedInCurrentRow} of 6</p>
+              <p><span>Missing Seat Number</span>{audit.missingSeats.length}</p>
+              <p><span>Invalid Seat Format</span>{audit.invalidSeats.length}</p>
+              <p><span>Duplicate Seat Numbers</span>{audit.duplicateSeats.length}</p>
+            </div>
+            {audit.duplicateSeats.length || audit.invalidSeats.length || audit.missingSeats.length ? (
+              <div className="seat-warning-list">
+                {audit.duplicateSeats.map(([seat, count]) => <span key={seat}>Duplicate: {seat} appears {count} times</span>)}
+                {audit.invalidSeats.slice(0, 5).map((row) => <span key={`invalid-${row.id}`}>Invalid: {row.seatNo || 'Blank'} - {participantDisplayName(row)}</span>)}
+                {audit.missingSeats.slice(0, 5).map((row) => <span key={`missing-${row.id}`}>Missing: {participantDisplayName(row)}</span>)}
+              </div>
+            ) : <small>No seat warnings for this event.</small>}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, refresh } = useParticipants();
   const donorState = useMangalyaDonors();
@@ -2874,6 +3218,7 @@ function App() {
   const [paymentFilter, setPaymentFilter] = useState('All');
   const [verifiedFilter, setVerifiedFilter] = useState('All');
   const [kitFilter, setKitFilter] = useState('All');
+  const [participantSort, setParticipantSort] = useState('latest');
   const [bulkQueue, setBulkQueue] = useState([]);
   const [bulkQueueType, setBulkQueueType] = useState('');
   const [bulkQueueStarted, setBulkQueueStarted] = useState(false);
@@ -2920,13 +3265,13 @@ function App() {
   );
 
   const newRegistrationRows = useMemo(
-    () => rows.filter((row) => !row.treasurerVerified),
+    () => sortParticipants(rows.filter((row) => !row.treasurerVerified), 'latest'),
     [rows],
   );
 
   const filteredRows = useMemo(() => {
     const search = query.trim().toLowerCase();
-    return rows
+    const filtered = rows
       .filter((row) => row.eventType === activeEvent)
       .filter((row) => row.treasurerVerified)
       .filter((row) => {
@@ -2945,7 +3290,8 @@ function App() {
       .filter((row) =>
         kitFilter === 'All' ? true : row.kitIssued === (kitFilter === 'Issued'),
       );
-  }, [rows, activeEvent, query, paymentFilter, verifiedFilter, kitFilter]);
+    return sortParticipants(filtered, participantSort);
+  }, [rows, activeEvent, query, paymentFilter, verifiedFilter, kitFilter, participantSort]);
 
   const currentBulkItem = bulkQueue[bulkQueueIndex];
   const hasNextBulkItem = bulkQueueStarted && bulkQueueIndex < bulkQueue.length - 1;
@@ -3061,11 +3407,10 @@ function App() {
     try {
       for (const participant of eligibleRows) {
         const currentParticipant = workingRows.find((row) => row.id === participant.id) || participant;
-        const receiptNo = currentParticipant.receiptNo || nextReceiptNumber(workingRows, currentParticipant.eventType);
+        const receiptNo = currentParticipant.receiptNo;
         const dataUrl = await generateReceiptJpg(currentParticipant, receiptNo);
         downloadReceipt(dataUrl, currentParticipant, receiptNo);
         const payload = await saveRegistration(currentParticipant.id, {
-          receiptNo,
           receiptGenerated: true,
         });
         workingRows = payload.rows || workingRows.map((row) =>
@@ -3186,6 +3531,8 @@ function App() {
                 </div>
               </section>
 
+              <SeatGuidanceSection rows={rows} />
+
               <section className="mobile-issues-section">
         <div className="section-heading">
           <div>
@@ -3303,12 +3650,19 @@ function App() {
             <option>Issued</option>
             <option>Pending</option>
           </SelectField>
+          <SelectField label="Sort" value={participantSort} onChange={setParticipantSort}>
+            {PARTICIPANT_SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </SelectField>
         </div>
 
         <div className="event-note">
           <b>{EVENTS[activeEvent].label}</b>
-          <span>{formatCurrency(EVENTS[activeEvent].contribution)} per couple</span>
+          <span>{formatCurrency(EVENTS[activeEvent].contribution)} per couple · Sorted by {participantSortLabel(participantSort)}</span>
         </div>
+
+        <SeatGuidanceSection rows={rows} />
 
         <div className="receipt-bulk-panel">
           <div>

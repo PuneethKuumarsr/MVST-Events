@@ -181,6 +181,74 @@ function normalizeKey(value) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function lettersToNumber(letters) {
+  return String(letters || '').toUpperCase().split('').reduce(
+    (value, letter) => value * 26 + (letter.charCodeAt(0) - 64),
+    0,
+  );
+}
+
+function numberToLetters(value) {
+  let number = Number(value || 0);
+  let letters = '';
+  while (number > 0) {
+    number -= 1;
+    letters = String.fromCharCode(65 + (number % 26)) + letters;
+    number = Math.floor(number / 26);
+  }
+  return letters || 'A';
+}
+
+function parseSeatValue(seatNo) {
+  const match = String(seatNo || '').trim().toUpperCase().match(/^([A-Z]+)\s*-?\s*(\d{1,2})$/);
+  if (!match) return null;
+  const rowNumber = lettersToNumber(match[1]);
+  const seatNumber = Number(match[2]);
+  if (!rowNumber || seatNumber < 1 || seatNumber > 6) return null;
+  return {
+    row: match[1],
+    rowNumber,
+    seatNumber,
+    normalized: `${match[1]}-${String(seatNumber).padStart(2, '0')}`,
+    rank: rowNumber * 100 + seatNumber,
+  };
+}
+
+function nextSeatAfter(parsedSeat) {
+  if (!parsedSeat) return 'A-01';
+  const nextRowNumber = parsedSeat.seatNumber >= 6 ? parsedSeat.rowNumber + 1 : parsedSeat.rowNumber;
+  const nextSeatNumber = parsedSeat.seatNumber >= 6 ? 1 : parsedSeat.seatNumber + 1;
+  return `${numberToLetters(nextRowNumber)}-${String(nextSeatNumber).padStart(2, '0')}`;
+}
+
+function nextAvailableSeat(rows, eventType) {
+  const parsedSeats = rows
+    .filter((row) => row.eventType === eventType)
+    .map((row) => parseSeatValue(row.seatNo))
+    .filter(Boolean)
+    .sort((a, b) => b.rank - a.rank);
+  return nextSeatAfter(parsedSeats[0]);
+}
+
+function receiptNumericValue(receiptNo) {
+  const raw = String(receiptNo || '').trim();
+  if (!/^[1-9]\d*$/.test(raw)) return null;
+  return Number(raw);
+}
+
+function nextAvailableReceiptNo(rows) {
+  const highest = rows.reduce((max, row) => Math.max(max, receiptNumericValue(row.receiptNo) || 0), 0);
+  return String(highest + 1);
+}
+
+function isReceiptEligible(row) {
+  return (
+    String(row.paymentStatus || '').trim() === 'Full Paid' &&
+    Number(row.balance || 0) === 0 &&
+    !isFreeSponsorshipStatus(row.paymentStatus)
+  );
+}
+
 const CATEGORY_ALIASES = {
   vegetable: 'Vegetables',
   vegetables: 'Vegetables',
@@ -781,7 +849,7 @@ async function updateRegistration(registrationId, updates) {
     throw error;
   }
 
-  if (!cache.refreshedAt || cache.source !== 'google-api') await loadFromGoogleApi().then((result) => {
+  await loadFromGoogleApi().then((result) => {
     cache = {
       rows: result.rows,
       refreshedAt: new Date().toISOString(),
@@ -804,7 +872,57 @@ async function updateRegistration(registrationId, updates) {
     throw error;
   }
 
-  const data = Object.entries(updates || {})
+  const sanitizedUpdates = { ...(updates || {}) };
+  if (Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'seatNo')) {
+    const nextSeatRaw = String(sanitizedUpdates.seatNo || '').trim();
+    if (nextSeatRaw) {
+      const parsedSeat = parseSeatValue(nextSeatRaw);
+      if (!parsedSeat) {
+        const error = new Error(`Invalid seat format. Suggested next available seat: ${nextAvailableSeat(cache.rows, currentRow.eventType)}`);
+        error.statusCode = 409;
+        throw error;
+      }
+      const conflict = cache.rows.find((row) =>
+        row.id !== currentRow.id &&
+        row.eventType === currentRow.eventType &&
+        parseSeatValue(row.seatNo)?.normalized === parsedSeat.normalized,
+      );
+      if (conflict) {
+        const error = new Error(`Seat ${parsedSeat.normalized} is already allotted. Suggested next available seat: ${nextAvailableSeat(cache.rows, currentRow.eventType)}`);
+        error.statusCode = 409;
+        throw error;
+      }
+      sanitizedUpdates.seatNo = parsedSeat.normalized;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'receiptNo')) {
+    const nextReceiptRaw = String(sanitizedUpdates.receiptNo || '').trim();
+    if (nextReceiptRaw) {
+      if (!isReceiptEligible(currentRow)) {
+        const error = new Error('Receipt number can be saved only for Full Paid participants with zero balance.');
+        error.statusCode = 409;
+        throw error;
+      }
+      const parsedReceipt = receiptNumericValue(nextReceiptRaw);
+      if (parsedReceipt === null) {
+        const error = new Error(`Invalid receipt-book number. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows)}`);
+        error.statusCode = 409;
+        throw error;
+      }
+      const conflict = cache.rows.find((row) =>
+        row.id !== currentRow.id &&
+        receiptNumericValue(row.receiptNo) === parsedReceipt,
+      );
+      if (conflict) {
+        const error = new Error(`Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows)}`);
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+  }
+
+  const data = Object.entries(sanitizedUpdates)
     .filter(([field]) => Object.prototype.hasOwnProperty.call(ADMIN_FIELDS, field))
     .map(([field, value]) => {
       const columnIndex = currentRow.adminColumns?.[field];
