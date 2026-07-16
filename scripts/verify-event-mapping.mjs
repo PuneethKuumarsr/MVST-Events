@@ -154,12 +154,14 @@ assert.ok(!frontend.includes('amountInWords'), 'Receipt generator must not draw 
 assert.ok(frontend.includes("throw new Error('Valid event-wise receipt number is required')"), 'Receipt generator must reject invalid event-wise receipt number internally');
 assert.ok(frontend.includes("throw new Error('Registration timestamp missing')"), 'Receipt generator must reject missing timestamp internally');
 assert.ok(frontend.includes('const activeReceiptNo = validReceiptNumber ? savedReceiptNo : suggestedReceiptNo'), 'Receipt preview/download must use suggested event-wise receipt number without saving it');
-assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(workingRows, currentParticipant)'), 'Bulk receipt generation must assign event-wise suggested receipt numbers');
+assert.ok(frontend.includes('rows.filter((row) => row.eventType === participant.eventType)'), 'Receipt number suggestions must follow all event registrations, not only paid rows');
+assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(rows, currentParticipant)'), 'Bulk receipt generation must assign event-wise suggested receipt numbers from all event registrations');
 assert.ok(backend.includes('await loadFromGoogleApi().then'), 'Backend must reload Google Sheets data before registration updates');
 assert.ok(backend.includes('Seat ${parsedSeat.normalized} is already allotted. Suggested next available seat:'), 'Backend must block duplicate seat saves');
 assert.ok(backend.includes('Receipt No. ${nextReceiptRaw} is already used. Suggested next available receipt no:'), 'Backend must block duplicate receipt saves');
 assert.ok(backend.includes('const RECEIPT_PREFIXES'), 'Backend must validate event-wise receipt prefixes');
 assert.ok(backend.includes('receiptNumericValue(nextReceiptRaw, currentRow.eventType)'), 'Backend must validate receipt number against the current event');
+assert.ok(!backend.includes('Receipt number can be saved only for Full Paid participants with zero balance.'), 'Backend must allow receipt-number reservation before full payment');
 assert.ok(frontend.includes('scrollToSection'), 'Dashboard summary cards must support jump navigation');
 assert.ok(frontend.includes('id="new-registrations-dashboard"'), 'New Registrations section must have a jump target');
 assert.ok(frontend.includes('id="participant-management-dashboard"'), 'Participant Management section must have a jump target');
@@ -174,12 +176,43 @@ assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt G
 assert.ok(frontend.includes('Generate Receipt'), 'Dashboard must show Generate Receipt button');
 assert.ok(frontend.includes('Download Receipt'), 'Dashboard must show Download Receipt button');
 assert.ok(frontend.includes('Bulk Generate Receipts'), 'Dashboard must show Bulk Generate Receipts button');
+assert.ok(frontend.includes('Receipt WhatsApp Queue'), 'Dashboard must provide one-by-one receipt WhatsApp queue');
+assert.ok(frontend.includes('Shashtipoorthi Receipts'), 'Receipt WhatsApp queue must have Shashtipoorthi event action');
+assert.ok(frontend.includes('Bheemaratha Receipts'), 'Receipt WhatsApp queue must have Bheemaratha event action');
+assert.ok(frontend.includes('buildReceiptSendQueue'), 'Receipt WhatsApp queue must build an event-specific eligible participant list');
+assert.ok(frontend.includes('Confirm & Start'), 'Receipt WhatsApp queue must require confirmation before opening WhatsApp');
+assert.ok(frontend.includes('Receipt Sent'), 'Receipt WhatsApp queue must save only after explicit Receipt Sent confirmation');
+assert.ok(frontend.includes('Skip'), 'Receipt WhatsApp queue must allow skipping without saving');
+assert.ok(frontend.includes('Cancel Queue'), 'Receipt WhatsApp queue must allow cancellation without saving');
+assert.ok(frontend.includes('Attach the downloaded receipt JPG and send it manually'), 'Receipt WhatsApp queue must explain manual JPG attachment');
+assert.ok(frontend.includes('Sent this session'), 'Receipt WhatsApp queue must show session sent progress');
+assert.ok(frontend.includes('Skipped this session'), 'Receipt WhatsApp queue must show session skipped progress');
+assert.ok(frontend.includes('Duplicate mobile number skipped'), 'Receipt WhatsApp queue must skip duplicate mobile numbers');
+assert.ok(frontend.includes('setReceiptQueueSkippedIds'), 'Receipt WhatsApp queue must keep skipped participants session-local');
+assert.ok(backend.includes('suggestedReceiptNoForRow'), 'Backend must enforce timestamp-based receipt sequence before saving');
+assert.ok(backend.includes('Receipt No. must follow timestamp order'), 'Backend must reject out-of-sequence receipt numbers');
+assert.ok(backend.includes('rows.filter((row) => row.eventType === currentRow.eventType)'), 'Backend receipt sequence must follow all event registrations, not only paid rows');
+assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(rowsOverride, item.participant)'), 'Receipt queue must use all event registrations for receipt numbers, not only eligible queue members');
+const openReceiptQueueBody = frontend.slice(
+  frontend.indexOf('async function openReceiptQueueItem'),
+  frontend.indexOf('function confirmReceiptSendQueue'),
+);
+assert.ok(openReceiptQueueBody.includes('generateReceiptJpg'), 'Opening receipt queue item must generate the JPG');
+assert.ok(openReceiptQueueBody.includes('downloadReceipt'), 'Opening receipt queue item must download the JPG');
+assert.ok(openReceiptQueueBody.includes('window.open(`https://web.whatsapp.com/send?phone='), 'Opening receipt queue item must open WhatsApp Web');
+assert.ok(!openReceiptQueueBody.includes('saveRegistration'), 'Opening/downloading WhatsApp receipt must not save or consume Receipt No');
+const markReceiptSentBody = frontend.slice(
+  frontend.indexOf('async function markReceiptQueueItemSent'),
+  frontend.indexOf('function skipReceiptQueueItem'),
+);
+assert.ok(markReceiptSentBody.includes('await saveRegistration(item.participant.id, { receiptNo })'), 'Receipt Sent must save Receipt No after confirmation');
+assert.ok(!markReceiptSentBody.includes('receiptGenerated'), 'Receipt queue must not write Receipt Generated status');
 assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
 assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
 assert.ok(frontend.includes('Number(participant.balance || 0) === 0'), 'Receipt eligibility must require zero balance');
 assert.ok(frontend.includes('!isFreeSponsorship(participant)'), 'Receipt eligibility must exclude Free Sponsorship participants');
 assert.ok(frontend.includes('throw new Error(receiptUnavailableMessage(participant))'), 'Receipt generator must reject ineligible rows internally');
-assert.ok(frontend.includes('Receipt will be available after the full amount is received.'), 'Ineligible participants must see receipt availability guidance');
+assert.ok(frontend.includes('Receipt will be generated after full payment is received.'), 'Ineligible participants must see receipt generation guidance');
 assert.ok(frontend.includes('Total Amount'), 'Receipt panel must show total amount');
 assert.ok(frontend.includes('Amount Received'), 'Receipt panel must show amount received');
 assert.ok(frontend.includes('<span>Balance</span>{formatCurrency(participant.balance)}</p>'), 'Receipt panel must show balance');
@@ -445,7 +478,7 @@ const suggestedReceiptForTest = (rows, participant) => {
   const existing = receiptNumberForTest(participant.receiptNo, participant.eventType);
   if (existing) return participant.receiptNo;
   const eventRows = [...rows]
-    .filter((row) => row.eventType === participant.eventType && receiptEligibilityForTest(row))
+    .filter((row) => row.eventType === participant.eventType)
     .sort((a, b) => timestampValueForTest(a.timestamp) - timestampValueForTest(b.timestamp));
   const used = new Set(eventRows.map((row) => receiptNumberForTest(row.receiptNo, participant.eventType)).filter(Boolean));
   let nextNumber = 1;
@@ -476,17 +509,78 @@ assert.equal(
   'SP26-1',
   'Shashtipoorthi must maintain an independent receipt sequence',
 );
+const physicalReceiptOrderRows = [
+  { id: 'a01', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', seatNo: 'A-01', paymentStatus: 'Full Paid', balance: 0, receiptNo: 'SP26-1' },
+  { id: 'a02', eventType: 'shashtipoorthi', timestamp: '02/07/2026 10:00:00', seatNo: 'A-02', paymentStatus: 'Full Paid', balance: 0, receiptNo: 'SP26-2' },
+  { id: 'a03', eventType: 'shashtipoorthi', timestamp: '03/07/2026 10:00:00', seatNo: 'A-03', paymentStatus: 'Full Paid', balance: 0, receiptNo: 'SP26-3' },
+  { id: 'b01', eventType: 'shashtipoorthi', timestamp: '04/07/2026 10:00:00', seatNo: 'B-01', paymentStatus: 'Part Paid', balance: 10000, receiptNo: '' },
+  { id: 'b02', eventType: 'shashtipoorthi', timestamp: '05/07/2026 10:00:00', seatNo: 'B-02', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
+];
+const registrationOrderAllocationRows = [
+  { id: 'sp1', eventType: 'shashtipoorthi', timestamp: '7/1/2026 10:00:00', seatNo: 'A-01', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
+  { id: 'sp2', eventType: 'shashtipoorthi', timestamp: '7/2/2026 10:00:00', seatNo: 'A-02', paymentStatus: 'Part Paid', balance: 10000, receiptNo: '' },
+  { id: 'sp3', eventType: 'shashtipoorthi', timestamp: '7/3/2026 10:00:00', seatNo: 'A-03', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
+];
+assert.equal(
+  suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[0]),
+  'SP26-1',
+  'Registration 1 Full Paid must get SP26-1',
+);
+assert.equal(
+  suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[1]),
+  'SP26-2',
+  'Registration 2 Part Paid must reserve SP26-2',
+);
+assert.equal(
+  suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[2]),
+  'SP26-3',
+  'Registration 3 Full Paid must keep SP26-3 and not compress around Part Paid rows',
+);
+assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[0]), true, 'Registration 1 Full Paid receipt must be allowed');
+assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[1]), false, 'Registration 2 Part Paid receipt must be blocked');
+assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[2]), true, 'Registration 3 Full Paid receipt must be allowed');
+assert.equal(
+  suggestedReceiptForTest(registrationOrderAllocationRows, { ...registrationOrderAllocationRows[1], paymentStatus: 'Full Paid', balance: 0 }),
+  'SP26-2',
+  'Registration 2 keeps SP26-2 after becoming Full Paid',
+);
+assert.equal(
+  suggestedReceiptForTest(physicalReceiptOrderRows, physicalReceiptOrderRows[3]),
+  'SP26-4',
+  'Part Paid B-01 must reserve SP26-4 by registration order',
+);
+assert.equal(
+  suggestedReceiptForTest(physicalReceiptOrderRows, physicalReceiptOrderRows[4]),
+  'SP26-5',
+  'Full Paid B-02 must not take B-01 reserved SP26-4',
+);
+assert.equal(receiptEligibilityForTest(physicalReceiptOrderRows[3]), false, 'Part Paid B-01 receipt JPG must remain blocked');
+assert.equal(receiptEligibilityForTest({ ...physicalReceiptOrderRows[3], paymentStatus: 'Full Paid', balance: 0 }), true, 'B-01 receipt JPG becomes available after full payment');
+assert.equal(
+  suggestedReceiptForTest(physicalReceiptOrderRows, { ...physicalReceiptOrderRows[3], paymentStatus: 'Full Paid', balance: 0 }),
+  'SP26-4',
+  'B-01 keeps SP26-4 after becoming Full Paid',
+);
 
 const registrationTimestampDateForTest = (timestamp) => {
   const raw = String(timestamp || '').trim();
   if (!raw) return null;
-  const indianDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (indianDate) {
-    const year = Number(indianDate[3].length === 2 ? `20${indianDate[3]}` : indianDate[3]);
-    return `${String(indianDate[1]).padStart(2, '0')}/${String(indianDate[2]).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
-  }
   const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?!T)/);
   if (isoDateOnly) return `${isoDateOnly[3]}/${isoDateOnly[2]}/${isoDateOnly[1]}`;
+  const slashDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (slashDate) {
+    const first = Number(slashDate[1]);
+    const second = Number(slashDate[2]);
+    const year = Number(slashDate[3].length === 2 ? `20${slashDate[3]}` : slashDate[3]);
+    if (year >= 2000) {
+      if (first >= 1 && first <= 12 && second >= 1 && second <= 31) {
+        return `${String(second).padStart(2, '0')}/${String(first).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
+      }
+      if (first >= 1 && first <= 31 && second >= 1 && second <= 12) {
+        return `${String(first).padStart(2, '0')}/${String(second).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
+      }
+    }
+  }
   const parsed = new Date(raw);
   if (!Number.isFinite(parsed.getTime())) return null;
   return new Intl.DateTimeFormat('en-GB', {
@@ -496,6 +590,7 @@ const registrationTimestampDateForTest = (timestamp) => {
     year: 'numeric',
   }).format(parsed);
 };
+assert.equal(registrationTimestampDateForTest('7/10/2026'), '10/07/2026', 'Google Sheet M/D/YYYY timestamp must display as DD/MM/YYYY');
 assert.equal(registrationTimestampDateForTest('2026-07-14T18:42:10+05:30'), '14/07/2026', 'Receipt date must use timestamp date');
 assert.notEqual(registrationTimestampDateForTest('2026-07-14T18:42:10+05:30'), new Date().toLocaleDateString('en-GB'), 'Receipt date must not use today');
 assert.equal(registrationTimestampDateForTest('2026-07-14T00:10:00+05:30'), '14/07/2026', 'India timezone must not shift to previous day');

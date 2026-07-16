@@ -510,7 +510,7 @@ function suggestedReceiptNumber(rows, participant) {
   const existingReceiptNo = normalizeReceiptNumber(participant.receiptNo, participant.eventType);
   if (existingReceiptNo) return existingReceiptNo;
   const eventRows = sortReceiptSequenceRows(
-    rows.filter((row) => row.eventType === participant.eventType && isReceiptEligible(row)),
+    rows.filter((row) => row.eventType === participant.eventType),
   );
   const usedNumbers = new Set(
     eventRows
@@ -619,19 +619,24 @@ function registrationTimestampDate(timestamp) {
   const raw = String(timestamp || '').trim();
   if (!raw) return null;
 
-  const indianDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (indianDate) {
-    const day = Number(indianDate[1]);
-    const month = Number(indianDate[2]);
-    const year = Number(indianDate[3].length === 2 ? `20${indianDate[3]}` : indianDate[3]);
-    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 2000) {
-      return formatDateParts(day, month, year);
-    }
-  }
-
   const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?!T)/);
   if (isoDateOnly) {
     return formatDateParts(Number(isoDateOnly[3]), Number(isoDateOnly[2]), Number(isoDateOnly[1]));
+  }
+
+  const slashDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (slashDate) {
+    const first = Number(slashDate[1]);
+    const second = Number(slashDate[2]);
+    const year = Number(slashDate[3].length === 2 ? `20${slashDate[3]}` : slashDate[3]);
+    if (year >= 2000) {
+      if (first >= 1 && first <= 12 && second >= 1 && second <= 31) {
+        return formatDateParts(second, first, year);
+      }
+      if (first >= 1 && first <= 31 && second >= 1 && second <= 12) {
+        return formatDateParts(first, second, year);
+      }
+    }
   }
 
   const parsed = new Date(raw);
@@ -660,7 +665,7 @@ function receiptUnavailableMessage(participant) {
   if (isFreeSponsorship(participant)) {
     return 'Payment receipt is not available for Free Sponsorship because no money was received.';
   }
-  return 'Receipt will be available after the full amount is received.';
+  return 'Receipt will be generated after full payment is received.';
 }
 
 function cleanReceiptNamePart(value) {
@@ -759,6 +764,41 @@ function buildBulkReceiptRows(rows, eventType) {
     String(row.seatNo || '').trim() &&
     !row.receiptGenerated,
   ), 'latest');
+}
+
+function buildReceiptSendQueue(rows, eventType) {
+  const eventRows = rows.filter((row) => row.eventType === eventType && isReceiptEligible(row));
+  const orderedRows = sortReceiptSequenceRows(eventRows);
+  const ready = [];
+  const skipped = [];
+  const usedMobiles = new Set();
+  orderedRows.forEach((participant) => {
+    const mobileValidation = mobileValidationStatus(participant.mobileNumber);
+    const hasSeatNo = Boolean(String(participant.seatNo || '').trim());
+    const hasTimestamp = Boolean(receiptDateForParticipant(participant));
+    const normalizedMobile = normalizeIndianMobileNumber(participant.mobileNumber);
+    if (mobileValidation.status !== 'ok' || !hasSeatNo || !hasTimestamp) {
+      skipped.push({
+        participant,
+        issue: mobileValidation.status !== 'ok'
+          ? mobileValidation.issue
+          : !hasSeatNo
+            ? 'Missing Seat No'
+            : 'Registration timestamp missing',
+      });
+      return;
+    }
+    if (usedMobiles.has(normalizedMobile)) {
+      skipped.push({ participant, issue: 'Duplicate mobile number skipped' });
+      return;
+    }
+    usedMobiles.add(normalizedMobile);
+      ready.push({
+        participant,
+        normalizedMobile,
+      });
+  });
+  return { ready, skipped };
 }
 
 function timestampValue(timestamp) {
@@ -1930,16 +1970,8 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       setMessage('Read-only mode');
       return;
     }
-    if (!paymentReceiptEligible) {
-      setMessage(receiptUnavailableMessage(participant));
-      return;
-    }
     if (!validTimestampDate) {
       setMessage('Registration timestamp missing');
-      return;
-    }
-    if (!hasSeatNo) {
-      setMessage('Seat No is required before receipt generation');
       return;
     }
     const nextNo = activeReceiptNo;
@@ -1953,7 +1985,6 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     try {
       await onSave(participant.id, {
         receiptNo: nextNo,
-        receiptGenerated: true,
       });
       setReceiptNo(nextNo);
       setMessage('Receipt number saved to Google Sheet');
@@ -1975,7 +2006,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       </div>
       <div className="receipt-meta-grid">
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
-        <p><span>Receipt No</span>{validReceiptNumber ? savedReceiptNo : 'Not saved yet'}</p>
+        <p><span>Receipt No</span>{validReceiptNumber ? savedReceiptNo : suggestedReceiptNo}</p>
         {!validReceiptNumber ? <p><span>Suggested Receipt No.</span>{suggestedReceiptNo}</p> : null}
         <p><span>Last Used Receipt No.</span>{receiptAudit.lastUsed}</p>
         <p><span>Suggested Next Receipt No.</span>{receiptAudit.suggestedNext}</p>
@@ -1995,9 +2026,11 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
           <button type="button" onClick={handleShareReceipt} disabled={generating || !hasSeatNo || !canShareWhatsApp}>
             <Share2 size={16} /> Share to WhatsApp
           </button>
-          <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled || !hasSeatNo || participant.receiptGenerated}>
-            <Save size={16} /> {participant.receiptGenerated ? 'Receipt Saved' : 'Mark Receipt Generated'}
-          </button>
+          {!validReceiptNumber ? (
+            <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled}>
+              <Save size={16} /> Save Receipt No
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="receipt-unavailable">
@@ -2005,9 +2038,9 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
           <span>{!paymentReceiptEligible ? receiptUnavailableMessage(participant) : !validTimestampDate ? 'Registration timestamp missing' : 'Valid event-wise receipt number is required'}</span>
         </div>
       )}
-      {paymentReceiptEligible && validTimestampDate && !validReceiptNumber ? (
+      {validTimestampDate && !validReceiptNumber ? (
         <div className="receipt-actions-row">
-          <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled || !hasSeatNo}>
+          <button type="button" onClick={saveReceiptNumber} disabled={generating || !writeEnabled}>
             <Save size={16} /> Save Receipt No
           </button>
         </div>
@@ -2034,7 +2067,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
         </div>
       ) : null}
       {message ? <small>{message}</small> : null}
-      {paymentReceiptEligible && !validReceiptNumber ? <small>Preview, download, refresh, close, and WhatsApp share do not reserve receipt number {suggestedReceiptNo}. Use Save Receipt No when ready.</small> : null}
+      {!validReceiptNumber ? <small>Preview, download, refresh, close, and WhatsApp share do not reserve receipt number {suggestedReceiptNo}. Use Save Receipt No when ready.</small> : null}
       {paymentReceiptEligible && validReceiptNumber && !validTimestampDate ? <small>Registration timestamp missing</small> : null}
       {receiptReady && !canShareWhatsApp ? <small>WhatsApp share disabled: {mobileValidation.issue}</small> : null}
       {paymentReceiptEligible && !hasSeatNo ? <small>Seat No is required before receipt generation</small> : null}
@@ -3278,6 +3311,17 @@ function App() {
   const [markingBulkSent, setMarkingBulkSent] = useState(false);
   const [bulkReceiptGenerating, setBulkReceiptGenerating] = useState(false);
   const [bulkReceiptMessage, setBulkReceiptMessage] = useState('');
+  const [receiptQueueEvent, setReceiptQueueEvent] = useState('');
+  const [receiptQueue, setReceiptQueue] = useState([]);
+  const [receiptQueueSkipped, setReceiptQueueSkipped] = useState([]);
+  const [receiptQueueStarted, setReceiptQueueStarted] = useState(false);
+  const [receiptQueueIndex, setReceiptQueueIndex] = useState(0);
+  const [receiptQueueMessage, setReceiptQueueMessage] = useState('');
+  const [receiptQueueOpening, setReceiptQueueOpening] = useState(false);
+  const [receiptQueueSaving, setReceiptQueueSaving] = useState(false);
+  const [receiptQueueSentCount, setReceiptQueueSentCount] = useState(0);
+  const [receiptQueueSkippedCount, setReceiptQueueSkippedCount] = useState(0);
+  const [receiptQueueSkippedIds, setReceiptQueueSkippedIds] = useState(() => new Set());
 
   const summary = useMemo(() => {
     const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
@@ -3346,6 +3390,14 @@ function App() {
 
   const currentBulkItem = bulkQueue[bulkQueueIndex];
   const hasNextBulkItem = bulkQueueStarted && bulkQueueIndex < bulkQueue.length - 1;
+  const currentReceiptQueueItem = receiptQueue[receiptQueueIndex];
+  const currentReceiptQueueNo = currentReceiptQueueItem
+    ? suggestedReceiptNumber(rows, currentReceiptQueueItem.participant)
+    : '';
+  const currentReceiptMobileStatus = currentReceiptQueueItem
+    ? mobileValidationStatus(currentReceiptQueueItem.participant.mobileNumber).status
+    : 'Not started';
+  const receiptQueueRemaining = receiptQueueStarted ? Math.max(receiptQueue.length - receiptQueueIndex - 1, 0) : receiptQueue.length;
 
   function prepareBulkQueue(queueType) {
     setBulkQueue(buildBulkQueue(rows, queueType));
@@ -3417,6 +3469,115 @@ function App() {
     requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
   }
 
+  function prepareReceiptSendQueue(eventType = activeEvent) {
+    const { ready, skipped } = buildReceiptSendQueue(rows, eventType);
+    setReceiptQueueEvent(eventType);
+    setReceiptQueue(ready);
+    setReceiptQueueSkipped(skipped);
+    setReceiptQueueStarted(false);
+    setReceiptQueueIndex(0);
+    setReceiptQueueSentCount(0);
+    setReceiptQueueSkippedCount(0);
+    setReceiptQueueSkippedIds(new Set());
+    setReceiptQueueMessage(
+      ready.length
+        ? 'Receipt queue ready. Confirm to open one WhatsApp message at a time.'
+        : 'No receipt-ready participants found for this event.',
+    );
+  }
+
+  function clearReceiptSendQueue() {
+    setReceiptQueueEvent('');
+    setReceiptQueue([]);
+    setReceiptQueueSkipped([]);
+    setReceiptQueueStarted(false);
+    setReceiptQueueIndex(0);
+    setReceiptQueueSentCount(0);
+    setReceiptQueueSkippedCount(0);
+    setReceiptQueueSkippedIds(new Set());
+    setReceiptQueueMessage('');
+  }
+
+  function advanceReceiptQueue(rowsOverride = rows) {
+    const nextIndex = receiptQueueIndex + 1;
+    if (nextIndex >= receiptQueue.length) {
+      setReceiptQueueStarted(false);
+      setReceiptQueueMessage('Receipt queue completed for this session.');
+      return;
+    }
+    setReceiptQueueIndex(nextIndex);
+    openReceiptQueueItem(nextIndex, rowsOverride);
+  }
+
+  async function openReceiptQueueItem(index, rowsOverride = rows) {
+    const item = receiptQueue[index];
+    if (!item) return;
+    const receiptNo = suggestedReceiptNumber(rowsOverride, item.participant);
+    setReceiptQueueOpening(true);
+    setReceiptQueueMessage('');
+    try {
+      const dataUrl = await generateReceiptJpg(item.participant, receiptNo);
+      downloadReceipt(dataUrl, item.participant, receiptNo);
+      const message = [
+        `Namaskara ${participantDisplayName(item.participant)}.`,
+        '',
+        `Please find the MVST receipt ${receiptNo} downloaded.`,
+        'Attach the downloaded receipt JPG and send it manually.',
+      ].join('\n');
+      const encodedText = encodeURIComponent(message);
+      window.open(`https://web.whatsapp.com/send?phone=${item.normalizedMobile}&text=${encodedText}`, '_blank', 'noopener,noreferrer');
+      setReceiptQueueMessage(`Opened ${index + 1} of ${receiptQueue.length}: ${participantDisplayName(item.participant)}. Attach the downloaded receipt JPG and send it manually. Click Receipt Sent only after sending.`);
+    } catch (error) {
+      setReceiptQueueMessage(error.message || 'Unable to open receipt WhatsApp');
+    } finally {
+      setReceiptQueueOpening(false);
+    }
+  }
+
+  function confirmReceiptSendQueue() {
+    if (!receiptQueue.length) return;
+    setReceiptQueueStarted(true);
+    setReceiptQueueIndex(0);
+    openReceiptQueueItem(0);
+  }
+
+  async function markReceiptQueueItemSent() {
+    const item = currentReceiptQueueItem;
+    if (!item) return;
+    const receiptNo = currentReceiptQueueNo;
+    if (!writeEnabled) {
+      setReceiptQueueMessage('Read-only mode. Receipt number could not be saved. The receipt remains pending. Please retry.');
+      return;
+    }
+    setReceiptQueueSaving(true);
+    setReceiptQueueMessage('');
+    try {
+      const alreadySavedReceiptNo = normalizeReceiptNumber(item.participant.receiptNo, item.participant.eventType);
+      let latestRows = rows;
+      if (!alreadySavedReceiptNo) {
+        const payload = await saveRegistration(item.participant.id, { receiptNo });
+        latestRows = payload.rows || latestRows;
+      }
+      setReceiptQueueSentCount((count) => count + 1);
+      setReceiptQueueMessage('Receipt number saved after confirmation.');
+      advanceReceiptQueue(latestRows);
+    } catch (error) {
+      setReceiptQueueMessage('Receipt number could not be saved. The receipt remains pending. Please retry.');
+    } finally {
+      setReceiptQueueSaving(false);
+    }
+  }
+
+  function skipReceiptQueueItem() {
+    const item = currentReceiptQueueItem;
+    if (!item) return;
+    const nextSkippedIds = new Set([...receiptQueueSkippedIds, item.participant.id]);
+    setReceiptQueueSkippedIds(nextSkippedIds);
+    setReceiptQueueSkippedCount((count) => count + 1);
+    setReceiptQueueMessage('Skipped for this session. No receipt number was saved.');
+    advanceReceiptQueue(rows);
+  }
+
   function goToFreeSponsorship() {
     setPaymentFilter('Free Sponsorship');
     setVerifiedFilter('All');
@@ -3458,7 +3619,7 @@ function App() {
     try {
       for (const participant of eligibleRows) {
         const currentParticipant = workingRows.find((row) => row.id === participant.id) || participant;
-        const receiptNo = suggestedReceiptNumber(workingRows, currentParticipant);
+        const receiptNo = suggestedReceiptNumber(rows, currentParticipant);
         const dataUrl = await generateReceiptJpg(currentParticipant, receiptNo);
         downloadReceipt(dataUrl, currentParticipant, receiptNo);
         const payload = await saveRegistration(currentParticipant.id, {
@@ -3726,6 +3887,90 @@ function App() {
           </button>
           {bulkReceiptMessage ? <small>{bulkReceiptMessage}</small> : null}
           {!writeEnabled ? <small>Read-only mode</small> : null}
+        </div>
+
+        <div className="receipt-bulk-panel receipt-send-panel">
+          <div>
+            <p>Receipt WhatsApp Queue</p>
+            <span>Send receipts one by one for each Shanthi event</span>
+          </div>
+          <div className="receipt-send-actions">
+            <button type="button" onClick={() => prepareReceiptSendQueue('shashtipoorthi')}>
+              <Share2 size={16} /> Shashtipoorthi Receipts
+            </button>
+            <button type="button" onClick={() => prepareReceiptSendQueue('bhimaratha')}>
+              <Share2 size={16} /> Bheemaratha Receipts
+            </button>
+          </div>
+          {receiptQueueEvent ? (
+            <div className="bulk-preview receipt-send-preview">
+              <div className="bulk-preview-head">
+                <div>
+                  <p>{eventDisplayName(receiptQueueEvent)} Receipt Queue</p>
+                  <h3>Ready: {receiptQueue.length} · Skipped: {receiptQueueSkipped.length}</h3>
+                </div>
+                <button type="button" onClick={clearReceiptSendQueue}>Close</button>
+              </div>
+              {receiptQueue.length ? (
+                <>
+                  <div className="bulk-preview-list">
+                    {receiptQueue.map((item, index) => (
+                      <div className={receiptQueueStarted && index === receiptQueueIndex ? 'active' : ''} key={`${item.participant.eventType}-${item.participant.id}-${index}`}>
+                        <strong>{participantDisplayName(item.participant)}</strong>
+                        <span>{suggestedReceiptNumber(rows, item.participant)}</span>
+                        <span>{item.participant.seatNo}</span>
+                        <span>{item.participant.mobileNumber}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bulk-queue-controls">
+                    {!receiptQueueStarted ? (
+                      <button type="button" onClick={confirmReceiptSendQueue} disabled={receiptQueueOpening}>
+                        Confirm & Start
+                      </button>
+                    ) : (
+                      <>
+                        <div className="receipt-queue-progress">
+                          <span>Participant {receiptQueueIndex + 1} of {receiptQueue.length}</span>
+                          <span>Remaining: {receiptQueueRemaining}</span>
+                          <span>Sent this session: {receiptQueueSentCount}</span>
+                          <span>Skipped this session: {receiptQueueSkippedCount}</span>
+                          <span>Participant: {participantDisplayName(currentReceiptQueueItem?.participant || {})}</span>
+                          <span>Seat: {currentReceiptQueueItem?.participant?.seatNo || 'Missing'}</span>
+                          <span>Suggested Receipt No.: {currentReceiptQueueNo}</span>
+                          <span>Mobile status: {currentReceiptMobileStatus}</span>
+                        </div>
+                        <div className="receipt-queue-actions">
+                          <button type="button" onClick={markReceiptQueueItemSent} disabled={receiptQueueOpening || receiptQueueSaving}>
+                            {receiptQueueSaving ? 'Saving' : 'Receipt Sent'}
+                          </button>
+                          <button type="button" onClick={skipReceiptQueueItem} disabled={receiptQueueOpening || receiptQueueSaving}>
+                            Skip
+                          </button>
+                          <button type="button" onClick={clearReceiptSendQueue} disabled={receiptQueueOpening || receiptQueueSaving}>
+                            Cancel Queue
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="bulk-empty">No eligible receipt contacts found for this event.</p>
+              )}
+              {receiptQueueSkipped.length ? (
+                <div className="receipt-skipped-list">
+                  <strong>Skipped</strong>
+                  {receiptQueueSkipped.slice(0, 8).map((item, index) => (
+                    <span key={`${item.participant.id}-${index}`}>{participantDisplayName(item.participant)} - {item.issue}</span>
+                  ))}
+                  {receiptQueueSkipped.length > 8 ? <span>+ {receiptQueueSkipped.length - 8} more skipped</span> : null}
+                </div>
+              ) : null}
+              {receiptQueueMessage ? <small>{receiptQueueMessage}</small> : null}
+              {!writeEnabled ? <small>Read-only mode: receipt number will not be saved after confirmation.</small> : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="bulk-whatsapp-panel">

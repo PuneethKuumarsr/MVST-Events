@@ -255,6 +255,57 @@ function formatReceiptNo(eventType, number) {
   return `${receiptPrefix(eventType)}-${Number(number)}`;
 }
 
+function timestampValue(timestamp) {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return null;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  const match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+  const second = Number(match[6] || 0);
+  const parsed = new Date(year, month, day, hour, minute, second).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sortReceiptSequenceRows(rows) {
+  return [...rows].sort((a, b) => {
+    const timeA = timestampValue(a.timestamp);
+    const timeB = timestampValue(b.timestamp);
+    if (timeA !== null && timeB !== null && timeA !== timeB) return timeA - timeB;
+    if (timeA !== null && timeB === null) return -1;
+    if (timeA === null && timeB !== null) return 1;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+function suggestedReceiptNoForRow(rows, currentRow) {
+  const existing = receiptNumericValue(currentRow.receiptNo, currentRow.eventType);
+  if (existing) return formatReceiptNo(currentRow.eventType, existing);
+  const eventRows = sortReceiptSequenceRows(
+    rows.filter((row) => row.eventType === currentRow.eventType),
+  );
+  const usedNumbers = new Set(
+    eventRows
+      .map((row) => receiptNumericValue(row.receiptNo, currentRow.eventType))
+      .filter(Boolean),
+  );
+  let nextNumber = 1;
+  for (const row of eventRows) {
+    if (receiptNumericValue(row.receiptNo, currentRow.eventType)) continue;
+    while (usedNumbers.has(nextNumber)) nextNumber += 1;
+    const suggestion = formatReceiptNo(currentRow.eventType, nextNumber);
+    usedNumbers.add(nextNumber);
+    if (row.id === currentRow.id) return suggestion;
+  }
+  while (usedNumbers.has(nextNumber)) nextNumber += 1;
+  return formatReceiptNo(currentRow.eventType, nextNumber);
+}
+
 function isReceiptEligible(row) {
   return (
     String(row.paymentStatus || '').trim() === 'Full Paid' &&
@@ -913,14 +964,21 @@ async function updateRegistration(registrationId, updates) {
   if (Object.prototype.hasOwnProperty.call(sanitizedUpdates, 'receiptNo')) {
     const nextReceiptRaw = String(sanitizedUpdates.receiptNo || '').trim();
     if (nextReceiptRaw) {
-      if (!isReceiptEligible(currentRow)) {
-        const error = new Error('Receipt number can be saved only for Full Paid participants with zero balance.');
-        error.statusCode = 409;
-        throw error;
-      }
       const parsedReceipt = receiptNumericValue(nextReceiptRaw, currentRow.eventType);
       if (parsedReceipt === null) {
         const error = new Error(`Invalid event-wise receipt number. Suggested next available receipt no: ${nextAvailableReceiptNo(cache.rows, currentRow.eventType)}`);
+        error.statusCode = 409;
+        throw error;
+      }
+      const existingReceipt = receiptNumericValue(currentRow.receiptNo, currentRow.eventType);
+      if (existingReceipt && parsedReceipt !== existingReceipt) {
+        const error = new Error(`Existing Receipt No. ${formatReceiptNo(currentRow.eventType, existingReceipt)} is already saved. Use the authorised receipt edit workflow to change it.`);
+        error.statusCode = 409;
+        throw error;
+      }
+      const expectedReceipt = suggestedReceiptNoForRow(cache.rows, currentRow);
+      if (!existingReceipt && formatReceiptNo(currentRow.eventType, parsedReceipt) !== expectedReceipt) {
+        const error = new Error(`Receipt No. must follow timestamp order. Suggested next available receipt no: ${expectedReceipt}`);
         error.statusCode = 409;
         throw error;
       }

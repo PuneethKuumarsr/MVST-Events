@@ -946,6 +946,66 @@ main {
   font-weight: 850;
 }
 
+.receipt-send-panel {
+  align-items: stretch;
+}
+
+.receipt-send-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.receipt-send-preview {
+  width: 100%;
+}
+
+.receipt-skipped-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.receipt-skipped-list strong {
+  color: var(--maroon-deep);
+}
+
+.receipt-skipped-list span {
+  border: 1px solid rgba(120, 31, 42, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 243, 212, 0.58);
+  padding: 8px 10px;
+}
+
+.receipt-queue-progress {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.receipt-queue-progress span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  font-weight: 800;
+}
+
+.receipt-queue-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.receipt-queue-actions button {
+  flex: 1 1 150px;
+}
+
 .receipt-unavailable {
   display: flex;
   align-items: center;
