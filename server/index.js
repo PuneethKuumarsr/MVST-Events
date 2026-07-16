@@ -17,6 +17,18 @@ const projectRoot = path.resolve(__dirname, '..');
 const distPath = path.join(projectRoot, 'dist');
 const indexPath = path.join(distPath, 'index.html');
 const serviceAccountPath = path.join(projectRoot, 'service-account.json');
+const authUsersPath = process.env.AUTH_USERS_FILE || path.join(projectRoot, 'server', 'data', 'users.json');
+const SESSION_COOKIE = 'mvst_session';
+const ROLE_PST = 'PST Admin';
+const ROLE_VOLUNTEER = 'Volunteer';
+const ROLE_CREW = 'Crew';
+const AUTH_ROLES = [ROLE_PST, ROLE_VOLUNTEER, ROLE_CREW];
+const SESSION_DURATIONS = {
+  [ROLE_PST]: 12 * 60 * 60 * 1000,
+  [ROLE_VOLUNTEER]: 8 * 60 * 60 * 1000,
+  [ROLE_CREW]: 8 * 60 * 60 * 1000,
+};
+const sessions = new Map();
 const ADMIN_FIELDS = {
   paidAmount: ['Paid Amount'],
   paymentStatus: ['Payment Status'],
@@ -572,6 +584,155 @@ function indiaDateTime() {
   });
 }
 
+function normalizeMobileForAuth(rawMobile) {
+  const digits = String(rawMobile || '').replace(/\D/g, '');
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`;
+  return digits;
+}
+
+function sanitizeAuthUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    mobile: user.mobile,
+    role: user.role,
+    active: user.active !== false,
+    lastLogin: user.lastLogin || '',
+  };
+}
+
+function normalizeRole(role) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (raw === 'pst' || raw === 'pst admin' || raw === 'admin') return ROLE_PST;
+  if (raw === 'crew') return ROLE_CREW;
+  return ROLE_VOLUNTEER;
+}
+
+function validatePin(pin) {
+  return /^\d{4}$|^\d{6}$/.test(String(pin || ''));
+}
+
+function hashPin(pin) {
+  const salt = crypto.randomBytes(16).toString('base64url');
+  const hash = crypto.scryptSync(String(pin), salt, 32).toString('base64url');
+  return `scrypt:v1:${salt}:${hash}`;
+}
+
+function verifyPin(pin, storedHash) {
+  const [scheme, version, salt, expectedHash] = String(storedHash || '').split(':');
+  if (scheme !== 'scrypt' || version !== 'v1' || !salt || !expectedHash) return false;
+  const actual = crypto.scryptSync(String(pin), salt, 32);
+  const expected = Buffer.from(expectedHash, 'base64url');
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function readAuthUsers() {
+  try {
+    if (!fs.existsSync(authUsersPath)) return [];
+    return JSON.parse(fs.readFileSync(authUsersPath, 'utf8')).users || [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAuthUsers(users) {
+  fs.mkdirSync(path.dirname(authUsersPath), { recursive: true });
+  fs.writeFileSync(authUsersPath, JSON.stringify({ users }, null, 2));
+}
+
+function ensureBootstrapUser() {
+  const users = readAuthUsers();
+  if (users.length || !process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE || !process.env.AUTH_BOOTSTRAP_ADMIN_PIN) return users;
+  if (!validatePin(process.env.AUTH_BOOTSTRAP_ADMIN_PIN)) return users;
+  const mobile = normalizeMobileForAuth(process.env.AUTH_BOOTSTRAP_ADMIN_MOBILE);
+  const bootstrap = {
+    id: crypto.randomUUID(),
+    name: process.env.AUTH_BOOTSTRAP_ADMIN_NAME || 'PST Admin',
+    mobile,
+    role: ROLE_PST,
+    active: true,
+    passwordHash: hashPin(process.env.AUTH_BOOTSTRAP_ADMIN_PIN),
+    lastLogin: '',
+  };
+  writeAuthUsers([bootstrap]);
+  return [bootstrap];
+}
+
+function parseCookies(req) {
+  return Object.fromEntries(
+    String(req.headers.cookie || '')
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const index = part.indexOf('=');
+        return [decodeURIComponent(part.slice(0, index)), decodeURIComponent(part.slice(index + 1))];
+      }),
+  );
+}
+
+function cookieOptions(req, maxAge) {
+  const secure = process.env.NODE_ENV === 'production' || req.secure || req.get('x-forwarded-proto') === 'https';
+  return [
+    `HttpOnly`,
+    `SameSite=Lax`,
+    `Path=/`,
+    `Max-Age=${Math.floor(maxAge / 1000)}`,
+    secure ? 'Secure' : '',
+  ].filter(Boolean).join('; ');
+}
+
+function setSessionCookie(req, res, sessionId, maxAge) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; ${cookieOptions(req, maxAge)}`);
+}
+
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
+function createSession(user) {
+  const sessionId = crypto.randomBytes(32).toString('base64url');
+  const duration = SESSION_DURATIONS[user.role] || SESSION_DURATIONS[ROLE_VOLUNTEER];
+  sessions.set(sessionId, {
+    user: sanitizeAuthUser(user),
+    expiresAt: Date.now() + duration,
+  });
+  return { sessionId, duration };
+}
+
+function authFromRequest(req) {
+  const sessionId = parseCookies(req)[SESSION_COOKIE];
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(sessionId);
+    return null;
+  }
+  return session.user;
+}
+
+function requireAuth(req, res, next) {
+  const user = authFromRequest(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  req.user = user;
+  return next();
+}
+
+function requirePst(req, res, next) {
+  const user = authFromRequest(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  if (user.role !== ROLE_PST) return res.status(403).json({ ok: false, error: 'Forbidden' });
+  req.user = user;
+  return next();
+}
+
+function isPstUser(user) {
+  return user?.role === ROLE_PST;
+}
+
 function buildDonorColumnMap(headerMap) {
   return Object.fromEntries(
     Object.entries(DONOR_FIELDS).map(([field, labels]) => [field, getColumnIndex(headerMap, labels)]),
@@ -856,11 +1017,39 @@ async function loadFromCsvFallback() {
   };
 }
 
-function publicRows(rows) {
-  return rows.map(({ adminColumns, ...row }) => ({
-    ...row,
-    qrToken: rowQrToken(row),
-  }));
+function publicRows(rows, user = null) {
+  return rows.map(({ adminColumns, ...row }) => {
+    if (!isPstUser(user)) {
+      return {
+        id: row.id,
+        rowNumber: row.rowNumber,
+        eventType: row.eventType,
+        sourceLabel: row.sourceLabel,
+        timestamp: row.timestamp,
+        groomName: row.groomName,
+        brideName: row.brideName,
+        mobileNumber: row.mobileNumber,
+        seatNo: row.seatNo,
+        meetingAttendance: row.meetingAttendance,
+        meetingAttendanceTime: row.meetingAttendanceTime,
+        meetingAttendanceBy: row.meetingAttendanceBy,
+        kitIssued: row.kitIssued,
+        eventAttendance: row.eventAttendance,
+        eventAttendanceTime: row.eventAttendanceTime,
+        eventAttendanceBy: row.eventAttendanceBy,
+        madalakkiGiven: row.madalakkiGiven,
+        madalakkiTime: row.madalakkiTime,
+        madalakkiBy: row.madalakkiBy,
+        photoFrameGiven: row.photoFrameGiven,
+        photoFrameTime: row.photoFrameTime,
+        photoFrameBy: row.photoFrameBy,
+      };
+    }
+    return {
+      ...row,
+      qrToken: rowQrToken(row),
+    };
+  });
 }
 
 function publicDonorRows(rows) {
@@ -1336,6 +1525,7 @@ async function updateMangalyaDonor(donorId, updates) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -1343,12 +1533,85 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', app: 'MVST Events' });
 });
 
-app.get('/api/registrations', async (req, res) => {
+app.get('/api/auth/me', (req, res) => {
+  const user = authFromRequest(req);
+  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  return res.json({ ok: true, user });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const mobile = normalizeMobileForAuth(req.body?.mobile);
+  const pin = String(req.body?.pin || '');
+  if (!mobile || !validatePin(pin)) return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+
+  const users = ensureBootstrapUser();
+  const user = users.find((item) => item.mobile === mobile);
+  if (!user || user.active === false || !verifyPin(pin, user.passwordHash)) {
+    return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+  }
+
+  user.lastLogin = indiaDateTime();
+  writeAuthUsers(users);
+  const { sessionId, duration } = createSession(user);
+  setSessionCookie(req, res, sessionId, duration);
+  return res.json({ ok: true, user: sanitizeAuthUser(user), expiresInMs: duration });
+});
+
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+  const sessionId = parseCookies(req)[SESSION_COOKIE];
+  if (sessionId) sessions.delete(sessionId);
+  clearSessionCookie(res);
+  return res.json({ ok: true });
+});
+
+app.get('/api/users', requirePst, (req, res) => {
+  const users = ensureBootstrapUser().map(sanitizeAuthUser);
+  res.json({ ok: true, rows: users });
+});
+
+app.post('/api/users', requirePst, (req, res) => {
+  const { name, mobile: rawMobile, role: rawRole, pin, active = true } = req.body || {};
+  const mobile = normalizeMobileForAuth(rawMobile);
+  if (!name || !mobile || !validatePin(pin)) return res.status(400).json({ ok: false, error: 'Name, valid mobile and 4/6 digit PIN are required.' });
+  const users = ensureBootstrapUser();
+  if (users.some((user) => user.mobile === mobile)) return res.status(409).json({ ok: false, error: 'User mobile already exists.' });
+  const user = {
+    id: crypto.randomUUID(),
+    name: String(name).trim(),
+    mobile,
+    role: normalizeRole(rawRole),
+    active: Boolean(active),
+    passwordHash: hashPin(pin),
+    lastLogin: '',
+  };
+  users.push(user);
+  writeAuthUsers(users);
+  res.json({ ok: true, user: sanitizeAuthUser(user), rows: users.map(sanitizeAuthUser) });
+});
+
+app.patch('/api/users/:id', requirePst, (req, res) => {
+  const users = ensureBootstrapUser();
+  const user = users.find((item) => item.id === req.params.id);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
+  const updates = req.body || {};
+  if (Object.prototype.hasOwnProperty.call(updates, 'name')) user.name = String(updates.name || '').trim();
+  if (Object.prototype.hasOwnProperty.call(updates, 'mobile')) user.mobile = normalizeMobileForAuth(updates.mobile);
+  if (Object.prototype.hasOwnProperty.call(updates, 'role')) user.role = normalizeRole(updates.role);
+  if (Object.prototype.hasOwnProperty.call(updates, 'active')) user.active = Boolean(updates.active);
+  if (Object.prototype.hasOwnProperty.call(updates, 'pin')) {
+    if (!validatePin(updates.pin)) return res.status(400).json({ ok: false, error: 'PIN must be 4 or 6 digits.' });
+    user.passwordHash = hashPin(updates.pin);
+  }
+  writeAuthUsers(users);
+  return res.json({ ok: true, user: sanitizeAuthUser(user), rows: users.map(sanitizeAuthUser) });
+});
+
+app.get('/api/registrations', requireAuth, async (req, res) => {
   try {
     if (!cache.refreshedAt) await loadRegistrations();
     res.json({
       ok: true,
-      rows: publicRows(cache.rows),
+      rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       source: cache.source,
       writeEnabled: cache.writeEnabled,
@@ -1358,7 +1621,7 @@ app.get('/api/registrations', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       ok: false,
-      rows: publicRows(cache.rows),
+      rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
       notice: cache.notice,
@@ -1368,12 +1631,12 @@ app.get('/api/registrations', async (req, res) => {
   }
 });
 
-app.post('/api/registrations/refresh', async (req, res) => {
+app.post('/api/registrations/refresh', requireAuth, async (req, res) => {
   try {
     const next = await loadRegistrations();
     res.json({
       ok: true,
-      rows: publicRows(next.rows),
+      rows: publicRows(next.rows, req.user),
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
@@ -1383,7 +1646,7 @@ app.post('/api/registrations/refresh', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       ok: false,
-      rows: publicRows(cache.rows),
+      rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
       notice: cache.notice,
@@ -1393,7 +1656,7 @@ app.post('/api/registrations/refresh', async (req, res) => {
   }
 });
 
-app.get('/api/distribution/audit', async (req, res) => {
+app.get('/api/distribution/audit', requireAuth, async (req, res) => {
   try {
     if (!cache.refreshedAt) await loadRegistrations();
     const missingColumns = missingDistributionColumns(cache.rows);
@@ -1427,7 +1690,7 @@ app.get('/api/distribution/audit', async (req, res) => {
           ].filter(Boolean),
         }]),
       ),
-      rows: publicRows(cache.rows),
+      rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
     });
   } catch (error) {
@@ -1435,12 +1698,12 @@ app.get('/api/distribution/audit', async (req, res) => {
   }
 });
 
-app.post('/api/distribution/scan', async (req, res) => {
+app.post('/api/distribution/scan', requireAuth, async (req, res) => {
   try {
     const result = await scanDistributionToken({
       token: req.body?.token,
       operationKey: req.body?.operation,
-      actor: req.get('x-mvst-user') || req.body?.actor,
+      actor: req.user.name || req.user.mobile,
     });
     res.json({
       ok: true,
@@ -1449,7 +1712,7 @@ app.post('/api/distribution/scan', async (req, res) => {
       participant: result.participant,
       completedAt: result.completedAt,
       completedBy: result.completedBy,
-      rows: publicRows(result.rows),
+      rows: publicRows(result.rows, req.user),
       refreshedAt: cache.refreshedAt,
       source: cache.source,
       writeEnabled: cache.writeEnabled,
@@ -1464,13 +1727,13 @@ app.post('/api/distribution/scan', async (req, res) => {
   }
 });
 
-app.patch('/api/registrations/:id', async (req, res) => {
+app.patch('/api/registrations/:id', requirePst, async (req, res) => {
   try {
     const next = await updateRegistration(req.params.id, req.body);
     res.json({
       ok: true,
       message: 'Saved to Google Sheet',
-      rows: publicRows(next.rows),
+      rows: publicRows(next.rows, req.user),
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
@@ -1480,7 +1743,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({
       ok: false,
-      rows: publicRows(cache.rows),
+      rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
       notice: cache.notice,
@@ -1490,7 +1753,7 @@ app.patch('/api/registrations/:id', async (req, res) => {
   }
 });
 
-app.get(['/api/mangalya-sponsorship', '/api/mangalya-donors'], async (req, res) => {
+app.get(['/api/mangalya-sponsorship', '/api/mangalya-donors'], requirePst, async (req, res) => {
   try {
     if (!donorCache.refreshedAt) await loadMangalyaDonors();
     res.json({
@@ -1515,7 +1778,7 @@ app.get(['/api/mangalya-sponsorship', '/api/mangalya-donors'], async (req, res) 
   }
 });
 
-app.post(['/api/mangalya-sponsorship/refresh', '/api/mangalya-donors/refresh'], async (req, res) => {
+app.post(['/api/mangalya-sponsorship/refresh', '/api/mangalya-donors/refresh'], requirePst, async (req, res) => {
   try {
     const next = await loadMangalyaDonors();
     res.json({
@@ -1540,7 +1803,7 @@ app.post(['/api/mangalya-sponsorship/refresh', '/api/mangalya-donors/refresh'], 
   }
 });
 
-app.get(['/api/sponsorship-requirements', '/api/sponsorship/requirements'], async (req, res) => {
+app.get(['/api/sponsorship-requirements', '/api/sponsorship/requirements'], requirePst, async (req, res) => {
   try {
     if (!requirementCache.refreshedAt) await loadSponsorshipRequirements();
     res.json({
@@ -1565,7 +1828,7 @@ app.get(['/api/sponsorship-requirements', '/api/sponsorship/requirements'], asyn
   }
 });
 
-app.post(['/api/sponsorship-requirements/refresh', '/api/sponsorship/requirements/refresh'], async (req, res) => {
+app.post(['/api/sponsorship-requirements/refresh', '/api/sponsorship/requirements/refresh'], requirePst, async (req, res) => {
   try {
     const next = await loadSponsorshipRequirements();
     res.json({
@@ -1590,7 +1853,7 @@ app.post(['/api/sponsorship-requirements/refresh', '/api/sponsorship/requirement
   }
 });
 
-app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], async (req, res) => {
+app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], requirePst, async (req, res) => {
   try {
     const next = await updateMangalyaDonor(req.params.id, req.body);
     res.json({
@@ -1616,7 +1879,7 @@ app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], async (
   }
 });
 
-app.get('/api/whatsapp-group-config', async (req, res) => {
+app.get('/api/whatsapp-group-config', requirePst, async (req, res) => {
   try {
     const pstAdmins = await loadWhatsappPstAdmins();
     res.json({
@@ -1635,7 +1898,7 @@ app.get('/api/whatsapp-group-config', async (req, res) => {
   }
 });
 
-app.post('/api/whatsapp-groups', async (req, res) => {
+app.post('/api/whatsapp-groups', requirePst, async (req, res) => {
   try {
     const { groupName, eventType, participantCount, status, remarks } = req.body || {};
     if (!groupName || !eventType) {

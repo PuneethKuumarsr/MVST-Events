@@ -158,6 +158,9 @@ const VOLUNTEER_STATUS_FILTERS = [
   { value: 'madalakkiDistribution', label: 'Madalakki Pending' },
   { value: 'photoFrameDistribution', label: 'Photo Frame Pending' },
 ];
+const ROLE_PST = 'PST Admin';
+const ROLE_VOLUNTEER = 'Volunteer';
+const ROLE_CREW = 'Crew';
 const PARTICIPANT_SORT_OPTIONS = [
   { value: 'latest', label: 'Latest Registration' },
   { value: 'seat-asc', label: 'Seat Number (Ascending)' },
@@ -882,14 +885,13 @@ async function downloadQrPng(participant) {
   document.body.removeChild(link);
 }
 
-async function scanDistributionQr({ token, operation, actor }) {
+async function scanDistributionQr({ token, operation }) {
   const response = await fetch('/api/distribution/scan', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-mvst-user': actor,
     },
-    body: JSON.stringify({ token, operation, actor }),
+    body: JSON.stringify({ token, operation }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.ok) {
@@ -1677,7 +1679,9 @@ function useParticipants() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || `Google Sheets API returned ${response.status}`);
+      const error = new Error(payload.error || `Google Sheets API returned ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
     return payload;
   }
@@ -1704,6 +1708,17 @@ function useParticipants() {
       if (!aliveRef.current) return;
       applyPayload(payload);
     } catch (backendError) {
+      if (backendError.status === 401 || backendError.status === 403) {
+        if (!aliveRef.current) return;
+        setRows([]);
+        setLastRefreshedAt(null);
+        setDataSource('Authentication required');
+        setWriteEnabled(false);
+        setStatus('Login required');
+        setError('Login session expired. Please logout and login again.');
+        setIsLive(false);
+        return;
+      }
       try {
         const fallbackRows = await loadCsvFallback();
         if (!aliveRef.current) return;
@@ -1762,8 +1777,8 @@ function useParticipants() {
       setStatus(`${payload.message || 'Saved to Google Sheet'}. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
       return payload;
     },
-    scanDistribution: async ({ token, operation, actor }) => {
-      const payload = await scanDistributionQr({ token, operation, actor });
+    scanDistribution: async ({ token, operation }) => {
+      const payload = await scanDistributionQr({ token, operation });
       applyPayload(payload);
       setStatus(`Distribution scan saved. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
       return payload;
@@ -1772,7 +1787,7 @@ function useParticipants() {
   };
 }
 
-function useMangalyaDonors() {
+function useMangalyaDonors(enabled = true) {
   const [donors, setDonors] = useState([]);
   const [status, setStatus] = useState('Loading Mangalya sponsorship...');
   const [error, setError] = useState('');
@@ -1811,12 +1826,13 @@ function useMangalyaDonors() {
   }
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const aliveRef = { current: true };
     load(false, aliveRef);
     return () => {
       aliveRef.current = false;
     };
-  }, []);
+  }, [enabled]);
 
   return {
     donors,
@@ -1843,7 +1859,7 @@ function useMangalyaDonors() {
   };
 }
 
-function useSponsorshipRequirements() {
+function useSponsorshipRequirements(enabled = true) {
   const [requirements, setRequirements] = useState([]);
   const [status, setStatus] = useState('Loading sponsorship requirements...');
   const [error, setError] = useState('');
@@ -1877,12 +1893,13 @@ function useSponsorshipRequirements() {
   }
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const aliveRef = { current: true };
     load(false, aliveRef);
     return () => {
       aliveRef.current = false;
     };
-  }, []);
+  }, [enabled]);
 
   return {
     requirements,
@@ -1893,7 +1910,7 @@ function useSponsorshipRequirements() {
   };
 }
 
-function useWhatsAppGroupConfig() {
+function useWhatsAppGroupConfig(enabled = true) {
   const [pstAdmins, setPstAdmins] = useState([]);
   const [status, setStatus] = useState('Loading PST admins...');
   const [error, setError] = useState('');
@@ -1919,12 +1936,13 @@ function useWhatsAppGroupConfig() {
   }
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const aliveRef = { current: true };
     load(aliveRef);
     return () => {
       aliveRef.current = false;
     };
-  }, []);
+  }, [enabled]);
 
   return {
     pstAdmins,
@@ -3278,6 +3296,221 @@ function SelectField({ icon: Icon, label, value, onChange, children }) {
   );
 }
 
+function VolunteerParticipantCard({ participant }) {
+  const mobile = normalizeIndianMobileNumber(participant.mobileNumber);
+  const validMobile = mobileValidationStatus(participant.mobileNumber).status === 'ok';
+  return (
+    <article className="participant-card volunteer-safe-card">
+      <div className="participant-top">
+        <div>
+          <p className="event-label">{EVENTS[participant.eventType]?.shortLabel}</p>
+          <h3>Seat {participant.seatNo || 'Not entered'}</h3>
+          <p className="muted">{participant.groomName || 'Husband not entered'} & {participant.brideName || 'Wife not entered'}</p>
+        </div>
+      </div>
+      <div className="detail-grid">
+        <p><span>Husband Name</span>{participant.groomName || 'Not entered'}</p>
+        <p><span>Wife Name</span>{participant.brideName || 'Not entered'}</p>
+        <p><span>Mobile</span>{participant.mobileNumber || 'Missing'}</p>
+        <p><span>Event</span>{eventDisplayName(participant.eventType)}</p>
+      </div>
+      <div className="volunteer-call-row">
+        <span>{participant.mobileNumber || 'Mobile missing'}</span>
+        {validMobile ? <a href={`tel:+${mobile}`}>📞 Call</a> : <small>Valid mobile required</small>}
+      </div>
+      <div className="volunteer-status-grid">
+        {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
+          <span key={key} className={distributionCompleted(participant, key) ? 'done' : 'pending'}>
+            {operation.completedLabel}: {distributionCompleted(participant, key) ? 'Done' : 'Pending'}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function useAuth() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      setUser(response.ok && payload.ok ? payload.user : null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function login({ mobile, pin }) {
+    setError('');
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile, pin }),
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setError(payload.error || 'Login failed');
+      return false;
+    }
+    setUser(payload.user);
+    return true;
+  }
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' }).catch(() => {});
+    setUser(null);
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return { user, loading, error, login, logout };
+}
+
+function LoginPage({ auth }) {
+  const [mobile, setMobile] = useState('');
+  const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setSubmitting(true);
+    await auth.login({ mobile, pin });
+    setSubmitting(false);
+  }
+
+  return (
+    <main className="login-page">
+      <form className="login-card" onSubmit={submit}>
+        <div>
+          <p>MVST Events</p>
+          <h1>Login</h1>
+        </div>
+        <label>
+          <span>Mobile Number</span>
+          <div className="login-mobile-row">
+            <b>+91</b>
+            <input value={mobile} onChange={(event) => setMobile(event.target.value)} inputMode="numeric" autoComplete="username" placeholder="Mobile number" />
+          </div>
+        </label>
+        <label>
+          <span>PIN</span>
+          <div className="login-pin-row">
+            <input value={pin} onChange={(event) => setPin(event.target.value)} type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" placeholder="••••" />
+            <button type="button" onClick={() => setShowPin((value) => !value)}>{showPin ? 'Hide' : 'Show'}</button>
+          </div>
+        </label>
+        {auth.error ? <small>{auth.error}</small> : null}
+        <button type="submit" disabled={submitting}>{submitting ? 'Logging in' : 'Login'}</button>
+      </form>
+    </main>
+  );
+}
+
+function UserAccessSection() {
+  const [users, setUsers] = useState([]);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ name: '', mobile: '', role: ROLE_VOLUNTEER, pin: '', active: true });
+
+  async function loadUsers() {
+    const response = await fetch('/api/users', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to load users');
+    setUsers(payload.rows || []);
+  }
+
+  useEffect(() => {
+    loadUsers().catch((error) => setMessage(error.message));
+  }, []);
+
+  async function addUser(event) {
+    event.preventDefault();
+    setMessage('');
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to add user');
+      setUsers(payload.rows || []);
+      setForm({ name: '', mobile: '', role: ROLE_VOLUNTEER, pin: '', active: true });
+      setMessage('User access saved.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function updateUser(id, updates) {
+    setMessage('');
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to update user');
+      setUsers(payload.rows || []);
+      setMessage('User access updated.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  return (
+    <section className="management-section user-access-section">
+      <div className="section-heading">
+        <div>
+          <p>User Access</p>
+          <h2>PST-only login and role management</h2>
+        </div>
+      </div>
+      <form className="user-access-form" onSubmit={addUser}>
+        <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" />
+        <input value={form.mobile} onChange={(event) => setForm({ ...form, mobile: event.target.value })} placeholder="Mobile" inputMode="numeric" />
+        <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>
+          <option>{ROLE_VOLUNTEER}</option>
+          <option>{ROLE_CREW}</option>
+          <option>{ROLE_PST}</option>
+        </select>
+        <input value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value })} placeholder="4 or 6 digit PIN" inputMode="numeric" type="password" />
+        <button type="submit">Add Volunteer</button>
+      </form>
+      {message ? <small>{message}</small> : null}
+      <div className="user-access-list">
+        {users.map((user) => (
+          <article key={user.id}>
+            <div>
+              <strong>{user.name}</strong>
+              <span>{user.mobile} · {user.role} · {user.active ? 'Active' : 'Disabled'}</span>
+              <small>Last Login: {user.lastLogin || 'Never'}</small>
+            </div>
+            <div>
+              <button type="button" onClick={() => updateUser(user.id, { active: !user.active })}>{user.active ? 'Disable Volunteer' : 'Enable Volunteer'}</button>
+              <button type="button" onClick={() => {
+                const nextPin = window.prompt('Enter new 4 or 6 digit PIN');
+                if (nextPin) updateUser(user.id, { pin: nextPin });
+              }}>Reset PIN</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WhatsAppGroupSetup({ rows, groupConfig }) {
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState('');
@@ -3818,9 +4051,9 @@ function QRVideoScanner({ disabled, onScan }) {
   );
 }
 
-function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
+function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst }) {
   const [activeOperation, setActiveOperation] = useState('meetingAttendance');
-  const [operatorName, setOperatorName] = useState(localStorage.getItem('mvstOperatorName') || '');
+  const operatorName = user?.name || user?.mobile || '';
   const [manualToken, setManualToken] = useState('');
   const [search, setSearch] = useState('');
   const [scanState, setScanState] = useState({ type: 'idle', message: 'Select operation and scan a QR.' });
@@ -3836,10 +4069,6 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
   const scannerSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
   useEffect(() => {
-    if (operatorName) localStorage.setItem('mvstOperatorName', operatorName);
-  }, [operatorName]);
-
-  useEffect(() => {
     if (scanState.type === 'success' || scanState.type === 'duplicate' || scanState.type === 'error') {
       const timeout = setTimeout(() => setScanState({ type: 'idle', message: 'Ready for next QR scan.' }), 2000);
       return () => clearTimeout(timeout);
@@ -3850,7 +4079,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
   async function handleTokenScan(token) {
     if (isSaving) return;
     if (!operatorName.trim()) {
-      setScanState({ type: 'error', message: 'Operator name is required before scanning.' });
+      setScanState({ type: 'error', message: 'Login required before scanning.' });
       return;
     }
     if (!writeEnabled) {
@@ -3860,7 +4089,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
     setIsSaving(true);
     setScanState({ type: 'saving', message: 'Saving scan to Google Sheet...' });
     try {
-      const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation, actor: operatorName.trim() });
+      const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation });
       const participant = result.participant;
       if (result.status === 'already-completed') {
         setScanState({
@@ -3936,10 +4165,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
             <span>Selected Operation</span>
             <strong>{operation.label}</strong>
           </div>
-          <label className="search-field operator-field">
-            <Keyboard size={17} />
-            <input value={operatorName} onChange={(event) => setOperatorName(event.target.value)} placeholder="Volunteer / user name" />
-          </label>
+          <div className="operator-identity"><Keyboard size={17} /><span>Logged in user</span><strong>{operatorName}</strong></div>
         </div>
         <div className={`scan-status ${scanState.type}`}>
           <Camera size={18} />
@@ -3960,7 +4186,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
 
       <VolunteerDistributionMonitor rows={rows} />
 
-      <div className="qr-tools-grid">
+      {isPst ? <div className="qr-tools-grid">
         <div className="controls">
           <label className="search-field">
             <Search size={17} />
@@ -3976,7 +4202,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
           ))}
         </div>
         {selectedQrParticipant ? <QRPreviewPanel participant={selectedQrParticipant} /> : null}
-      </div>
+      </div> : null}
 
       {listState ? (
         <DistributionListModal
@@ -3992,11 +4218,14 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution }) {
   );
 }
 
-function App() {
+function App({ auth }) {
+  const user = auth.user;
+  const isPst = user?.role === ROLE_PST;
+  const isVolunteerRole = user?.role === ROLE_VOLUNTEER || user?.role === ROLE_CREW;
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, scanDistribution, refresh } = useParticipants();
-  const donorState = useMangalyaDonors();
-  const requirementState = useSponsorshipRequirements();
-  const groupConfig = useWhatsAppGroupConfig();
+  const donorState = useMangalyaDonors(isPst);
+  const requirementState = useSponsorshipRequirements(isPst);
+  const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [query, setQuery] = useState('');
@@ -4025,6 +4254,12 @@ function App() {
   const [receiptQueueSkippedIds, setReceiptQueueSkippedIds] = useState(() => new Set());
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalFilter, setBalanceModalFilter] = useState('All');
+
+  useEffect(() => {
+    if (isVolunteerRole && !['qr-distribution', 'shashtipoorthi', 'bhimaratha'].includes(activeView)) {
+      setActiveView('qr-distribution');
+    }
+  }, [isVolunteerRole, activeView]);
 
   const summary = useMemo(() => {
     const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
@@ -4092,7 +4327,7 @@ function App() {
     const search = query.trim().toLowerCase();
     const filtered = rows
       .filter((row) => row.eventType === activeEvent)
-      .filter((row) => row.treasurerVerified)
+      .filter((row) => (isPst ? row.treasurerVerified : true))
       .filter((row) => {
         if (!search) return true;
         return [row.groomName, row.brideName, row.mobileNumber]
@@ -4110,7 +4345,7 @@ function App() {
         kitFilter === 'All' ? true : row.kitIssued === (kitFilter === 'Issued'),
       );
     return sortParticipants(filtered, participantSort);
-  }, [rows, activeEvent, query, paymentFilter, verifiedFilter, kitFilter, participantSort]);
+  }, [rows, activeEvent, query, paymentFilter, verifiedFilter, kitFilter, participantSort, isPst]);
 
   const currentBulkItem = bulkQueue[bulkQueueIndex];
   const hasNextBulkItem = bulkQueueStarted && bulkQueueIndex < bulkQueue.length - 1;
@@ -4415,14 +4650,18 @@ function App() {
 
       <div className="app-shell">
         <aside className="app-sidebar" aria-label="Dashboard navigation">
-          <button className={activeView === 'home' ? 'active' : ''} type="button" onClick={() => setActiveView('home')}>
-            <ClipboardList size={18} />
-            <span>Home</span>
-          </button>
-          <button className={activeView === 'whatsapp-groups' ? 'active' : ''} type="button" onClick={() => setActiveView('whatsapp-groups')}>
-            <UsersRound size={18} />
-            <span>WhatsApp Groups</span>
-          </button>
+          {isPst ? (
+            <>
+              <button className={activeView === 'home' ? 'active' : ''} type="button" onClick={() => setActiveView('home')}>
+                <ClipboardList size={18} />
+                <span>Home</span>
+              </button>
+              <button className={activeView === 'whatsapp-groups' ? 'active' : ''} type="button" onClick={() => setActiveView('whatsapp-groups')}>
+                <UsersRound size={18} />
+                <span>WhatsApp Groups</span>
+              </button>
+            </>
+          ) : null}
           <button className={activeView === 'qr-distribution' ? 'active' : ''} type="button" onClick={() => setActiveView('qr-distribution')}>
             <QrCode size={18} />
             <span>QR Operations</span>
@@ -4435,13 +4674,25 @@ function App() {
             <HeartHandshake size={18} />
             <span>Bhimaratha Shanthi</span>
           </button>
-          <button className={activeView === 'mangalya-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('mangalya-donors')}>
-            <Gift size={18} />
-            <span>Sponsorship Management</span>
-          </button>
-          <button className={activeView === 'previous-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('previous-donors')}>
-            <MessageCircle size={18} />
-            <span>Previous Donors</span>
+          {isPst ? (
+            <>
+              <button className={activeView === 'mangalya-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('mangalya-donors')}>
+                <Gift size={18} />
+                <span>Sponsorship Management</span>
+              </button>
+              <button className={activeView === 'previous-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('previous-donors')}>
+                <MessageCircle size={18} />
+                <span>Previous Donors</span>
+              </button>
+              <button className={activeView === 'user-access' ? 'active' : ''} type="button" onClick={() => setActiveView('user-access')}>
+                <ShieldCheck size={18} />
+                <span>User Access</span>
+              </button>
+            </>
+          ) : null}
+          <button type="button" onClick={auth.logout}>
+            <X size={18} />
+            <span>Logout</span>
           </button>
         </aside>
 
@@ -4464,7 +4715,7 @@ function App() {
             </section>
           ) : null}
 
-          {activeView === 'home' ? (
+          {activeView === 'home' && isPst ? (
             <>
               <section className="summary-section">
                 <div className="section-heading">
@@ -4581,15 +4832,17 @@ function App() {
             </>
           ) : null}
 
-          {activeView === 'whatsapp-groups' ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
+          {activeView === 'whatsapp-groups' && isPst ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
 
-          {activeView === 'qr-distribution' ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} /> : null}
+          {activeView === 'qr-distribution' ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} /> : null}
 
-          {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
+          {activeView === 'mangalya-donors' && isPst ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
-          {activeView === 'previous-donors' ? <PreviousDonorsCampaign donorState={donorState} /> : null}
+          {activeView === 'previous-donors' && isPst ? <PreviousDonorsCampaign donorState={donorState} /> : null}
 
-          {balanceModalOpen ? (
+          {activeView === 'user-access' && isPst ? <UserAccessSection /> : null}
+
+          {balanceModalOpen && isPst ? (
             <BalanceReceivableModal
               rows={balanceReceivableRows}
               filter={balanceModalFilter}
@@ -4619,20 +4872,24 @@ function App() {
               placeholder="Search groom, bride, mobile"
             />
           </label>
-          <SelectField icon={Filter} label="Payment" value={paymentFilter} onChange={setPaymentFilter}>
-            <option>All</option>
-            {PAYMENT_STATUSES.map((statusValue) => <option key={statusValue}>{statusValue}</option>)}
-          </SelectField>
-          <SelectField label="Treasurer" value={verifiedFilter} onChange={setVerifiedFilter}>
-            <option>All</option>
-            <option>Verified</option>
-            <option>Pending</option>
-          </SelectField>
-          <SelectField label="KIT" value={kitFilter} onChange={setKitFilter}>
-            <option>All</option>
-            <option>Issued</option>
-            <option>Pending</option>
-          </SelectField>
+          {isPst ? (
+            <>
+              <SelectField icon={Filter} label="Payment" value={paymentFilter} onChange={setPaymentFilter}>
+                <option>All</option>
+                {PAYMENT_STATUSES.map((statusValue) => <option key={statusValue}>{statusValue}</option>)}
+              </SelectField>
+              <SelectField label="Treasurer" value={verifiedFilter} onChange={setVerifiedFilter}>
+                <option>All</option>
+                <option>Verified</option>
+                <option>Pending</option>
+              </SelectField>
+              <SelectField label="KIT" value={kitFilter} onChange={setKitFilter}>
+                <option>All</option>
+                <option>Issued</option>
+                <option>Pending</option>
+              </SelectField>
+            </>
+          ) : null}
           <SelectField label="Sort" value={participantSort} onChange={setParticipantSort}>
             {PARTICIPANT_SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -4645,9 +4902,9 @@ function App() {
           <span>{formatCurrency(EVENTS[activeEvent].contribution)} per couple · Sorted by {participantSortLabel(participantSort)}</span>
         </div>
 
-        <SeatGuidanceSection rows={rows} />
+        {isPst ? <SeatGuidanceSection rows={rows} /> : null}
 
-        <div className="receipt-bulk-panel">
+        {isPst ? <div className="receipt-bulk-panel">
           <div>
             <p>Bulk Receipt Generation</p>
             <span>{eventDisplayName(activeEvent)} eligible: {buildBulkReceiptRows(rows, activeEvent).length}</span>
@@ -4663,9 +4920,9 @@ function App() {
           )}
           {bulkReceiptMessage ? <small>{bulkReceiptMessage}</small> : null}
           {!bulkZipSupported ? <small>Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.</small> : null}
-        </div>
+        </div> : null}
 
-        <div className="receipt-bulk-panel receipt-send-panel">
+        {isPst ? <div className="receipt-bulk-panel receipt-send-panel">
           <div>
             <p>Receipt WhatsApp Queue</p>
             <span>Send receipts one by one for each Shanthi event</span>
@@ -4747,9 +5004,9 @@ function App() {
               {!writeEnabled ? <small>Read-only mode: receipt number will not be saved after confirmation.</small> : null}
             </div>
           ) : null}
-        </div>
+        </div> : null}
 
-        <div className="bulk-whatsapp-panel">
+        {isPst ? <div className="bulk-whatsapp-panel">
           <div className="bulk-actions">
             <button type="button" onClick={() => prepareBulkQueue('welcome')}>
               <MessageCircle size={16} /> Bulk Welcome Messages
@@ -4809,18 +5066,25 @@ function App() {
               )}
             </div>
           ) : null}
-        </div>
+        </div> : null}
 
         <div className="participants-list">
           {filteredRows.length ? (
             filteredRows.map((participant, index) => (
-              <ParticipantCard
-                key={`${participant.eventType}-${participant.mobileNumber}-${participant.timestamp}-${index}`}
-                participant={participant}
-                rows={rows}
-                writeEnabled={writeEnabled}
-                onSave={saveRegistration}
-              />
+              isPst ? (
+                <ParticipantCard
+                  key={`${participant.eventType}-${participant.mobileNumber}-${participant.timestamp}-${index}`}
+                  participant={participant}
+                  rows={rows}
+                  writeEnabled={writeEnabled}
+                  onSave={saveRegistration}
+                />
+              ) : (
+                <VolunteerParticipantCard
+                  key={`${participant.eventType}-${participant.mobileNumber}-${participant.timestamp}-${index}`}
+                  participant={participant}
+                />
+              )
             ))
           ) : (
             <div className="empty-state">
@@ -4837,4 +5101,17 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function RootApp() {
+  const auth = useAuth();
+  if (auth.loading) {
+    return (
+      <main className="login-page">
+        <div className="login-card"><h1>MVST Events</h1><p>Checking session...</p></div>
+      </main>
+    );
+  }
+  if (!auth.user) return <LoginPage auth={auth} />;
+  return <App auth={auth} />;
+}
+
+createRoot(document.getElementById('root')).render(<RootApp />);

@@ -48,10 +48,21 @@ GOOGLE_PRIVATE_KEY=
 BHIMARATHA_SHEET_ID=
 SHASHTIPOORTHI_SHEET_ID=
 GOOGLE_SHEETS_RANGE=Form Responses 1!A:AZ
+AUTH_BOOTSTRAP_ADMIN_NAME=
+AUTH_BOOTSTRAP_ADMIN_MOBILE=
+AUTH_BOOTSTRAP_ADMIN_PIN=
 VITE_DEVELOPER_MODE=false
 ```
 
 For `GOOGLE_PRIVATE_KEY`, keep the value on one line and preserve escaped newlines like `\n`.
+
+Authentication is required before any dashboard content is shown. On first startup, the backend can create the initial PST Admin user from:
+
+- `AUTH_BOOTSTRAP_ADMIN_NAME`
+- `AUTH_BOOTSTRAP_ADMIN_MOBILE`
+- `AUTH_BOOTSTRAP_ADMIN_PIN`
+
+The PIN must be 4 or 6 digits. Only a scrypt hash is stored under `server/data/users.json`, which is ignored by Git. After the first PST Admin login, use **User Access** in the app to add volunteers, crew, reset PINs, or disable users.
 
 ## Google Cloud Setup
 
@@ -62,7 +73,7 @@ For `GOOGLE_PRIVATE_KEY`, keep the value on one line and preserve escaped newlin
 5. Create a JSON key for the service account.
 6. Copy `client_email` into `GOOGLE_SERVICE_ACCOUNT_EMAIL`.
 7. Copy `private_key` into `GOOGLE_PRIVATE_KEY`.
-8. Open both Google Sheets and share each sheet with the service account email as Viewer.
+8. Open both Google Sheets and share each sheet with the service account email as Editor.
 9. Copy each spreadsheet ID from the sheet URL into:
    - `BHIMARATHA_SHEET_ID`
    - `SHASHTIPOORTHI_SHEET_ID`

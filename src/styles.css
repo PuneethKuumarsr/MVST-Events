@@ -45,6 +45,88 @@ main {
   min-height: 100vh;
 }
 
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(187, 135, 46, 0.2), transparent 28rem),
+    linear-gradient(135deg, #fffaf0, #fbf6ea 48%, #f7ead9);
+}
+
+.login-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.95);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.login-card p {
+  margin: 0;
+  color: var(--gold);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.login-card h1 {
+  margin: 4px 0 0;
+  color: var(--maroon-deep);
+}
+
+.login-card label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-weight: 850;
+}
+
+.login-mobile-row,
+.login-pin-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 8px;
+}
+
+.login-pin-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.login-card input {
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--maroon-deep);
+  outline: none;
+}
+
+.login-card button,
+.user-access-form button,
+.user-access-list button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--maroon);
+  color: #fff8e8;
+  padding: 8px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.login-card small {
+  color: var(--red);
+  font-weight: 850;
+}
+
 .hero-band {
   background:
     linear-gradient(135deg, rgba(75, 17, 24, 0.96), rgba(120, 31, 42, 0.91)),
@@ -1819,6 +1901,65 @@ main {
   color: var(--amber);
 }
 
+.user-access-section {
+  display: grid;
+  gap: 14px;
+}
+
+.user-access-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.92);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.user-access-form input,
+.user-access-form select {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--maroon-deep);
+  padding: 8px 10px;
+}
+
+.user-access-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-access-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.92);
+  padding: 12px;
+}
+
+.user-access-list article > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.user-access-list span,
+.user-access-list small {
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.user-access-list article > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 620px) {
   .bulk-actions button,
   .bulk-preview-head button,
@@ -1863,8 +2004,14 @@ main {
   .qr-preview-list,
   .distribution-stats-grid,
   .volunteer-name-grid,
-  .volunteer-status-grid {
+  .volunteer-status-grid,
+  .user-access-form {
     grid-template-columns: 1fr;
+  }
+
+  .user-access-list article {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .distribution-group-card button,
