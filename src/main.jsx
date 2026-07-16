@@ -44,38 +44,38 @@ const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const receiptLayouts = {
   shashtipoorthi: {
     receiptNo: [
-      { x: 94, y: 219, width: 76, height: 28 },
-      { x: 563, y: 245, width: 92, height: 30 },
+      { x: 95, y: 216, width: 74, height: 26 },
+      { x: 565, y: 242, width: 88, height: 28 },
     ],
     date: [
-      { x: 382, y: 220, width: 88, height: 23 },
-      { x: 1388, y: 262, width: 143, height: 27 },
+      { x: 383, y: 217, width: 86, height: 22, baselineOffset: -3 },
+      { x: 1392, y: 258, width: 136, height: 25, baselineOffset: -3 },
     ],
     coupleName: [
-      { x: 82, y: 260, width: 386, height: 48 },
-      { x: 632, y: 330, width: 825, height: 52 },
+      { x: 84, y: 243, width: 382, height: 40, lineOffset: -4 },
+      { x: 635, y: 310, width: 815, height: 43, lineOffset: -4 },
     ],
     seatNo: [
-      { x: 116, y: 407, width: 138, height: 30 },
-      { x: 976, y: 446, width: 158, height: 31 },
+      { x: 182, y: 398, width: 132, height: 24 },
+      { x: 1053, y: 438, width: 76, height: 24 },
     ],
   },
   bhimaratha: {
     receiptNo: [
-      { x: 94, y: 219, width: 76, height: 28 },
-      { x: 563, y: 245, width: 92, height: 30 },
+      { x: 95, y: 216, width: 74, height: 26 },
+      { x: 565, y: 242, width: 88, height: 28 },
     ],
     date: [
-      { x: 382, y: 220, width: 88, height: 23 },
-      { x: 1388, y: 262, width: 143, height: 27 },
+      { x: 383, y: 217, width: 86, height: 22, baselineOffset: -3 },
+      { x: 1392, y: 258, width: 136, height: 25, baselineOffset: -3 },
     ],
     coupleName: [
-      { x: 82, y: 260, width: 386, height: 48 },
-      { x: 632, y: 330, width: 825, height: 52 },
+      { x: 84, y: 243, width: 382, height: 40, lineOffset: -4 },
+      { x: 635, y: 310, width: 815, height: 43, lineOffset: -4 },
     ],
     seatNo: [
-      { x: 116, y: 407, width: 138, height: 30 },
-      { x: 976, y: 446, width: 158, height: 31 },
+      { x: 182, y: 398, width: 132, height: 24 },
+      { x: 1053, y: 438, width: 76, height: 24 },
     ],
   },
 };
@@ -447,13 +447,18 @@ function receiptPrefix(eventType) {
 function receiptNumberValue(receiptNo, eventType) {
   const raw = String(receiptNo || '').trim();
   const prefix = receiptPrefix(eventType);
-  const match = raw.match(new RegExp(`^${prefix}-(\\d{3})$`));
+  const match = raw.match(new RegExp(`^${prefix}-(\\d{1,3})$`));
   if (!match) return null;
   return Number(match[1]);
 }
 
 function formatReceiptNumber(eventType, number) {
-  return `${receiptPrefix(eventType)}-${String(number).padStart(3, '0')}`;
+  return `${receiptPrefix(eventType)}-${Number(number)}`;
+}
+
+function normalizeReceiptNumber(receiptNo, eventType) {
+  const value = receiptNumberValue(receiptNo, eventType);
+  return value === null ? '' : formatReceiptNumber(eventType, value);
 }
 
 function hasValidReceiptBookNumber(participant) {
@@ -502,7 +507,8 @@ function sortReceiptSequenceRows(rows) {
 }
 
 function suggestedReceiptNumber(rows, participant) {
-  if (hasValidReceiptBookNumber(participant)) return participant.receiptNo;
+  const existingReceiptNo = normalizeReceiptNumber(participant.receiptNo, participant.eventType);
+  if (existingReceiptNo) return existingReceiptNo;
   const eventRows = sortReceiptSequenceRows(
     rows.filter((row) => row.eventType === participant.eventType && isReceiptEligible(row)),
   );
@@ -597,7 +603,7 @@ function fitReceiptText(ctx, textValue, box, options = {}) {
   }
   ctx.restore();
   const x = align === 'center' ? box.x + box.width / 2 : align === 'right' ? box.x + box.width : box.x;
-  const middleY = box.y + box.height / 2;
+  const middleY = box.y + box.height / 2 + Number(box.baselineOffset || box.lineOffset || 0);
   const lineGap = fontSize * lineHeight;
   const firstY = middleY - ((lines.length - 1) * lineGap) / 2;
   lines.forEach((line, index) => {
@@ -709,8 +715,9 @@ async function generateReceiptJpg(participant, receiptNo) {
   const layout = receiptLayouts[participant.eventType];
   if (!layout) throw new Error('Receipt layout is not configured for this event');
   const safeSeatNo = String(participant.seatNo || '').trim();
+  const safeReceiptNo = normalizeReceiptNumber(receiptNo, participant.eventType);
   const drawBoxes = (boxes, text, options) => boxes.forEach((box) => fitReceiptText(ctx, text, box, options));
-  drawBoxes(layout.receiptNo, receiptNo, { maxFont: 18, minFont: 10, align: 'center' });
+  drawBoxes(layout.receiptNo, safeReceiptNo, { maxFont: 18, minFont: 10, align: 'center' });
   drawBoxes(layout.date, receiptDate, { maxFont: 15, minFont: 9, align: 'center' });
   drawBoxes(layout.seatNo, safeSeatNo, { maxFont: 23, minFont: 11, align: 'center' });
   layout.coupleName.forEach((box) => {
@@ -1843,9 +1850,10 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   const canShareWhatsApp = mobileValidation.status === 'ok';
   const paymentReceiptEligible = isReceiptEligible(participant);
   const validReceiptNumber = hasValidReceiptBookNumber(participant);
+  const savedReceiptNo = normalizeReceiptNumber(participant.receiptNo, participant.eventType);
   const validTimestampDate = receiptDateForParticipant(participant);
   const suggestedReceiptNo = suggestedReceiptNumber(rows, participant);
-  const activeReceiptNo = validReceiptNumber ? participant.receiptNo : suggestedReceiptNo;
+  const activeReceiptNo = validReceiptNumber ? savedReceiptNo : suggestedReceiptNo;
   const receiptReady = paymentReceiptEligible && Boolean(activeReceiptNo) && Boolean(validTimestampDate);
   const hasSeatNo = Boolean(String(participant.seatNo || '').trim());
   const receiptAudit = receiptBookAudit(rows, participant.eventType);
@@ -1961,13 +1969,13 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       <div className="receipt-panel-head">
         <div>
           <span>Receipt Management</span>
-          <strong>{validReceiptNumber ? participant.receiptNo : `Suggested ${suggestedReceiptNo}`}</strong>
+          <strong>{validReceiptNumber ? savedReceiptNo : `Suggested ${suggestedReceiptNo}`}</strong>
         </div>
         {participant.receiptGenerated ? <StatusPill tone="success">&#9989; Receipt Generated</StatusPill> : <StatusPill tone="neutral">Receipt Pending</StatusPill>}
       </div>
       <div className="receipt-meta-grid">
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
-        <p><span>Receipt No</span>{validReceiptNumber ? participant.receiptNo : 'Not saved yet'}</p>
+        <p><span>Receipt No</span>{validReceiptNumber ? savedReceiptNo : 'Not saved yet'}</p>
         {!validReceiptNumber ? <p><span>Suggested Receipt No.</span>{suggestedReceiptNo}</p> : null}
         <p><span>Last Used Receipt No.</span>{receiptAudit.lastUsed}</p>
         <p><span>Suggested Next Receipt No.</span>{receiptAudit.suggestedNext}</p>
@@ -2122,7 +2130,7 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
         <p><span>Welcome Sent Date</span>{participant.welcomeSentDate || 'Not marked'}</p>
         <p><span>Payment Sent Date</span>{participant.paymentSentDate || 'Not marked'}</p>
         <p><span>Seat No</span>{participant.seatNo || 'Not entered'}</p>
-        <p><span>Receipt No</span>{participant.receiptNo || 'Not generated'}</p>
+        <p><span>Receipt No</span>{normalizeReceiptNumber(participant.receiptNo, participant.eventType) || 'Not generated'}</p>
       </div>
 
       <div className="detail-grid">

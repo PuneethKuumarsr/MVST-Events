@@ -129,6 +129,9 @@ assert.ok(frontend.includes('Seat ${parsed.normalized} is already allotted. Sugg
 assert.ok(frontend.includes('const RECEIPT_PREFIXES'), 'Frontend must define event-wise receipt prefixes');
 assert.ok(frontend.includes("bhimaratha: 'BS26'"), 'Bhimaratha receipt numbers must use BS26 prefix');
 assert.ok(frontend.includes("shashtipoorthi: 'SP26'"), 'Shashtipoorthi receipt numbers must use SP26 prefix');
+assert.match(frontend, /\\d\{1,3\}/, 'Receipt parser must accept old padded and new non-padded receipt suffixes');
+assert.ok(frontend.includes('return `${receiptPrefix(eventType)}-${Number(number)}`'), 'Receipt formatter must not zero-pad the suffix');
+assert.ok(backend.includes('sanitizedUpdates.receiptNo = formatReceiptNo(currentRow.eventType, parsedReceipt)'), 'Backend must normalize padded receipt values before saving');
 assert.ok(frontend.includes('function receiptBookAudit(rows, eventType)'), 'Frontend must audit event-wise receipt-book numbers');
 assert.ok(frontend.includes('Last Used Receipt No.'), 'Receipt panel must show last used receipt number');
 assert.ok(frontend.includes('Suggested Next Receipt No.'), 'Receipt panel must show suggested next receipt number');
@@ -150,7 +153,7 @@ assert.ok(!frontend.includes('numericAmount'), 'Receipt generator must not draw 
 assert.ok(!frontend.includes('amountInWords'), 'Receipt generator must not draw amount-in-words overlay');
 assert.ok(frontend.includes("throw new Error('Valid event-wise receipt number is required')"), 'Receipt generator must reject invalid event-wise receipt number internally');
 assert.ok(frontend.includes("throw new Error('Registration timestamp missing')"), 'Receipt generator must reject missing timestamp internally');
-assert.ok(frontend.includes('const activeReceiptNo = validReceiptNumber ? participant.receiptNo : suggestedReceiptNo'), 'Receipt preview/download must use suggested event-wise receipt number without saving it');
+assert.ok(frontend.includes('const activeReceiptNo = validReceiptNumber ? savedReceiptNo : suggestedReceiptNo'), 'Receipt preview/download must use suggested event-wise receipt number without saving it');
 assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(workingRows, currentParticipant)'), 'Bulk receipt generation must assign event-wise suggested receipt numbers');
 assert.ok(backend.includes('await loadFromGoogleApi().then'), 'Backend must reload Google Sheets data before registration updates');
 assert.ok(backend.includes('Seat ${parsedSeat.normalized} is already allotted. Suggested next available seat:'), 'Backend must block duplicate seat saves');
@@ -392,10 +395,10 @@ const receiptPrefixesForTest = {
 };
 const receiptNumberForTest = (receiptNo, eventType) => {
   const raw = String(receiptNo || '').trim();
-  const match = raw.match(new RegExp(`^${receiptPrefixesForTest[eventType]}-(\\d{3})$`));
+  const match = raw.match(new RegExp(`^${receiptPrefixesForTest[eventType]}-(\\d{1,3})$`));
   return match ? Number(match[1]) : null;
 };
-const formatReceiptForTest = (eventType, number) => `${receiptPrefixesForTest[eventType]}-${String(number).padStart(3, '0')}`;
+const formatReceiptForTest = (eventType, number) => `${receiptPrefixesForTest[eventType]}-${Number(number)}`;
 const receiptAuditForTest = (rows, eventType) => {
   const counts = new Map();
   let highest = 0;
@@ -411,7 +414,7 @@ const receiptAuditForTest = (rows, eventType) => {
   };
 };
 const receiptAuditRowsForTest = [
-  { id: 's-old', eventType: 'shashtipoorthi', receiptNo: 'SP26-001', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0 },
+  { id: 's-old', eventType: 'shashtipoorthi', receiptNo: 'SP26-1', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0 },
   { id: 's-duplicate', eventType: 'shashtipoorthi', receiptNo: 'SP26-001', timestamp: '02/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0 },
   { id: 's-missing', eventType: 'shashtipoorthi', receiptNo: '', timestamp: '03/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0 },
   { id: 'b-old', eventType: 'bhimaratha', receiptNo: 'BS26-001', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0 },
@@ -422,13 +425,17 @@ const receiptAuditRowsForTest = [
 const receiptAudit = receiptAuditForTest(receiptAuditRowsForTest, 'shashtipoorthi');
 const bhimarathaReceiptAudit = receiptAuditForTest(receiptAuditRowsForTest, 'bhimaratha');
 assert.equal(receiptNumberForTest('BS26-001', 'bhimaratha'), 1, 'Existing BS26-001 must be accepted');
+assert.equal(receiptNumberForTest('BS26-2', 'bhimaratha'), 2, 'New BS26-2 format must be accepted');
 assert.equal(receiptNumberForTest('SP26-001', 'shashtipoorthi'), 1, 'Existing SP26-001 must be accepted');
+assert.equal(receiptNumberForTest('SP26-019', 'shashtipoorthi'), 19, 'Existing SP26-019 must be parsed as 19');
+assert.equal(formatReceiptForTest('shashtipoorthi', receiptNumberForTest('SP26-019', 'shashtipoorthi')), 'SP26-19', 'SP26-019 must display/save as SP26-19');
+assert.equal(formatReceiptForTest('bhimaratha', receiptNumberForTest('BS26-002', 'bhimaratha')), 'BS26-2', 'BS26-002 must display/save as BS26-2');
 assert.equal(receiptNumberForTest('BS26-001', 'shashtipoorthi'), null, 'Wrong event prefix must be rejected');
 assert.equal(receiptNumberForTest('SP26-001', 'bhimaratha'), null, 'Wrong event prefix must be rejected');
 assert.equal(receiptNumberForTest('D-06', 'bhimaratha'), null, 'Seat number must never be used as receipt number');
 assert.equal(receiptNumberForTest('bhimaratha:2', 'bhimaratha'), null, 'Participant ID must never be used as receipt number');
-assert.equal(receiptAudit.suggestedNext, 'SP26-002');
-assert.equal(bhimarathaReceiptAudit.suggestedNext, 'BS26-002');
+assert.equal(receiptAudit.suggestedNext, 'SP26-2');
+assert.equal(bhimarathaReceiptAudit.suggestedNext, 'BS26-2');
 assert.equal(receiptAudit.duplicates[0][0], '1');
 const suggestionBeforePreview = receiptAudit.suggestedNext;
 const suggestionAfterPreview = receiptAudit.suggestedNext;
@@ -458,7 +465,7 @@ assert.equal(
     { id: 'b2', eventType: 'bhimaratha', timestamp: '02/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
     { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
   ], { id: 'b2', eventType: 'bhimaratha', timestamp: '02/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' }),
-  'BS26-002',
+  'BS26-2',
   'Timestamp ascending must determine the Bhimaratha receipt sequence',
 );
 assert.equal(
@@ -466,7 +473,7 @@ assert.equal(
     { id: 'b1', eventType: 'bhimaratha', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
     { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
   ], { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' }),
-  'SP26-001',
+  'SP26-1',
   'Shashtipoorthi must maintain an independent receipt sequence',
 );
 

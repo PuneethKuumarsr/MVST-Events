@@ -240,7 +240,7 @@ function receiptPrefix(eventType) {
 
 function receiptNumericValue(receiptNo, eventType) {
   const raw = String(receiptNo || '').trim();
-  const match = raw.match(new RegExp(`^${receiptPrefix(eventType)}-(\\d{3})$`));
+  const match = raw.match(new RegExp(`^${receiptPrefix(eventType)}-(\\d{1,3})$`));
   return match ? Number(match[1]) : null;
 }
 
@@ -248,7 +248,11 @@ function nextAvailableReceiptNo(rows, eventType) {
   const highest = rows
     .filter((row) => row.eventType === eventType)
     .reduce((max, row) => Math.max(max, receiptNumericValue(row.receiptNo, eventType) || 0), 0);
-  return `${receiptPrefix(eventType)}-${String(highest + 1).padStart(3, '0')}`;
+  return `${receiptPrefix(eventType)}-${highest + 1}`;
+}
+
+function formatReceiptNo(eventType, number) {
+  return `${receiptPrefix(eventType)}-${Number(number)}`;
 }
 
 function isReceiptEligible(row) {
@@ -930,6 +934,7 @@ async function updateRegistration(registrationId, updates) {
         error.statusCode = 409;
         throw error;
       }
+      sanitizedUpdates.receiptNo = formatReceiptNo(currentRow.eventType, parsedReceipt);
     }
   }
 
