@@ -38,6 +38,8 @@ const DONOR_FIELDS = {
   contributionType: ['Contribution Type'],
   category: ['Category', 'Sponsorship Category'],
   contributionNature: ['Contribution Nature'],
+  previousDonationAmount: ['Previous Donation Amount', 'Previous Donation', 'Last Donation Amount', 'Donation Amount'],
+  previousDonationYear: ['Previous Donation Year', 'Last Donation Year', 'Last Donated Year'],
   sponsored2025: ['Sponsored 2025'],
   sponsored2026: ['Sponsored 2026'],
   confirmedQuantity: ['Confirmed Quantity', 'Sponsored 2026'],
@@ -432,6 +434,13 @@ function normalizeDonorRows(values) {
       const receivedAmount = numberFrom(getCell(row, headerMap, ['Received Amount']));
       const amount = confirmedAmount;
       const category = getCell(row, headerMap, ['Category', 'Sponsorship Category']) || process.env.DEFAULT_SPONSORSHIP_CATEGORY || '';
+      const contributionType = getCell(row, headerMap, ['Contribution Type']);
+      const previousDonationAmount = numberFrom(getCell(row, headerMap, [
+        'Previous Donation Amount',
+        'Previous Donation',
+        'Last Donation Amount',
+        'Donation Amount',
+      ]));
       const appealSent = boolFrom(getCell(row, headerMap, ['Appeal Sent', 'WhatsApp Sent']));
       const appealSentDate = getCell(row, headerMap, ['Appeal Sent Date', 'Sent Date']);
       return {
@@ -443,10 +452,12 @@ function normalizeDonorRows(values) {
         contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No']),
         eventYear: getCell(row, headerMap, ['Event Year']),
         eventName: getCell(row, headerMap, ['Event Name']),
-        contributionType: getCell(row, headerMap, ['Contribution Type']),
+        contributionType,
         category,
         canonicalCategory: canonicalCategory(category),
         contributionNature: getCell(row, headerMap, ['Contribution Nature']) || 'Monetary',
+        previousDonationAmount,
+        previousDonationYear: getCell(row, headerMap, ['Previous Donation Year', 'Last Donation Year', 'Last Donated Year']),
         sponsored2025,
         sponsored2026,
         confirmedQuantity,

@@ -1480,6 +1480,12 @@ main {
   cursor: pointer;
 }
 
+.donor-filter-strip button.active {
+  border-color: rgba(120, 31, 42, 0.35);
+  background: var(--maroon);
+  color: #fff8e8;
+}
+
 .donor-detail-grid {
   margin-bottom: 10px;
 }
@@ -1650,6 +1656,19 @@ main {
 
 .sponsorship-controls {
   grid-template-columns: 1.4fr minmax(160px, 0.8fr) minmax(140px, 0.6fr);
+}
+
+.previous-donor-controls {
+  grid-template-columns: 1.4fr minmax(190px, 0.8fr) minmax(160px, 0.7fr);
+}
+
+.previous-donor-filter-strip {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.previous-donor-card .donor-message-preview {
+  max-height: 230px;
 }
 
 .confirmed-sponsors-panel {

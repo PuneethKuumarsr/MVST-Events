@@ -928,6 +928,57 @@ function donorMobileIsValid(donor) {
   return mobileValidationStatus(donor.contactNo).status === 'ok';
 }
 
+function previousDonationAmount(donor) {
+  const explicitAmount = Number(donor.previousDonationAmount || 0);
+  if (explicitAmount > 0) return explicitAmount;
+  const year = String(donor.eventYear || '').trim();
+  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
+  if (year && year !== ACTIVE_EVENT_YEAR && typeText.includes('general donation')) {
+    return Number(donor.receivedAmount || donor.confirmedAmount || donor.amount || 0);
+  }
+  return 0;
+}
+
+function previousDonationYear(donor) {
+  return donor.previousDonationYear || (String(donor.eventYear || '').trim() !== ACTIVE_EVENT_YEAR ? donor.eventYear : '');
+}
+
+function isPreviousDonor(donor) {
+  return previousDonationAmount(donor) > 0;
+}
+
+function buildPreviousDonorAppealMessage(donor) {
+  return `🙏 Jai Vasavi 🙏
+
+Dear ${sponsorDisplayName(donor)},
+
+With your generous support, last year's Shanthi Mahotsava 2025 event was a grand success.
+
+This year also, Manemanege Vasavi Seva Trust is organizing:
+
+🌸 4th Samoohika Shashtipoorthi Shanthi
+🌸 2nd Samoohika Bheemaratha Shanthi
+
+Date: Sunday, 02-Aug-2026
+Venue: Shubh Convention, JP Nagar, Bengaluru
+
+We humbly request your continued support and blessings by contributing towards this noble event once again.
+
+Your contribution, big or small, will help us serve our community.
+
+For sponsorship or donations, kindly contact us.
+
+Thank you for your continued trust and support.
+
+🙏 Manemanege Vasavi Seva Trust & Team`;
+}
+
+function makePreviousDonorWhatsAppUrl(donor) {
+  const normalizedMobile = normalizeIndianMobileNumber(donor.contactNo);
+  const encodedText = encodeURIComponent(buildPreviousDonorAppealMessage(donor));
+  return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
+}
+
 function linkLabel(url) {
   return url ? 'Open' : 'Missing';
 }
@@ -1773,6 +1824,277 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   );
 }
 
+const PREVIOUS_DONOR_FILTERS = [
+  { id: 'all', label: 'All Previous Donors', test: () => true },
+  { id: '10000', label: '₹10,000 Donors', test: (amount) => amount === 10000 },
+  { id: '25000', label: '₹25,000 Donors', test: (amount) => amount === 25000 },
+  { id: '50000', label: '₹50,000 Donors', test: (amount) => amount === 50000 },
+  { id: '100000', label: '₹1,00,000+ Donors', test: (amount) => amount >= 100000 },
+];
+
+function PreviousDonorsCampaign({ donorState }) {
+  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const [filterId, setFilterId] = useState('all');
+  const [query, setQuery] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [mobileDraft, setMobileDraft] = useState('');
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [queue, setQueue] = useState([]);
+  const [queueStarted, setQueueStarted] = useState(false);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [queueOpened, setQueueOpened] = useState(false);
+  const previousDonors = useMemo(() => donors.filter(isPreviousDonor), [donors]);
+  const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
+
+  const visibleDonors = useMemo(() => {
+    const selected = PREVIOUS_DONOR_FILTERS.find((filter) => filter.id === filterId) || PREVIOUS_DONOR_FILTERS[0];
+    const search = query.trim().toLowerCase();
+    return previousDonors
+      .filter((donor) => selected.test(previousDonationAmount(donor)))
+      .filter((donor) => {
+        if (!search) return true;
+        return [sponsorDisplayName(donor), donor.contactNo, previousDonationAmount(donor), previousDonationYear(donor)]
+          .join(' ')
+          .toLowerCase()
+          .includes(search);
+      });
+  }, [filterId, previousDonors, query]);
+
+  const readyDonors = useMemo(() => visibleDonors.filter(donorMobileIsValid), [visibleDonors]);
+  const currentQueueDonor = queue[queueIndex];
+  const hasNextQueueDonor = queueStarted && queueIndex < queue.length - 1;
+
+  function startEdit(donor) {
+    setEditingId(donor.id);
+    setMobileDraft(donor.contactNo || '');
+    setMessage('');
+  }
+
+  async function saveMobile(donor) {
+    if (!writeEnabled || !donor?.id) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await saveDonor(donor.id, { contactNo: mobileDraft });
+      setMessage('Mobile number saved to private Google Sheet');
+      setEditingId('');
+      setMobileDraft('');
+    } catch (saveError) {
+      setMessage(saveError.message || 'Unable to save mobile number');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openDonorWhatsApp(donor) {
+    if (!donorMobileIsValid(donor)) return;
+    const url = makePreviousDonorWhatsAppUrl(donor);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  function prepareQueue() {
+    setQueue(readyDonors);
+    setQueueStarted(false);
+    setQueueIndex(0);
+    setQueueOpened(false);
+    setMessage(readyDonors.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready previous donors for this filter.');
+  }
+
+  function clearQueue() {
+    setQueue([]);
+    setQueueStarted(false);
+    setQueueIndex(0);
+    setQueueOpened(false);
+    setMessage('');
+  }
+
+  function openQueueDonor(index) {
+    const donor = queue[index];
+    if (!donor) return;
+    openDonorWhatsApp(donor);
+    setQueueStarted(true);
+    setQueueOpened(true);
+    setMessage('');
+  }
+
+  function openCurrentQueueDonor() {
+    if (!queue.length) return;
+    openQueueDonor(queueIndex);
+  }
+
+  function openNextQueueDonor() {
+    const nextIndex = queueIndex + 1;
+    if (nextIndex >= queue.length) return;
+    setQueueIndex(nextIndex);
+    setQueueOpened(false);
+    openQueueDonor(nextIndex);
+  }
+
+  async function copyAllMessages() {
+    const text = readyDonors
+      .map((donor, index) => [
+        `${index + 1}. ${sponsorDisplayName(donor)}`,
+        buildPreviousDonorAppealMessage(donor),
+      ].join('\n'))
+      .join('\n\n------------------------------\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage(`Copied ${readyDonors.length} personalized messages.`);
+    } catch (copyError) {
+      setMessage('Automatic copy is blocked. Use the preview text from each donor card.');
+    }
+  }
+
+  return (
+    <section className="management-section mangalya-donors-section previous-donors-section">
+      <div className="section-heading">
+        <div>
+          <p>Previous Donors</p>
+          <h2>WhatsApp campaign for donor outreach</h2>
+        </div>
+        <button className="refresh-button compact" type="button" onClick={refresh} disabled={isRefreshing}>
+          <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
+          {isRefreshing ? 'Refreshing' : 'Refresh Donors'}
+        </button>
+      </div>
+
+      <div className="event-note">
+        <b>{status}</b>
+        <span>Previous-year history is used only for communication and is not included in 2026 financial reports.</span>
+      </div>
+      {error ? <div className="donor-warning">{error}</div> : null}
+
+      <div className="stats-grid donor-stats-grid">
+        <StatCard icon={UsersRound} label="Previous Donors" value={previousDonors.length} />
+        <StatCard icon={MessageCircle} label="WhatsApp Ready" value={readyDonors.length} tone="success" />
+        <StatCard icon={AlertTriangle} label="Missing Mobile" value={missingMobileDonors.length} tone="warning" />
+        <StatCard icon={IndianRupee} label="Visible Amount" value={formatCurrency(visibleDonors.reduce((sum, donor) => sum + previousDonationAmount(donor), 0))} />
+      </div>
+
+      <div className="donor-filter-strip previous-donor-filter-strip">
+        {PREVIOUS_DONOR_FILTERS.map((filter) => (
+          <button className={filterId === filter.id ? 'active' : ''} type="button" key={filter.id} onClick={() => setFilterId(filter.id)}>
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="controls sponsorship-controls previous-donor-controls">
+        <label className="search-field">
+          <Search size={17} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search donor, mobile, amount, year" />
+        </label>
+        <button className="refresh-button compact" type="button" onClick={prepareQueue}>
+          <MessageCircle size={16} /> Preview Campaign Queue
+        </button>
+        <button className="refresh-button compact secondary-action" type="button" onClick={copyAllMessages} disabled={!readyDonors.length}>
+          Copy All Messages
+        </button>
+      </div>
+
+      {missingMobileDonors.length ? (
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>Missing Mobile Numbers</p>
+            <strong>{missingMobileDonors.length} donors need contact updates</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {missingMobileDonors.map((donor) => (
+              <span key={donor.id}>{sponsorDisplayName(donor)} - {formatCurrency(previousDonationAmount(donor))}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {queue.length || queueStarted ? (
+        <div className="bulk-whatsapp-panel donor-bulk-panel">
+          <div className="bulk-preview">
+            <div className="bulk-preview-head">
+              <div>
+                <p>Previous Donors WhatsApp Queue</p>
+                <h3>Total count: {queue.length}</h3>
+              </div>
+              <button type="button" onClick={clearQueue}>Close</button>
+            </div>
+            {queue.length ? (
+              <>
+                <div className="bulk-preview-list donor-bulk-list">
+                  {queue.map((donor, index) => (
+                    <button className={index === queueIndex ? 'active' : ''} key={donor.id} onClick={() => { setQueueIndex(index); setQueueOpened(false); }} type="button">
+                      <strong>{sponsorDisplayName(donor)}</strong>
+                      <span>{formatCurrency(previousDonationAmount(donor))}</span>
+                      <span>{donor.contactNo}</span>
+                      <span>Ready</span>
+                    </button>
+                  ))}
+                </div>
+                {currentQueueDonor ? (
+                  <div className="donor-current-preview">
+                    <div><p>Current Message Preview</p><strong>{sponsorDisplayName(currentQueueDonor)} - {formatCurrency(previousDonationAmount(currentQueueDonor))}</strong></div>
+                    <textarea readOnly rows="10" value={buildPreviousDonorAppealMessage(currentQueueDonor)} />
+                  </div>
+                ) : null}
+                <div className="bulk-queue-controls">
+                  <span>{queueOpened ? 'Opened' : 'Ready'} {queueIndex + 1} of {queue.length}: {sponsorDisplayName(currentQueueDonor || {})}</span>
+                  <button type="button" onClick={openCurrentQueueDonor}>{queueOpened ? 'Reopen WhatsApp' : 'Open WhatsApp'}</button>
+                  <button type="button" onClick={openNextQueueDonor} disabled={!hasNextQueueDonor}>Next Message</button>
+                </div>
+              </>
+            ) : <p className="bulk-empty">No eligible previous donors found for this filter.</p>}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="participants-list donor-list">
+        {visibleDonors.length ? visibleDonors.map((donor) => {
+          const validation = mobileValidationStatus(donor.contactNo);
+          const isEditing = editingId === donor.id;
+          return (
+            <article className="donor-card sponsorship-card previous-donor-card" key={donor.id}>
+              <div className="participant-top">
+                <div>
+                  <p className="event-label">Previous Donor Campaign</p>
+                  <h3>{sponsorDisplayName(donor)}</h3>
+                  <p className="muted">{donor.contactNo || 'Mobile number missing'} - {validation.issue}</p>
+                </div>
+                <StatusPill tone={validation.status === 'ok' ? 'success' : 'warning'}>
+                  {validation.status === 'ok' ? 'WhatsApp Ready' : 'Missing Mobile'}
+                </StatusPill>
+              </div>
+
+              <div className="money-grid sponsorship-money-grid">
+                <span><small>Previous Donation</small><b>{formatCurrency(previousDonationAmount(donor))}</b></span>
+                <span><small>Year</small><b>{previousDonationYear(donor) || 'History'}</b></span>
+                <span><small>Mobile</small><b>{validation.status === 'ok' ? 'Ready' : 'Update Needed'}</b></span>
+              </div>
+
+              {isEditing ? (
+                <div className="donor-mobile-edit">
+                  <label><span>Contact Number</span><input value={mobileDraft} onChange={(event) => setMobileDraft(event.target.value)} /></label>
+                  <button type="button" onClick={() => saveMobile(donor)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save Mobile'}</button>
+                </div>
+              ) : null}
+
+              <pre className="donor-message-preview">{buildPreviousDonorAppealMessage(donor)}</pre>
+
+              <div className="donor-actions">
+                <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Open WhatsApp</button>
+                <button type="button" onClick={() => startEdit(donor)}>Edit Mobile</button>
+              </div>
+            </article>
+          );
+        }) : (
+          <div className="empty-state"><Gift size={28} /><p>No previous donors found for this filter.</p></div>
+        )}
+      </div>
+
+      {message ? <small className="donor-note">{message}</small> : null}
+      {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
+    </section>
+  );
+}
+
 function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 0 }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
   const requirements = requirementState?.requirements || [];
@@ -2603,6 +2925,10 @@ function App() {
             <Gift size={18} />
             <span>Sponsorship Management</span>
           </button>
+          <button className={activeView === 'previous-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('previous-donors')}>
+            <MessageCircle size={18} />
+            <span>Previous Donors</span>
+          </button>
         </aside>
 
         <div className="app-content">
@@ -2742,6 +3068,8 @@ function App() {
           {activeView === 'whatsapp-groups' ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
 
           {activeView === 'mangalya-donors' ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
+
+          {activeView === 'previous-donors' ? <PreviousDonorsCampaign donorState={donorState} /> : null}
 
           {activeView === 'shashtipoorthi' || activeView === 'bhimaratha' ? (
             <section className="management-section" id="participant-management-dashboard">
