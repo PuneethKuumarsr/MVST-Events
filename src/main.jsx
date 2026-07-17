@@ -44,43 +44,50 @@ const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
   bhimaratha: bhimarathaReceiptTemplate,
 };
-const RECEIPT_PREFIXES = { bhimaratha: 'BS26', shashtipoorthi: 'SP26' };
+const RECEIPT_PREFIXES = { bhimaratha: 'BS', shashtipoorthi: 'SP' };
+const LEGACY_RECEIPT_PREFIXES = { bhimaratha: 'BS26', shashtipoorthi: 'SP26' };
 const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const receiptLayouts = {
   shashtipoorthi: {
     receiptNo: [
-      { x: 95, y: 216, width: 74, height: 26 },
-      { x: 565, y: 242, width: 88, height: 28 },
+      { x: 77, y: 222, width: 96, height: 24 },
+      { x: 556, y: 249, width: 98, height: 24 },
     ],
     date: [
-      { x: 383, y: 217, width: 86, height: 22, baselineOffset: -3 },
-      { x: 1392, y: 258, width: 136, height: 25, baselineOffset: -3 },
+      { x: 388, y: 218, width: 95, height: 23, baselineOffset: -3 },
+      { x: 1408, y: 270, width: 122, height: 24, baselineOffset: -3 },
     ],
     coupleName: [
-      { x: 84, y: 243, width: 382, height: 40, lineOffset: -4 },
+      { x: 162, y: 258, width: 285, height: 62, lineOffset: 0, officeCopy: true },
       { x: 635, y: 310, width: 815, height: 43, lineOffset: -4 },
     ],
     seatNo: [
-      { x: 182, y: 398, width: 132, height: 24 },
-      { x: 942, y: 427, width: 205, height: 29 },
+      { x: 178, y: 389, width: 95, height: 25 },
+      { x: 1014, y: 433, width: 132, height: 28 },
+    ],
+    qrCode: [
+      { x: 1435, y: 85, width: 76, height: 76 },
     ],
   },
   bhimaratha: {
     receiptNo: [
-      { x: 95, y: 216, width: 74, height: 26 },
-      { x: 565, y: 242, width: 88, height: 28 },
+      { x: 77, y: 222, width: 96, height: 24 },
+      { x: 556, y: 249, width: 98, height: 24 },
     ],
     date: [
-      { x: 383, y: 217, width: 86, height: 22, baselineOffset: -3 },
-      { x: 1392, y: 258, width: 136, height: 25, baselineOffset: -3 },
+      { x: 388, y: 218, width: 95, height: 23, baselineOffset: -3 },
+      { x: 1408, y: 270, width: 122, height: 24, baselineOffset: -3 },
     ],
     coupleName: [
-      { x: 84, y: 243, width: 382, height: 40, lineOffset: -4 },
+      { x: 162, y: 258, width: 285, height: 62, lineOffset: 0, officeCopy: true },
       { x: 635, y: 310, width: 815, height: 43, lineOffset: -4 },
     ],
     seatNo: [
-      { x: 182, y: 398, width: 132, height: 24 },
-      { x: 942, y: 427, width: 205, height: 29 },
+      { x: 178, y: 389, width: 95, height: 25 },
+      { x: 1014, y: 433, width: 132, height: 28 },
+    ],
+    qrCode: [
+      { x: 1435, y: 85, width: 76, height: 76 },
     ],
   },
 };
@@ -532,7 +539,9 @@ function receiptPrefix(eventType) {
 function receiptNumberValue(receiptNo, eventType) {
   const raw = String(receiptNo || '').trim();
   const prefix = receiptPrefix(eventType);
-  const match = raw.match(new RegExp(`^${prefix}-(\\d{1,3})$`));
+  const legacyPrefix = LEGACY_RECEIPT_PREFIXES[eventType];
+  const prefixes = [prefix, legacyPrefix].filter(Boolean).join('|');
+  const match = raw.match(new RegExp(`^(?:${prefixes})-(\\d{1,3})$`));
   if (!match) return null;
   return Number(match[1]);
 }
@@ -642,6 +651,15 @@ function loadReceiptImage(src) {
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error('Unable to load receipt template'));
     image.src = src;
+  });
+}
+
+function loadDataUrlImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Unable to load generated QR code'));
+    image.src = dataUrl;
   });
 }
 
@@ -763,6 +781,7 @@ function cleanReceiptNamePart(value) {
 function receiptCoupleNameLines(ctx, participant, box) {
   const groomName = cleanReceiptNamePart(participant.groomName) || 'Groom';
   const brideName = cleanReceiptNamePart(participant.brideName);
+  if (box.officeCopy && brideName) return [`${groomName} &`, brideName];
   const singleLine = brideName ? `Sri. ${groomName} & Smt. ${brideName}` : `Sri. ${groomName}`;
   const family = 'Georgia, "Times New Roman", serif';
   const weight = 600;
@@ -806,16 +825,26 @@ async function generateReceiptJpg(participant, receiptNo) {
   if (!layout) throw new Error('Receipt layout is not configured for this event');
   const safeSeatNo = String(participant.seatNo || '').trim();
   const safeReceiptNo = normalizeReceiptNumber(receiptNo, participant.eventType);
+  const safeQrToken = String(participant.qrToken || '').trim();
+  if (!safeQrToken) {
+    throw new Error('Unable to save QR Token. Receipt generation stopped. Please retry.');
+  }
   const drawBoxes = (boxes, text, options) => boxes.forEach((box) => fitReceiptText(ctx, text, box, options));
   drawBoxes(layout.receiptNo, safeReceiptNo, { maxFont: 18, minFont: 10, align: 'center' });
-  drawBoxes(layout.date, receiptDate, { maxFont: 15, minFont: 9, align: 'center' });
-  drawBoxes(layout.seatNo, safeSeatNo, { maxFont: 23, minFont: 11, align: 'center' });
+  drawBoxes(layout.date, receiptDate, { maxFont: 18, minFont: 10, align: 'center' });
+  drawBoxes(layout.seatNo, safeSeatNo, { maxFont: 20, minFont: 11, align: 'center' });
+  if (safeQrToken && layout.qrCode) {
+    const qrImage = await loadDataUrlImage(await qrTokenToPng(safeQrToken));
+    layout.qrCode.forEach((box) => {
+      ctx.drawImage(qrImage, box.x, box.y, box.width, box.height);
+    });
+  }
   layout.coupleName.forEach((box) => {
     fitReceiptText(ctx, receiptCoupleNameLines(ctx, participant, box), box, {
-      maxFont: box.width > 500 ? 20 : 16,
+      maxFont: box.officeCopy ? 14 : box.width > 500 ? 20 : 16,
       minFont: 8,
-      align: 'center',
-      lineHeight: 1.14,
+      align: box.officeCopy ? 'left' : 'center',
+      lineHeight: box.officeCopy ? 1.85 : 1.14,
     });
   });
 

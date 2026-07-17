@@ -156,6 +156,10 @@ const EVENTS = {
   },
 };
 const RECEIPT_PREFIXES = {
+  bhimaratha: 'BS',
+  shashtipoorthi: 'SP',
+};
+const LEGACY_RECEIPT_PREFIXES = {
   bhimaratha: 'BS26',
   shashtipoorthi: 'SP26',
 };
@@ -303,7 +307,8 @@ function receiptPrefix(eventType) {
 
 function receiptNumericValue(receiptNo, eventType) {
   const raw = String(receiptNo || '').trim();
-  const match = raw.match(new RegExp(`^${receiptPrefix(eventType)}-(\\d{1,3})$`));
+  const prefixes = [receiptPrefix(eventType), LEGACY_RECEIPT_PREFIXES[eventType]].filter(Boolean).join('|');
+  const match = raw.match(new RegExp(`^(?:${prefixes})-(\\d{1,3})$`));
   return match ? Number(match[1]) : null;
 }
 
@@ -560,21 +565,50 @@ function missingDistributionColumns(rows) {
   return missingByEvent;
 }
 
-function qrTokenSecret() {
-  return process.env.QR_TOKEN_SECRET ||
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
-    process.env.BHIMARATHA_SHEET_ID ||
-    'mvst-events-local-qr-token';
-}
-
-function generateQrToken(row) {
-  const seed = `${row.eventType}:${row.rowNumber}`;
-  const digest = crypto.createHmac('sha256', qrTokenSecret()).update(seed).digest('base64url').slice(0, 24);
-  return `${QR_TOKEN_VERSION}:${digest}`;
+function generateQrToken() {
+  return `MVST_${crypto.randomBytes(15).toString('base64url')}`;
 }
 
 function rowQrToken(row) {
-  return String(row.qrToken || '').trim() || generateQrToken(row);
+  return String(row.qrToken || '').trim();
+}
+
+async function ensureStoredQrTokens(rows, sheets) {
+  const usedTokens = new Set(rows.map(rowQrToken).filter(Boolean));
+  const updatesBySpreadsheet = new Map();
+
+  for (const row of rows) {
+    if (rowQrToken(row)) continue;
+    const columnIndex = row.adminColumns?.qrToken;
+    if (columnIndex === null || columnIndex === undefined) continue;
+
+    let token = generateQrToken();
+    while (usedTokens.has(token)) token = generateQrToken();
+    usedTokens.add(token);
+    row.qrToken = token;
+
+    const source = sourceForEvent(row.eventType);
+    if (!source?.spreadsheetId) continue;
+    const data = updatesBySpreadsheet.get(source.spreadsheetId) || [];
+    data.push({
+      range: `'${getSheetName()}'!${columnLetter(columnIndex)}${row.rowNumber}`,
+      values: [[token]],
+    });
+    updatesBySpreadsheet.set(source.spreadsheetId, data);
+  }
+
+  for (const [spreadsheetId, data] of updatesBySpreadsheet.entries()) {
+    if (!data.length) continue;
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data,
+      },
+    });
+  }
+
+  return updatesBySpreadsheet.size > 0;
 }
 
 async function recordQrToken(row) {
@@ -1179,7 +1213,7 @@ async function loadFromGoogleApi() {
   const sheets = createSheetsClient();
   const range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE;
 
-  const results = await Promise.all(
+  const readRows = async () => Promise.all(
     SHEETS.map(async (source) => {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: source.spreadsheetId,
@@ -1189,7 +1223,13 @@ async function loadFromGoogleApi() {
     }),
   );
 
-  return { rows: results.flat(), source: 'google-api', writeEnabled: true };
+  const results = await readRows();
+  let rows = results.flat();
+  if (await ensureStoredQrTokens(rows, sheets)) {
+    rows = (await readRows()).flat();
+  }
+
+  return { rows, source: 'google-api', writeEnabled: true };
 }
 
 async function loadFromCsvFallback() {
