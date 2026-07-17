@@ -3885,6 +3885,7 @@ function useAuth() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   async function load() {
     setLoading(true);
@@ -3899,6 +3900,7 @@ function useAuth() {
 
   async function login({ mobile, pin }) {
     setError('');
+    setNotice('');
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3916,7 +3918,23 @@ function useAuth() {
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' }).catch(() => {});
+    setNotice('');
     setUser(null);
+  }
+
+  async function changePassword({ currentPassword, newPassword, confirmPassword }) {
+    setError('');
+    const response = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to change password');
+    setNotice(payload.message || 'Password changed successfully. Please login again.');
+    setUser(null);
+    return payload.message || 'Password changed successfully. Please login again.';
   }
 
   useEffect(() => {
@@ -3925,7 +3943,7 @@ function useAuth() {
     return () => clearInterval(interval);
   }, []);
 
-  return { user, loading, error, login, logout };
+  return { user, loading, error, notice, login, logout, changePassword };
 }
 
 function LoginPage({ auth }) {
@@ -3963,9 +3981,72 @@ function LoginPage({ auth }) {
           </div>
         </label>
         {auth.error ? <small>{auth.error}</small> : null}
+        {auth.notice ? <small className="success-message">{auth.notice}</small> : null}
         <button type="submit" disabled={submitting}>{submitting ? 'Logging in' : 'Login'}</button>
       </form>
     </main>
+  );
+}
+
+function ChangePasswordSection({ auth }) {
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setMessage('');
+    setError('');
+    if (!form.currentPassword) {
+      setError('Current password is required.');
+      return;
+    }
+    if (form.newPassword.length < 4) {
+      setError('New password must be at least 4 characters.');
+      return;
+    }
+    if (form.newPassword !== form.confirmPassword) {
+      setError('New password and confirm password must match.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const successMessage = await auth.changePassword(form);
+      setMessage(successMessage);
+    } catch (changeError) {
+      setError(changeError.message || 'Unable to change password.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="management-section">
+      <div className="section-heading">
+        <div>
+          <p>Change Password</p>
+          <h2>Update your own login password</h2>
+        </div>
+      </div>
+      <form className="admin-panel change-password-card" onSubmit={submit}>
+        <label>
+          <span>Current Password</span>
+          <input type="password" autoComplete="current-password" value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} />
+        </label>
+        <label>
+          <span>New Password</span>
+          <input type="password" autoComplete="new-password" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} />
+        </label>
+        <label>
+          <span>Confirm New Password</span>
+          <input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+        </label>
+        <button className="save-button" type="submit" disabled={saving}>{saving ? 'Changing Password' : 'Change Password'}</button>
+        {message ? <span className="save-message">{message}</span> : null}
+        {error ? <span className="save-message warning">{error}</span> : null}
+      </form>
+    </section>
   );
 }
 
@@ -4810,7 +4891,7 @@ function App({ auth }) {
   const [balanceModalFilter, setBalanceModalFilter] = useState('All');
 
   useEffect(() => {
-    if (isVolunteerRole && !['qr-distribution', 'shashtipoorthi', 'bhimaratha'].includes(activeView)) {
+    if (isVolunteerRole && !['qr-distribution', 'shashtipoorthi', 'bhimaratha', 'change-password'].includes(activeView)) {
       setActiveView('qr-distribution');
     }
   }, [isVolunteerRole, activeView]);
@@ -5264,6 +5345,10 @@ function App({ auth }) {
               </button>
             </>
           ) : null}
+          <button className={activeView === 'change-password' ? 'active' : ''} type="button" onClick={() => setActiveView('change-password')}>
+            <ShieldCheck size={18} />
+            <span>Change Password</span>
+          </button>
           <button type="button" onClick={auth.logout}>
             <X size={18} />
             <span>Logout</span>
@@ -5417,6 +5502,8 @@ function App({ auth }) {
           {activeView === 'mandali-details' && isPst ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
 
           {activeView === 'user-access' && isPst ? <UserAccessSection /> : null}
+
+          {activeView === 'change-password' ? <ChangePasswordSection auth={auth} /> : null}
 
           {balanceModalOpen && isPst ? (
             <BalanceReceivableModal

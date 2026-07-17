@@ -127,6 +127,10 @@ main {
   font-weight: 850;
 }
 
+.login-card small.success-message {
+  color: var(--green);
+}
+
 .hero-band {
   background:
     linear-gradient(135deg, rgba(75, 17, 24, 0.96), rgba(120, 31, 42, 0.91)),
@@ -933,6 +937,10 @@ main {
 
 .save-message.warning {
   color: var(--maroon);
+}
+
+.change-password-card {
+  max-width: 560px;
 }
 
 .readonly-panel {

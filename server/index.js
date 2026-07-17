@@ -727,6 +727,10 @@ function validatePin(pin) {
   return /^\d{4}$|^\d{6}$/.test(String(pin || ''));
 }
 
+function validatePassword(password) {
+  return String(password || '').length >= 4;
+}
+
 function hashPin(pin) {
   const salt = crypto.randomBytes(16).toString('base64url');
   const hash = crypto.scryptSync(String(pin), salt, 32).toString('base64url');
@@ -827,6 +831,29 @@ async function updateAuthUserRecord(id, updates) {
   });
   writeAuthUsers(nextUsers);
   return nextUsers.find((user) => user.id === id) || null;
+}
+
+async function changeOwnPassword(user, currentPassword, newPassword) {
+  const currentUser = await findAuthUserByMobile(user?.mobile);
+  if (!currentUser || !verifyPin(currentPassword, currentUser.passwordHash)) {
+    const error = new Error('Current password is incorrect.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!validatePassword(newPassword)) {
+    const error = new Error('New password must be at least 4 characters.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await updateAuthUserRecord(currentUser.id, { pin: newPassword });
+  if (isMongoConfigured()) {
+    await connectMongo();
+    await Session.deleteMany({ userId: currentUser.id });
+  } else {
+    for (const [sessionId, session] of sessions.entries()) {
+      if (session?.user?.id === currentUser.id) sessions.delete(sessionId);
+    }
+  }
 }
 
 async function updateLastLogin(userId, date) {
@@ -1934,7 +1961,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const mobile = normalizeMobileForAuth(req.body?.mobile);
     const pin = String(req.body?.pin || '');
-    if (!mobile || !validatePin(pin)) return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
+    if (!mobile || !validatePassword(pin)) return res.status(401).json({ ok: false, error: 'Invalid mobile number or PIN' });
 
     await ensureBootstrapUser();
     const user = await findAuthUserByMobile(mobile);
@@ -1948,6 +1975,22 @@ app.post('/api/auth/login', async (req, res) => {
     return res.json({ ok: true, user: sanitizeAuthUser({ ...user, lastLogin: new Date().toISOString() }), expiresInMs: duration });
   } catch {
     return res.status(500).json({ ok: false, error: 'Authentication unavailable' });
+  }
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+  const confirmPassword = String(req.body?.confirmPassword || '');
+  if (!currentPassword) return res.status(400).json({ ok: false, error: 'Current password is required.' });
+  if (!validatePassword(newPassword)) return res.status(400).json({ ok: false, error: 'New password must be at least 4 characters.' });
+  if (newPassword !== confirmPassword) return res.status(400).json({ ok: false, error: 'New password and confirm password must match.' });
+  try {
+    await changeOwnPassword(req.user, currentPassword, newPassword);
+    clearSessionCookie(res);
+    return res.json({ ok: true, message: 'Password changed successfully. Please login again.' });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to change password.' });
   }
 });
 
