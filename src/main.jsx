@@ -62,7 +62,7 @@ const receiptLayouts = {
     ],
     seatNo: [
       { x: 182, y: 398, width: 132, height: 24 },
-      { x: 1053, y: 438, width: 76, height: 24 },
+      { x: 942, y: 427, width: 205, height: 29 },
     ],
   },
   bhimaratha: {
@@ -80,7 +80,7 @@ const receiptLayouts = {
     ],
     seatNo: [
       { x: 182, y: 398, width: 132, height: 24 },
-      { x: 1053, y: 438, width: 76, height: 24 },
+      { x: 942, y: 427, width: 205, height: 29 },
     ],
   },
 };
