@@ -300,7 +300,7 @@ assert.ok(frontend.includes('3. Payment + Receipt'), 'Sponsor cards must support
 assert.ok(frontend.includes('4. Post-Event Thanks'), 'Sponsor cards must support post-event thank-you WhatsApp messages');
 assert.ok(frontend.includes('Preview All WhatsApp Messages'), 'Sponsorship dashboard must include a preview-all WhatsApp queue');
 assert.ok(frontend.includes('Current Message Preview'), 'Sponsorship dashboard must preview the selected bulk WhatsApp message');
-assert.ok(frontend.includes('Next WhatsApp'), 'Sponsorship dashboard must open sponsor WhatsApp messages one by one');
+assert.ok(frontend.includes('Open Current'), 'Sponsorship dashboard must open the current sponsor without requiring a separate Mark Sent click');
 assert.ok(backend.includes('SPONSORSHIP_REQUIREMENTS_RANGE'), 'Backend must support Sponsorship Requirements master range');
 assert.ok(backend.includes('normalizeRequirementRows'), 'Backend must normalize Sponsorship Requirements rows');
 assert.ok(backend.includes('canonicalCategory'), 'Backend must normalize canonical category aliases');
@@ -978,6 +978,15 @@ assert.ok(frontend.includes('/api/mandali-contacts'), 'Mandali Details must load
 assert.ok(frontend.includes('Presidents + Secretaries'), 'Mandali bulk generator must default to Presidents + Secretaries option');
 assert.ok(frontend.includes('Representatives only'), 'Mandali bulk generator must keep representatives selectable separately');
 assert.ok(frontend.includes('Community Leaders Meeting – 19 July 2026'), 'Mandali campaign must use the meeting campaign name');
+assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
+assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
+assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');
+assert.ok(frontend.includes("recordQueueStatus(contact, 'Sent'"), 'Mandali queue must save Sent status when WhatsApp opens');
+assert.ok(frontend.includes("recordQueueStatus(currentContact, 'Skipped'"), 'Mandali queue must save Skipped status');
+assert.ok(frontend.includes("recordPreviousDonorStatus(donor, 'Sent'"), 'Previous donor queue must save Sent status when WhatsApp opens');
+assert.ok(frontend.includes("recordPreviousDonorStatus(currentQueueDonor, 'Skipped'"), 'Previous donor queue must save Skipped status');
+assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
+assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');
 assert.ok(backend.includes('MANDALI_CONTACTS_CSV'), 'Backend must read Mandali contacts from private CSV path');
 assert.ok(backend.includes("role: 'Representative'"), 'Backend must import representative details as Representative');

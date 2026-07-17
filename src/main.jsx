@@ -1504,6 +1504,48 @@ function deliveryDateStamp() {
   });
 }
 
+function queueAuditStamp(user) {
+  const now = new Date();
+  return {
+    date: now.toLocaleDateString('en-IN'),
+    time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    at: now.toISOString(),
+    user: user?.name || user?.mobile || 'PST',
+  };
+}
+
+function queueStatusKey(campaignName) {
+  return `mvst:whatsapp-queue:${campaignName}`;
+}
+
+function readQueueStatus(campaignName) {
+  try {
+    return JSON.parse(sessionStorage.getItem(queueStatusKey(campaignName)) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeQueueStatus(campaignName, recipientId, entry) {
+  const current = readQueueStatus(campaignName);
+  const next = { ...current, [recipientId]: entry };
+  sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(next));
+  return next;
+}
+
+function queueCounts(queue, statusMap) {
+  const total = queue.length;
+  const sent = queue.filter((item) => statusMap[item.id]?.status === 'Sent').length;
+  const skipped = queue.filter((item) => statusMap[item.id]?.status === 'Skipped').length;
+  const failed = queue.filter((item) => statusMap[item.id]?.status === 'Failed').length;
+  return { total, sent, skipped, failed, remaining: Math.max(total - sent - skipped - failed, 0) };
+}
+
+function firstPendingQueueIndex(queue, statusMap) {
+  const index = queue.findIndex((item) => !['Sent', 'Skipped'].includes(statusMap[item.id]?.status));
+  return index >= 0 ? index : 0;
+}
+
 function sponsorCategory(sponsor) {
   return sponsor.category || sponsor.canonicalCategory || 'Sponsorship';
 }
@@ -2858,16 +2900,15 @@ const MANDALI_RECIPIENT_FILTERS = [
   { id: 'all', label: 'All contacts', test: () => true },
 ];
 
-function MandaliDetailsSection({ mandaliState }) {
+function MandaliDetailsSection({ mandaliState, user }) {
   const { contacts, status, error, isRefreshing, refresh } = mandaliState;
+  const campaignName = 'Community Leaders Meeting – 19 July 2026';
   const [filterId, setFilterId] = useState('presidents-secretaries');
   const [query, setQuery] = useState('');
   const [queue, setQueue] = useState([]);
   const [queueStarted, setQueueStarted] = useState(false);
   const [queueIndex, setQueueIndex] = useState(0);
-  const [opened, setOpened] = useState(false);
-  const [sentCount, setSentCount] = useState(0);
-  const [skippedCount, setSkippedCount] = useState(0);
+  const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const [message, setMessage] = useState('');
   const selectedFilter = MANDALI_RECIPIENT_FILTERS.find((filter) => filter.id === filterId) || MANDALI_RECIPIENT_FILTERS[0];
   const visibleContacts = useMemo(() => {
@@ -2884,6 +2925,8 @@ function MandaliDetailsSection({ mandaliState }) {
   }, [contacts, query, selectedFilter]);
   const readyContacts = visibleContacts.filter((contact) => contact.validWhatsApp && !contact.duplicateMobile);
   const currentContact = queue[queueIndex];
+  const progress = queueCounts(queue, statusMap);
+  const retryContacts = queue.filter((contact) => ['Skipped', 'Failed'].includes(statusMap[contact.id]?.status));
   const summary = useMemo(() => ({
     mandalis: new Set(contacts.map((contact) => `${contact.slNo}-${contact.mandali}`)).size,
     total: contacts.length,
@@ -2896,22 +2939,72 @@ function MandaliDetailsSection({ mandaliState }) {
   }), [contacts]);
 
   function prepareQueue() {
+    const latestStatus = readQueueStatus(campaignName);
+    setStatusMap(latestStatus);
     setQueue(readyContacts);
     setQueueStarted(false);
-    setQueueIndex(0);
-    setOpened(false);
-    setSentCount(0);
-    setSkippedCount(0);
-    setMessage(readyContacts.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready contacts for this filter.');
+    setQueueIndex(firstPendingQueueIndex(readyContacts, latestStatus));
+    setMessage(readyContacts.length ? 'Campaign preview ready. Open WhatsApp to mark sent and advance automatically.' : 'No WhatsApp-ready contacts for this filter.');
+  }
+
+  function recordQueueStatus(contact, status, remarks = '') {
+    const stamp = queueAuditStamp(user);
+    const nextStatus = writeQueueStatus(campaignName, contact.id, {
+      campaign: campaignName,
+      recipient: contact.name,
+      status,
+      date: stamp.date,
+      time: stamp.time,
+      at: stamp.at,
+      user: stamp.user,
+      remarks,
+    });
+    setStatusMap(nextStatus);
+    return nextStatus;
+  }
+
+  function advanceToNextPending(nextStatusMap, startIndex = queueIndex + 1) {
+    const nextIndex = queue.findIndex((contact, index) => index >= startIndex && !['Sent', 'Skipped'].includes(nextStatusMap[contact.id]?.status));
+    if (nextIndex >= 0) {
+      setQueueIndex(nextIndex);
+      return;
+    }
+    setMessage('Mandali WhatsApp queue completed.');
+  }
+
+  function failContact(contact, reason) {
+    const nextStatus = recordQueueStatus(contact, 'Failed', reason);
+    setMessage(reason);
+    setQueueStarted(true);
+    setStatusMap(nextStatus);
   }
 
   function openContact(index) {
     const contact = queue[index];
-    if (!contact?.validWhatsApp || contact.duplicateMobile) return;
-    window.open(makeMandaliWhatsAppUrl(contact), '_blank', 'noopener,noreferrer');
+    if (!contact) return;
+    if (!contact.validWhatsApp) {
+      failContact(contact, 'Invalid or missing WhatsApp mobile.');
+      return;
+    }
+    if (contact.duplicateMobile) {
+      failContact(contact, 'Duplicate mobile number. Review before sending.');
+      return;
+    }
+    let url = '';
+    try {
+      const personalizedMessage = buildMandaliInvitationMessage(contact);
+      if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
+      url = makeMandaliWhatsAppUrl(contact);
+      if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
+    } catch (error) {
+      failContact(contact, error.message || 'WhatsApp message validation failed.');
+      return;
+    }
+    const nextStatus = recordQueueStatus(contact, 'Sent', 'Opened WhatsApp for manual sending.');
+    window.open(url, '_blank', 'noopener,noreferrer');
     setQueueStarted(true);
-    setOpened(true);
-    setMessage('');
+    setMessage('Marked Sent and opened WhatsApp. Queue advanced to the next pending recipient.');
+    advanceToNextPending(nextStatus, index + 1);
   }
 
   function openCurrent() {
@@ -2919,18 +3012,22 @@ function MandaliDetailsSection({ mandaliState }) {
     openContact(queueIndex);
   }
 
-  function advanceQueue(type) {
-    if (type === 'sent') setSentCount((count) => count + 1);
-    if (type === 'skip') setSkippedCount((count) => count + 1);
-    const nextIndex = queueIndex + 1;
-    if (nextIndex >= queue.length) {
-      setMessage('Mandali WhatsApp queue completed.');
-      setOpened(false);
-      return;
-    }
-    setQueueIndex(nextIndex);
-    setOpened(false);
-    setMessage(type === 'sent' ? 'Marked sent. Open the next contact when ready.' : 'Skipped. Open the next contact when ready.');
+  function skipCurrent() {
+    if (!currentContact) return;
+    const nextStatus = recordQueueStatus(currentContact, 'Skipped', 'Skipped by operator.');
+    setQueueStarted(true);
+    setMessage('Skipped. Queue advanced to the next pending recipient.');
+    advanceToNextPending(nextStatus);
+  }
+
+  function retryContact(contact) {
+    const nextStatus = { ...statusMap };
+    delete nextStatus[contact.id];
+    sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(nextStatus));
+    setStatusMap(nextStatus);
+    const index = queue.findIndex((item) => item.id === contact.id);
+    if (index >= 0) setQueueIndex(index);
+    setMessage('Retry ready. Open WhatsApp when ready.');
   }
 
   async function copyCurrentMessage() {
@@ -2989,10 +3086,10 @@ function MandaliDetailsSection({ mandaliState }) {
           <div className="bulk-preview">
             <div className="bulk-preview-head">
               <div>
-                <p>Community Leaders Meeting – 19 July 2026</p>
-                <h3>{queueIndex + 1} of {queue.length} · Sent {sentCount} · Skipped {skippedCount}</h3>
+                <p>{campaignName}</p>
+                <h3>{progress.total} Total · {progress.sent} Sent · {progress.skipped} Skipped · {progress.failed} Failed · {progress.remaining} Remaining</h3>
               </div>
-              <button type="button" onClick={() => { setQueue([]); setQueueStarted(false); setOpened(false); }}>Clear</button>
+              <button type="button" onClick={() => { setQueue([]); setQueueStarted(false); }}>Clear</button>
             </div>
             {currentContact ? (
               <div className="donor-current-preview">
@@ -3001,11 +3098,18 @@ function MandaliDetailsSection({ mandaliState }) {
               </div>
             ) : null}
             <div className="bulk-queue-controls">
-              <button type="button" onClick={openCurrent}>{opened ? 'Reopen WhatsApp' : 'Open WhatsApp'}</button>
-              <button type="button" onClick={() => advanceQueue('sent')} disabled={!queueStarted}>Mark Sent</button>
-              <button type="button" onClick={() => advanceQueue('skip')}>Skip</button>
+              <button type="button" onClick={openCurrent}>Open WhatsApp</button>
+              <button type="button" onClick={skipCurrent}>Skip</button>
               <button type="button" onClick={copyCurrentMessage}>Copy Message</button>
             </div>
+            {retryContacts.length ? (
+              <div className="receipt-skipped-list">
+                <strong>Skipped / Failed</strong>
+                {retryContacts.slice(0, 8).map((contact) => (
+                  <span key={`retry-${contact.id}`}>{contact.name} - {statusMap[contact.id]?.status} <button type="button" onClick={() => retryContact(contact)}>Retry</button></span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {message ? <small>{message}</small> : null}
@@ -3035,6 +3139,7 @@ function MandaliDetailsSection({ mandaliState }) {
 
 function PreviousDonorsCampaign({ donorState }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const campaignName = 'Previous Donors Campaign 2026';
   const [filterId, setFilterId] = useState('all');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState('');
@@ -3045,6 +3150,7 @@ function PreviousDonorsCampaign({ donorState }) {
   const [queueStarted, setQueueStarted] = useState(false);
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueOpened, setQueueOpened] = useState(false);
+  const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const previousDonors = useMemo(() => donors.filter(isPreviousDonor), [donors]);
   const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
 
@@ -3064,7 +3170,7 @@ function PreviousDonorsCampaign({ donorState }) {
 
   const readyDonors = useMemo(() => visibleDonors.filter(donorMobileIsValid), [visibleDonors]);
   const currentQueueDonor = queue[queueIndex];
-  const hasNextQueueDonor = queueStarted && queueIndex < queue.length - 1;
+  const previousDonorProgress = queueCounts(queue, statusMap);
 
   function startEdit(donor) {
     setEditingId(donor.id);
@@ -3095,9 +3201,11 @@ function PreviousDonorsCampaign({ donorState }) {
   }
 
   function prepareQueue() {
+    const latestStatus = readQueueStatus(campaignName);
+    setStatusMap(latestStatus);
     setQueue(readyDonors);
     setQueueStarted(false);
-    setQueueIndex(0);
+    setQueueIndex(firstPendingQueueIndex(readyDonors, latestStatus));
     setQueueOpened(false);
     setMessage(readyDonors.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready previous donors for this filter.');
   }
@@ -3110,13 +3218,51 @@ function PreviousDonorsCampaign({ donorState }) {
     setMessage('');
   }
 
+  function recordPreviousDonorStatus(donor, statusValue, remarks = '') {
+    const stamp = queueAuditStamp();
+    const nextStatus = writeQueueStatus(campaignName, donor.id, {
+      campaign: campaignName,
+      recipient: sponsorDisplayName(donor),
+      status: statusValue,
+      date: stamp.date,
+      time: stamp.time,
+      at: stamp.at,
+      user: stamp.user,
+      remarks,
+    });
+    setStatusMap(nextStatus);
+    return nextStatus;
+  }
+
+  function advancePreviousDonorQueue(nextStatusMap, startIndex = queueIndex + 1) {
+    const nextIndex = queue.findIndex((donor, index) => index >= startIndex && !['Sent', 'Skipped'].includes(nextStatusMap[donor.id]?.status));
+    if (nextIndex >= 0) {
+      setQueueIndex(nextIndex);
+      setQueueOpened(false);
+    } else {
+      setMessage('Previous Donors WhatsApp queue completed.');
+      setQueueOpened(false);
+    }
+  }
+
   function openQueueDonor(index) {
     const donor = queue[index];
     if (!donor) return;
-    openDonorWhatsApp(donor);
+    try {
+      if (!donorMobileIsValid(donor)) throw new Error('Invalid or missing WhatsApp mobile.');
+      const personalizedMessage = buildPreviousDonorAppealMessage(donor);
+      if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
+      const url = makePreviousDonorWhatsAppUrl(donor);
+      if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
+      const nextStatus = recordPreviousDonorStatus(donor, 'Sent', 'Opened WhatsApp for manual sending.');
+      window.open(url, '_blank', 'noopener,noreferrer');
+      advancePreviousDonorQueue(nextStatus, index + 1);
+    } catch (openError) {
+      recordPreviousDonorStatus(donor, 'Failed', openError.message || 'WhatsApp validation failed.');
+      setMessage(openError.message || 'WhatsApp validation failed.');
+    }
     setQueueStarted(true);
     setQueueOpened(true);
-    setMessage('');
   }
 
   function openCurrentQueueDonor() {
@@ -3124,12 +3270,11 @@ function PreviousDonorsCampaign({ donorState }) {
     openQueueDonor(queueIndex);
   }
 
-  function openNextQueueDonor() {
-    const nextIndex = queueIndex + 1;
-    if (nextIndex >= queue.length) return;
-    setQueueIndex(nextIndex);
-    setQueueOpened(false);
-    openQueueDonor(nextIndex);
+  function skipQueueDonor() {
+    if (!currentQueueDonor) return;
+    const nextStatus = recordPreviousDonorStatus(currentQueueDonor, 'Skipped', 'Skipped by operator.');
+    setQueueStarted(true);
+    advancePreviousDonorQueue(nextStatus);
   }
 
   async function copyAllMessages() {
@@ -3214,7 +3359,7 @@ function PreviousDonorsCampaign({ donorState }) {
             <div className="bulk-preview-head">
               <div>
                 <p>Previous Donors WhatsApp Queue</p>
-                <h3>Total count: {queue.length}</h3>
+                <h3>{previousDonorProgress.total} Total · {previousDonorProgress.sent} Sent · {previousDonorProgress.skipped} Skipped · {previousDonorProgress.failed} Failed · {previousDonorProgress.remaining} Remaining</h3>
               </div>
               <button type="button" onClick={clearQueue}>Close</button>
             </div>
@@ -3237,9 +3382,9 @@ function PreviousDonorsCampaign({ donorState }) {
                   </div>
                 ) : null}
                 <div className="bulk-queue-controls">
-                  <span>{queueOpened ? 'Opened' : 'Ready'} {queueIndex + 1} of {queue.length}: {sponsorDisplayName(currentQueueDonor || {})}</span>
-                  <button type="button" onClick={openCurrentQueueDonor}>{queueOpened ? 'Reopen WhatsApp' : 'Open WhatsApp'}</button>
-                  <button type="button" onClick={openNextQueueDonor} disabled={!hasNextQueueDonor}>Next Message</button>
+                  <span>Current {queueIndex + 1} of {queue.length}: {sponsorDisplayName(currentQueueDonor || {})}</span>
+                  <button type="button" onClick={openCurrentQueueDonor}>Open WhatsApp</button>
+                  <button type="button" onClick={skipQueueDonor}>Skip</button>
                 </div>
               </>
             ) : <p className="bulk-empty">No eligible previous donors found for this filter.</p>}
@@ -3426,14 +3571,38 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     setBulkOpened(false);
   }
 
-  function openBulkDonor(index) {
+  async function openBulkDonor(index) {
     const donor = bulkQueue[index];
     if (!donor) return;
+    if (!writeEnabled) {
+      setBulkMessage('Read-only mode. Status was not changed.');
+      return;
+    }
     setBulkMessage('');
-    console.debug('[MVST Mangalya sponsorship WhatsApp decoded message]', buildMangalyaDonorAppealMessage(donor));
-    window.open(makeMangalyaDonorWhatsAppUrl(donor), '_blank', 'noopener,noreferrer');
-    setBulkStarted(true);
-    setBulkOpened(true);
+    setSavingBulk(true);
+    try {
+      if (!donorMobileIsValid(donor)) throw new Error('Invalid or missing WhatsApp mobile.');
+      const personalizedMessage = buildMangalyaDonorAppealMessage(donor);
+      if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
+      const url = makeMangalyaDonorWhatsAppUrl(donor);
+      if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
+      await saveDonor(donor.id, donorJourneySentUpdates('appeal'));
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setBulkStarted(true);
+      setBulkOpened(true);
+      const nextIndex = index + 1;
+      if (nextIndex < bulkQueue.length) {
+        setBulkIndex(nextIndex);
+        setBulkOpened(false);
+        setBulkMessage('Marked sent and opened WhatsApp. Queue advanced to the next sponsor.');
+      } else {
+        setBulkMessage('Sponsorship WhatsApp queue completed.');
+      }
+    } catch (saveError) {
+      setBulkMessage(saveError.message || 'Unable to open WhatsApp and save sent status');
+    } finally {
+      setSavingBulk(false);
+    }
   }
 
   function openCurrentBulkDonor() {
@@ -3442,25 +3611,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   }
 
   function openNextBulkDonor() {
-    const nextIndex = bulkIndex + 1;
-    if (nextIndex >= bulkQueue.length) return;
-    setBulkIndex(nextIndex);
-    setBulkOpened(false);
-    openBulkDonor(nextIndex);
-  }
-
-  async function markBulkDonorAsSent() {
-    if (!writeEnabled || !currentBulkDonor?.id) return;
-    setSavingBulk(true);
-    setBulkMessage('');
-    try {
-      await saveDonor(currentBulkDonor.id, donorJourneySentUpdates('appeal'));
-      setBulkMessage('Saved to Google Sheet');
-    } catch (saveError) {
-      setBulkMessage(saveError.message || 'Unable to mark as sent');
-    } finally {
-      setSavingBulk(false);
-    }
+    if (!bulkQueue[bulkIndex]) return;
+    openBulkDonor(bulkIndex);
   }
 
   return (
@@ -3658,9 +3810,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
                 ) : null}
                 <div className="bulk-queue-controls">
                   <span>{bulkOpened ? 'Opened' : 'Ready'} {bulkIndex + 1} of {bulkQueue.length}: {sponsorDisplayName(currentBulkDonor || {})}</span>
-                  <button type="button" onClick={openCurrentBulkDonor}>{bulkOpened ? 'Reopen WhatsApp' : 'Open WhatsApp'}</button>
-                  <button type="button" onClick={markBulkDonorAsSent} disabled={!writeEnabled || savingBulk || !bulkOpened}>{savingBulk ? 'Saving' : 'Mark WhatsApp Sent'}</button>
-                  <button type="button" onClick={openNextBulkDonor} disabled={!hasNextBulkDonor}>Next WhatsApp</button>
+                  <button type="button" onClick={openCurrentBulkDonor} disabled={!writeEnabled || savingBulk}>{savingBulk ? 'Saving' : 'Open WhatsApp'}</button>
+                  <button type="button" onClick={openNextBulkDonor} disabled={!currentBulkDonor || savingBulk}>Open Current</button>
                   {bulkMessage ? <small>{bulkMessage}</small> : null}
                 </div>
               </>
@@ -4775,12 +4926,42 @@ function App({ auth }) {
     setBulkSentMessage('');
   }
 
-  function openBulkItem(index) {
+  async function openBulkItem(index) {
     const item = bulkQueue[index];
     if (!item) return;
+    if (!writeEnabled || !item.participant?.id || !['welcome', 'payment'].includes(bulkQueueType)) {
+      setBulkSentMessage('Read-only mode. Status was not changed.');
+      return;
+    }
     setBulkSentMessage('');
-    const url = debugWhatsAppMessage(item.participant, item.messageKind);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    setMarkingBulkSent(true);
+    try {
+      const mobileStatus = mobileValidationStatus(item.participant.mobileNumber);
+      if (mobileStatus.status !== 'ok') throw new Error(mobileStatus.issue || 'Invalid mobile number.');
+      const messageText = makeWhatsAppMessage(item.participant, item.messageKind);
+      if (!String(messageText || '').trim()) throw new Error('Personalized message generation failed.');
+      const url = makeWhatsAppUrl(item.participant, item.messageKind);
+      if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
+      const sentDate = deliveryDateStamp();
+      const updates =
+        bulkQueueType === 'welcome'
+          ? { welcomeSent: true, welcomeSentDate: sentDate }
+          : { paymentSent: true, paymentSentDate: sentDate };
+      await saveRegistration(item.participant.id, updates);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setBulkQueueStarted(true);
+      const nextIndex = index + 1;
+      if (nextIndex < bulkQueue.length) {
+        setBulkQueueIndex(nextIndex);
+        setBulkSentMessage('Marked sent and opened WhatsApp. Queue advanced to the next participant.');
+      } else {
+        setBulkSentMessage('Bulk WhatsApp queue completed.');
+      }
+    } catch (error) {
+      setBulkSentMessage(error.message || 'Unable to open WhatsApp and save sent status');
+    } finally {
+      setMarkingBulkSent(false);
+    }
   }
 
   function confirmBulkQueue() {
@@ -4791,29 +4972,8 @@ function App({ auth }) {
   }
 
   function openNextBulkMessage() {
-    const nextIndex = bulkQueueIndex + 1;
-    if (nextIndex >= bulkQueue.length) return;
-    setBulkQueueIndex(nextIndex);
-    openBulkItem(nextIndex);
-  }
-
-  async function markCurrentBulkMessageAsSent() {
-    if (!writeEnabled || !currentBulkItem?.participant?.id || !['welcome', 'payment'].includes(bulkQueueType)) return;
-    setMarkingBulkSent(true);
-    setBulkSentMessage('');
-    const sentDate = deliveryDateStamp();
-    const updates =
-      bulkQueueType === 'welcome'
-        ? { welcomeSent: true, welcomeSentDate: sentDate }
-        : { paymentSent: true, paymentSentDate: sentDate };
-    try {
-      await saveRegistration(currentBulkItem.participant.id, updates);
-      setBulkSentMessage('Saved to Google Sheet');
-    } catch (error) {
-      setBulkSentMessage(error.message || 'Unable to save sent status');
-    } finally {
-      setMarkingBulkSent(false);
-    }
+    if (!bulkQueue[bulkQueueIndex]) return;
+    openBulkItem(bulkQueueIndex);
   }
 
   function goToNewRegistrations() {
@@ -5251,7 +5411,7 @@ function App({ auth }) {
 
           {activeView === 'previous-donors' && isPst ? <PreviousDonorsCampaign donorState={donorState} /> : null}
 
-          {activeView === 'mandali-details' && isPst ? <MandaliDetailsSection mandaliState={mandaliState} /> : null}
+          {activeView === 'mandali-details' && isPst ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
 
           {activeView === 'user-access' && isPst ? <UserAccessSection /> : null}
 
@@ -5488,13 +5648,10 @@ function App({ auth }) {
                     ) : (
                       <>
                         <span>
-                          Opened {bulkQueueIndex + 1} of {bulkQueue.length}: {currentBulkItem?.name}
+                          Current {bulkQueueIndex + 1} of {bulkQueue.length}: {currentBulkItem?.name}
                         </span>
-                        <button type="button" onClick={markCurrentBulkMessageAsSent} disabled={!writeEnabled || markingBulkSent}>
-                          {markingBulkSent ? 'Saving' : 'Mark as Sent'}
-                        </button>
-                        <button type="button" onClick={openNextBulkMessage} disabled={!hasNextBulkItem}>
-                          Next Message
+                        <button type="button" onClick={openNextBulkMessage} disabled={!currentBulkItem || markingBulkSent}>
+                          {markingBulkSent ? 'Saving' : 'Open WhatsApp'}
                         </button>
                         {bulkSentMessage ? <small>{bulkSentMessage}</small> : null}
                         {!writeEnabled ? <small>Read-only mode</small> : null}
