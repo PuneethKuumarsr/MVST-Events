@@ -683,6 +683,16 @@ function sanitizeAuthUser(user) {
     role: user.role,
     active: user.active !== false,
     lastLogin: user.lastLogin || '',
+    mustChangePassword: Boolean(user.mustChangePassword),
+    passwordChangedAt: user.passwordChangedAt || '',
+    passwordAudit: Array.isArray(user.passwordAudit)
+      ? user.passwordAudit.map((entry) => ({
+        action: entry.action || '',
+        changedBy: entry.changedBy || '',
+        changedByName: entry.changedByName || '',
+        at: entry.at || '',
+      }))
+      : [],
   };
 }
 
@@ -711,6 +721,9 @@ function normalizeAuthRecord(user) {
     active: user.active !== false,
     passwordHash: user.pinHash || user.passwordHash || '',
     lastLogin: user.lastLogin ? new Date(user.lastLogin).toISOString() : '',
+    mustChangePassword: Boolean(user.mustChangePassword),
+    passwordChangedAt: user.passwordChangedAt ? new Date(user.passwordChangedAt).toISOString() : '',
+    passwordAudit: Array.isArray(user.passwordAudit) ? user.passwordAudit : [],
   };
 }
 
@@ -785,6 +798,14 @@ async function createAuthUserRecord({ name, mobile, role, pin }) {
     active: true,
     passwordHash: hashPin(pin),
     lastLogin: '',
+    mustChangePassword: true,
+    passwordChangedAt: '',
+    passwordAudit: [{
+      action: 'Created temporary password',
+      changedBy: 'system',
+      changedByName: 'System',
+      at: new Date().toISOString(),
+    }],
   };
   if (isMongoConfigured()) {
     await connectMongo();
@@ -794,6 +815,8 @@ async function createAuthUserRecord({ name, mobile, role, pin }) {
       role: storageRole(record.role),
       active: true,
       pinHash: record.passwordHash,
+      mustChangePassword: true,
+      passwordAudit: record.passwordAudit,
     });
     return normalizeAuthRecord(user.toObject());
   }
@@ -815,8 +838,16 @@ async function updateAuthUserRecord(id, updates) {
     if (updates.name !== undefined) patch.name = String(updates.name || '').trim();
     if (updates.role !== undefined) patch.role = storageRole(updates.role);
     if (updates.active !== undefined) patch.active = Boolean(updates.active);
-    if (updates.pin !== undefined) patch.pinHash = hashPin(updates.pin);
-    const user = await User.findByIdAndUpdate(id, patch, { new: true }).lean();
+    if (updates.pin !== undefined) {
+      patch.pinHash = hashPin(updates.pin);
+      patch.passwordChangedAt = new Date();
+      if (updates.mustChangePassword !== undefined) patch.mustChangePassword = Boolean(updates.mustChangePassword);
+    } else if (updates.mustChangePassword !== undefined) {
+      patch.mustChangePassword = Boolean(updates.mustChangePassword);
+    }
+    const push = updates.passwordAudit ? { passwordAudit: updates.passwordAudit } : undefined;
+    const update = push ? { $set: patch, $push: push } : { $set: patch };
+    const user = await User.findByIdAndUpdate(id, update, { new: true }).lean();
     return normalizeAuthRecord(user);
   }
   const users = readAuthUsers().map(normalizeAuthRecord);
@@ -826,11 +857,27 @@ async function updateAuthUserRecord(id, updates) {
     if (updates.name !== undefined) next.name = String(updates.name || '').trim();
     if (updates.role !== undefined) next.role = normalizeRole(updates.role);
     if (updates.active !== undefined) next.active = Boolean(updates.active);
-    if (updates.pin !== undefined) next.passwordHash = hashPin(updates.pin);
+    if (updates.pin !== undefined) {
+      next.passwordHash = hashPin(updates.pin);
+      next.passwordChangedAt = new Date().toISOString();
+      if (updates.mustChangePassword !== undefined) next.mustChangePassword = Boolean(updates.mustChangePassword);
+    } else if (updates.mustChangePassword !== undefined) {
+      next.mustChangePassword = Boolean(updates.mustChangePassword);
+    }
+    if (updates.passwordAudit) next.passwordAudit = [...(next.passwordAudit || []), updates.passwordAudit];
     return next;
   });
   writeAuthUsers(nextUsers);
   return nextUsers.find((user) => user.id === id) || null;
+}
+
+function passwordAuditEntry(action, changedBy) {
+  return {
+    action,
+    changedBy: changedBy?.id || 'system',
+    changedByName: changedBy?.name || 'System',
+    at: new Date().toISOString(),
+  };
 }
 
 async function changeOwnPassword(user, currentPassword, newPassword) {
@@ -845,7 +892,11 @@ async function changeOwnPassword(user, currentPassword, newPassword) {
     error.statusCode = 400;
     throw error;
   }
-  await updateAuthUserRecord(currentUser.id, { pin: newPassword });
+  await updateAuthUserRecord(currentUser.id, {
+    pin: newPassword,
+    mustChangePassword: false,
+    passwordAudit: passwordAuditEntry('User changed own password', currentUser),
+  });
   if (isMongoConfigured()) {
     await connectMongo();
     await Session.deleteMany({ userId: currentUser.id });
@@ -854,6 +905,33 @@ async function changeOwnPassword(user, currentPassword, newPassword) {
       if (session?.user?.id === currentUser.id) sessions.delete(sessionId);
     }
   }
+}
+
+async function resetUserPassword(targetUserId, newPassword, changedBy) {
+  if (!validatePassword(newPassword)) {
+    const error = new Error('New password must be at least 4 characters.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const user = await updateAuthUserRecord(targetUserId, {
+    pin: newPassword,
+    mustChangePassword: true,
+    passwordAudit: passwordAuditEntry('PST reset password', changedBy),
+  });
+  if (!user) {
+    const error = new Error('User not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (isMongoConfigured()) {
+    await connectMongo();
+    await Session.deleteMany({ userId: user.id });
+  } else {
+    for (const [sessionId, session] of sessions.entries()) {
+      if (session?.user?.id === user.id) sessions.delete(sessionId);
+    }
+  }
+  return user;
 }
 
 async function updateLastLogin(userId, date) {
@@ -2027,13 +2105,27 @@ app.post('/api/users', requirePst, async (req, res) => {
 
 app.patch('/api/users/:id', requirePst, async (req, res) => {
   const updates = req.body || {};
-  if (Object.prototype.hasOwnProperty.call(updates, 'pin') && !validatePin(updates.pin)) {
-    return res.status(400).json({ ok: false, error: 'PIN must be 4 or 6 digits.' });
+  if (Object.prototype.hasOwnProperty.call(updates, 'pin')) {
+    return res.status(400).json({ ok: false, error: 'Use Reset Password to update another user password.' });
   }
   const user = await updateAuthUserRecord(req.params.id, updates);
   if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
   const rows = (await listAuthUsers()).map(sanitizeAuthUser);
   return res.json({ ok: true, user: sanitizeAuthUser(user), rows });
+});
+
+app.post('/api/users/:id/reset-password', requirePst, async (req, res) => {
+  const nextPassword = String(req.body?.newPassword || '');
+  if (!validatePassword(nextPassword)) {
+    return res.status(400).json({ ok: false, error: 'New password must be at least 4 characters.' });
+  }
+  try {
+    const user = await resetUserPassword(req.params.id, nextPassword, req.user);
+    const rows = (await listAuthUsers()).map(sanitizeAuthUser);
+    return res.json({ ok: true, user: sanitizeAuthUser(user), rows, message: 'Password reset. User must change it on next login.' });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to reset password.' });
+  }
 });
 
 app.get('/api/registrations', requireAuth, async (req, res) => {

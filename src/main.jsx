@@ -3988,7 +3988,7 @@ function LoginPage({ auth }) {
   );
 }
 
-function ChangePasswordSection({ auth }) {
+function ChangePasswordSection({ auth, forced = false }) {
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -4026,9 +4026,15 @@ function ChangePasswordSection({ auth }) {
       <div className="section-heading">
         <div>
           <p>Change Password</p>
-          <h2>Update your own login password</h2>
+          <h2>{forced ? 'Please change your temporary password' : 'Update your own login password'}</h2>
         </div>
       </div>
+      {forced ? (
+        <div className="event-note">
+          <b>Password change required</b>
+          <span>Your account was created or reset with a temporary password. Please change it before continuing.</span>
+        </div>
+      ) : null}
       <form className="admin-panel change-password-card" onSubmit={submit}>
         <label>
           <span>Current Password</span>
@@ -4102,6 +4108,25 @@ function UserAccessSection() {
     }
   }
 
+  async function resetUserPassword(id) {
+    const nextPassword = window.prompt('Enter temporary password, minimum 4 characters');
+    if (!nextPassword) return;
+    setMessage('');
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(id)}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: nextPassword }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to reset password');
+      setUsers(payload.rows || []);
+      setMessage(payload.message || 'Password reset. User must change it on next login.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   return (
     <section className="management-section user-access-section">
       <div className="section-heading">
@@ -4129,13 +4154,12 @@ function UserAccessSection() {
               <strong>{user.name}</strong>
               <span>{user.mobile} · {user.role} · {user.active ? 'Active' : 'Disabled'}</span>
               <small>Last Login: {user.lastLogin || 'Never'}</small>
+              <small>{user.mustChangePassword ? 'Password change required' : 'Password OK'}{user.passwordChangedAt ? ` · Last changed: ${user.passwordChangedAt}` : ''}</small>
+              {user.passwordAudit?.length ? <small>Last Password Action: {user.passwordAudit[user.passwordAudit.length - 1].action} by {user.passwordAudit[user.passwordAudit.length - 1].changedByName || 'System'}</small> : null}
             </div>
             <div>
               <button type="button" onClick={() => updateUser(user.id, { active: !user.active })}>{user.active ? 'Disable Volunteer' : 'Enable Volunteer'}</button>
-              <button type="button" onClick={() => {
-                const nextPin = window.prompt('Enter new 4 or 6 digit PIN');
-                if (nextPin) updateUser(user.id, { pin: nextPin });
-              }}>Reset PIN</button>
+              <button type="button" onClick={() => resetUserPassword(user.id)}>Reset Password</button>
             </div>
           </article>
         ))}
@@ -4855,6 +4879,7 @@ function App({ auth }) {
   const user = auth.user;
   const isPst = user?.role === ROLE_PST;
   const isVolunteerRole = user?.role === ROLE_VOLUNTEER || user?.role === ROLE_CREW;
+  const mustChangePassword = Boolean(user?.mustChangePassword);
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, scanDistribution, refresh } = useParticipants();
   const donorState = useMangalyaDonors(isPst);
   const requirementState = useSponsorshipRequirements(isPst);
@@ -4891,10 +4916,14 @@ function App({ auth }) {
   const [balanceModalFilter, setBalanceModalFilter] = useState('All');
 
   useEffect(() => {
+    if (mustChangePassword && activeView !== 'change-password') {
+      setActiveView('change-password');
+      return;
+    }
     if (isVolunteerRole && !['qr-distribution', 'shashtipoorthi', 'bhimaratha', 'change-password'].includes(activeView)) {
       setActiveView('qr-distribution');
     }
-  }, [isVolunteerRole, activeView]);
+  }, [isVolunteerRole, activeView, mustChangePassword]);
 
   const summary = useMemo(() => {
     const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
@@ -5374,7 +5403,7 @@ function App({ auth }) {
             </section>
           ) : null}
 
-          {activeView === 'home' && isPst ? (
+          {activeView === 'home' && isPst && !mustChangePassword ? (
             <>
               <section className="summary-section">
                 <div className="section-heading">
@@ -5491,19 +5520,19 @@ function App({ auth }) {
             </>
           ) : null}
 
-          {activeView === 'whatsapp-groups' && isPst ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
+          {activeView === 'whatsapp-groups' && isPst && !mustChangePassword ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
 
-          {activeView === 'qr-distribution' ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} /> : null}
+          {activeView === 'qr-distribution' && !mustChangePassword ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} /> : null}
 
-          {activeView === 'mangalya-donors' && isPst ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
+          {activeView === 'mangalya-donors' && isPst && !mustChangePassword ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
-          {activeView === 'previous-donors' && isPst ? <PreviousDonorsCampaign donorState={donorState} /> : null}
+          {activeView === 'previous-donors' && isPst && !mustChangePassword ? <PreviousDonorsCampaign donorState={donorState} /> : null}
 
-          {activeView === 'mandali-details' && isPst ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
+          {activeView === 'mandali-details' && isPst && !mustChangePassword ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
 
-          {activeView === 'user-access' && isPst ? <UserAccessSection /> : null}
+          {activeView === 'user-access' && isPst && !mustChangePassword ? <UserAccessSection /> : null}
 
-          {activeView === 'change-password' ? <ChangePasswordSection auth={auth} /> : null}
+          {activeView === 'change-password' ? <ChangePasswordSection auth={auth} forced={mustChangePassword} /> : null}
 
           {balanceModalOpen && isPst ? (
             <BalanceReceivableModal
@@ -5517,7 +5546,7 @@ function App({ auth }) {
             />
           ) : null}
 
-          {activeView === 'shashtipoorthi' || activeView === 'bhimaratha' ? (
+          {(activeView === 'shashtipoorthi' || activeView === 'bhimaratha') && !mustChangePassword ? (
             <section className="management-section" id="participant-management-dashboard">
         <div className="section-heading">
           <div>
