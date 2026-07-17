@@ -972,6 +972,16 @@ assert.ok(frontend.includes("activeView === 'user-access' && isPst"), 'User Acce
 assert.ok(frontend.includes("activeView === 'mangalya-donors' && isPst"), 'Donor module must be PST-only');
 assert.ok(frontend.includes("activeView === 'previous-donors' && isPst"), 'Previous donor campaign must be PST-only');
 assert.ok(frontend.includes("activeView === 'whatsapp-groups' && isPst"), 'WhatsApp group module must be PST-only');
+assert.ok(frontend.includes('Bangalore Arya Vysya Mandali Details'), 'PST UI must expose Bangalore Arya Vysya Mandali Details module');
+assert.ok(frontend.includes("activeView === 'mandali-details' && isPst"), 'Mandali Details module must be PST-only');
+assert.ok(frontend.includes('/api/mandali-contacts'), 'Mandali Details must load contacts from backend API');
+assert.ok(frontend.includes('Presidents + Secretaries'), 'Mandali bulk generator must default to Presidents + Secretaries option');
+assert.ok(frontend.includes('Representatives only'), 'Mandali bulk generator must keep representatives selectable separately');
+assert.ok(frontend.includes('Community Leaders Meeting – 19 July 2026'), 'Mandali campaign must use the meeting campaign name');
+assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');
+assert.ok(backend.includes('MANDALI_CONTACTS_CSV'), 'Backend must read Mandali contacts from private CSV path');
+assert.ok(backend.includes("role: 'Representative'"), 'Backend must import representative details as Representative');
+assert.ok(!backend.includes("role: 'Secretary', name: representative"), 'Backend must not infer Secretary from representative details');
 assert.ok(frontend.includes('useMangalyaDonors(isPst)'), 'Frontend must not load donor APIs for volunteers');
 assert.ok(frontend.includes('useSponsorshipRequirements(isPst)'), 'Frontend must not load requirements APIs for volunteers');
 assert.ok(frontend.includes('useWhatsAppGroupConfig(isPst)'), 'Frontend must not load PST admins for volunteers');

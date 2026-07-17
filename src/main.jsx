@@ -1766,6 +1766,38 @@ function makePreviousDonorWhatsAppUrl(donor) {
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
 
+function buildMandaliInvitationMessage(contact) {
+  return `🙏 *Invitation*
+Dear Sri. *${contact.name || 'Community Leader'}*
+*${contact.role || 'Representative'}*
+*${contact.mandali || 'Arya Vysya Mandali'}, ${contact.area || 'Bengaluru'}*
+
+The *Mane Mange Vasavi Seva Trust* cordially invites you to a special meeting regarding the *4th Samoohika Shanthi Program*, which will be held on *2nd August 2026* at *Shubh Convention, J.P. Nagar, Bengaluru*.
+
+This meeting has been organized to discuss the program arrangements and coordination. Your valuable presence, guidance, and support will greatly contribute to the success of this prestigious community event.
+
+📅 *Meeting Details*
+*Date:* Sunday, 19th July 2026
+*Time:* 11:30 AM
+*Venue:* Ashaktha Poshaka Sabha, V.V. Puram, Bengaluru
+
+📍 *Location:*
+https://maps.app.goo.gl/zuERscMMxvcCBcbd6?g_st=awb
+
+🍽️ *Followed by lunch.*
+
+We look forward to your gracious presence and valuable suggestions.
+
+*With Regards,*
+*Mane Mange Vasavi Seva Trust*`;
+}
+
+function makeMandaliWhatsAppUrl(contact) {
+  const normalizedMobile = normalizeIndianMobileNumber(contact.mobileNumber);
+  const encodedText = encodeURIComponent(buildMandaliInvitationMessage(contact));
+  return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
+}
+
 function linkLabel(url) {
   return url ? 'Open' : 'Missing';
 }
@@ -2046,6 +2078,50 @@ function useSponsorshipRequirements(enabled = true) {
     error,
     isRefreshing,
     refresh: () => load(true),
+  };
+}
+
+function useMandaliContacts(enabled = true) {
+  const [contacts, setContacts] = useState([]);
+  const [status, setStatus] = useState('Loading Mandali contacts...');
+  const [error, setError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function load(aliveRef = { current: true }) {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/mandali-contacts', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `Mandali contacts API returned ${response.status}`);
+      if (!aliveRef.current) return;
+      setContacts(payload.rows || []);
+      setStatus(`Private CSV. Last refreshed: ${formatRefreshTime(payload.refreshedAt || new Date().toISOString())}`);
+      setError(payload.notice || '');
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setContacts([]);
+      setError(loadError.message || 'Unable to load Mandali contacts');
+    } finally {
+      if (aliveRef.current) setIsRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const aliveRef = { current: true };
+    load(aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [enabled]);
+
+  return {
+    contacts,
+    status,
+    error,
+    isRefreshing,
+    refresh: () => load(),
   };
 }
 
@@ -2773,6 +2849,189 @@ const PREVIOUS_DONOR_FILTERS = [
   { id: '50000', label: '₹50,000 Donors', test: (amount) => amount === 50000 },
   { id: '100000', label: '₹1,00,000+ Donors', test: (amount) => amount >= 100000 },
 ];
+
+const MANDALI_RECIPIENT_FILTERS = [
+  { id: 'presidents-secretaries', label: 'Presidents + Secretaries', test: (contact) => ['President', 'Secretary'].includes(contact.role) },
+  { id: 'presidents', label: 'Presidents only', test: (contact) => contact.role === 'President' },
+  { id: 'secretaries', label: 'Secretaries only', test: (contact) => contact.role === 'Secretary' },
+  { id: 'representatives', label: 'Representatives only', test: (contact) => contact.role === 'Representative' },
+  { id: 'all', label: 'All contacts', test: () => true },
+];
+
+function MandaliDetailsSection({ mandaliState }) {
+  const { contacts, status, error, isRefreshing, refresh } = mandaliState;
+  const [filterId, setFilterId] = useState('presidents-secretaries');
+  const [query, setQuery] = useState('');
+  const [queue, setQueue] = useState([]);
+  const [queueStarted, setQueueStarted] = useState(false);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [opened, setOpened] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
+  const [skippedCount, setSkippedCount] = useState(0);
+  const [message, setMessage] = useState('');
+  const selectedFilter = MANDALI_RECIPIENT_FILTERS.find((filter) => filter.id === filterId) || MANDALI_RECIPIENT_FILTERS[0];
+  const visibleContacts = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return contacts
+      .filter((contact) => selectedFilter.test(contact))
+      .filter((contact) => {
+        if (!search) return true;
+        return [contact.name, contact.role, contact.mandali, contact.area, contact.maskedMobile]
+          .join(' ')
+          .toLowerCase()
+          .includes(search);
+      });
+  }, [contacts, query, selectedFilter]);
+  const readyContacts = visibleContacts.filter((contact) => contact.validWhatsApp && !contact.duplicateMobile);
+  const currentContact = queue[queueIndex];
+  const summary = useMemo(() => ({
+    mandalis: new Set(contacts.map((contact) => `${contact.slNo}-${contact.mandali}`)).size,
+    total: contacts.length,
+    presidents: contacts.filter((contact) => contact.role === 'President').length,
+    secretaries: contacts.filter((contact) => contact.role === 'Secretary').length,
+    representatives: contacts.filter((contact) => contact.role === 'Representative').length,
+    valid: contacts.filter((contact) => contact.validWhatsApp).length,
+    invalid: contacts.filter((contact) => !contact.validWhatsApp).length,
+    duplicates: contacts.filter((contact) => contact.duplicateMobile).length,
+  }), [contacts]);
+
+  function prepareQueue() {
+    setQueue(readyContacts);
+    setQueueStarted(false);
+    setQueueIndex(0);
+    setOpened(false);
+    setSentCount(0);
+    setSkippedCount(0);
+    setMessage(readyContacts.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready contacts for this filter.');
+  }
+
+  function openContact(index) {
+    const contact = queue[index];
+    if (!contact?.validWhatsApp || contact.duplicateMobile) return;
+    window.open(makeMandaliWhatsAppUrl(contact), '_blank', 'noopener,noreferrer');
+    setQueueStarted(true);
+    setOpened(true);
+    setMessage('');
+  }
+
+  function openCurrent() {
+    if (!queue.length) return;
+    openContact(queueIndex);
+  }
+
+  function advanceQueue(type) {
+    if (type === 'sent') setSentCount((count) => count + 1);
+    if (type === 'skip') setSkippedCount((count) => count + 1);
+    const nextIndex = queueIndex + 1;
+    if (nextIndex >= queue.length) {
+      setMessage('Mandali WhatsApp queue completed.');
+      setOpened(false);
+      return;
+    }
+    setQueueIndex(nextIndex);
+    setOpened(false);
+    setMessage(type === 'sent' ? 'Marked sent. Open the next contact when ready.' : 'Skipped. Open the next contact when ready.');
+  }
+
+  async function copyCurrentMessage() {
+    if (!currentContact) return;
+    try {
+      await navigator.clipboard.writeText(buildMandaliInvitationMessage(currentContact));
+      setMessage('Current personalized message copied.');
+    } catch {
+      setMessage('Automatic copy is blocked in this browser.');
+    }
+  }
+
+  return (
+    <section className="sponsorship-section">
+      <div className="section-heading">
+        <div>
+          <p>Bangalore Arya Vysya Mandali Details</p>
+          <h2>Community leaders WhatsApp invitation queue</h2>
+        </div>
+        <button className="refresh-button" type="button" onClick={refresh} disabled={isRefreshing}>
+          <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
+          {isRefreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+      </div>
+      <div className="event-note">
+        <b>{status}</b>
+        <span>Source: private local CSV. Representatives are excluded from the default campaign.</span>
+      </div>
+      {error ? <div className="error-strip"><AlertTriangle size={18} /><span>{error}</span></div> : null}
+
+      <div className="stats-grid">
+        <StatCard icon={UsersRound} label="Total Mandalis" value={summary.mandalis} />
+        <StatCard icon={UsersRound} label="Total Contacts" value={summary.total} />
+        <StatCard icon={ShieldCheck} label="Presidents" value={summary.presidents} tone="success" />
+        <StatCard icon={BadgeCheck} label="Secretaries" value={summary.secretaries} />
+        <StatCard icon={UsersRound} label="Representatives" value={summary.representatives} />
+        <StatCard icon={MessageCircle} label="Valid WhatsApp" value={summary.valid} tone="success" />
+        <StatCard icon={AlertTriangle} label="Missing / Invalid" value={summary.invalid} tone="danger" />
+        <StatCard icon={AlertTriangle} label="Duplicate Numbers" value={summary.duplicates} tone="warning" />
+      </div>
+
+      <div className="filters-grid">
+        <SelectField label="Recipients" value={filterId} onChange={setFilterId} options={MANDALI_RECIPIENT_FILTERS.map((filter) => ({ value: filter.id, label: filter.label }))} />
+        <label className="search-field">
+          <Search size={17} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search area, Mandali, name, role" />
+        </label>
+      </div>
+
+      <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <div className="bulk-actions">
+          <button type="button" onClick={prepareQueue}>Generate Queue</button>
+          <span>Visible: {visibleContacts.length} · WhatsApp-ready: {readyContacts.length}</span>
+        </div>
+        {queue.length ? (
+          <div className="bulk-preview">
+            <div className="bulk-preview-head">
+              <div>
+                <p>Community Leaders Meeting – 19 July 2026</p>
+                <h3>{queueIndex + 1} of {queue.length} · Sent {sentCount} · Skipped {skippedCount}</h3>
+              </div>
+              <button type="button" onClick={() => { setQueue([]); setQueueStarted(false); setOpened(false); }}>Clear</button>
+            </div>
+            {currentContact ? (
+              <div className="donor-current-preview">
+                <div><p>Current Message Preview</p><strong>{currentContact.name} - {currentContact.role}</strong></div>
+                <textarea readOnly rows="12" value={buildMandaliInvitationMessage(currentContact)} />
+              </div>
+            ) : null}
+            <div className="bulk-queue-controls">
+              <button type="button" onClick={openCurrent}>{opened ? 'Reopen WhatsApp' : 'Open WhatsApp'}</button>
+              <button type="button" onClick={() => advanceQueue('sent')} disabled={!queueStarted}>Mark Sent</button>
+              <button type="button" onClick={() => advanceQueue('skip')}>Skip</button>
+              <button type="button" onClick={copyCurrentMessage}>Copy Message</button>
+            </div>
+          </div>
+        ) : null}
+        {message ? <small>{message}</small> : null}
+      </div>
+
+      <div className="donor-card-grid">
+        {visibleContacts.slice(0, 80).map((contact) => (
+          <article className="donor-card" key={contact.id}>
+            <p className="donor-kicker">{contact.role}</p>
+            <h3>{contact.name}</h3>
+            <p>{contact.mandali}</p>
+            <div className="receipt-meta-grid">
+              <p><span>Area</span>{contact.area || 'Not entered'}</p>
+              <p><span>WhatsApp</span>{contact.validWhatsApp ? contact.maskedMobile : 'Invalid / missing'}</p>
+              <p><span>Status</span>{contact.duplicateMobile ? 'Duplicate warning' : contact.validWhatsApp ? 'Ready' : 'Needs mobile'}</p>
+            </div>
+            <pre className="donor-message-preview">{buildMandaliInvitationMessage(contact)}</pre>
+            <div className="donor-actions">
+              <button type="button" onClick={() => window.open(makeMandaliWhatsAppUrl(contact), '_blank', 'noopener,noreferrer')} disabled={!contact.validWhatsApp || contact.duplicateMobile}>Open WhatsApp</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function PreviousDonorsCampaign({ donorState }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
@@ -4364,6 +4623,7 @@ function App({ auth }) {
   const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, scanDistribution, refresh } = useParticipants();
   const donorState = useMangalyaDonors(isPst);
   const requirementState = useSponsorshipRequirements(isPst);
+  const mandaliState = useMandaliContacts(isPst);
   const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
@@ -4831,6 +5091,10 @@ function App({ auth }) {
                 <MessageCircle size={18} />
                 <span>Previous Donors</span>
               </button>
+              <button className={activeView === 'mandali-details' ? 'active' : ''} type="button" onClick={() => setActiveView('mandali-details')}>
+                <UsersRound size={18} />
+                <span>Mandali Details</span>
+              </button>
               <button className={activeView === 'user-access' ? 'active' : ''} type="button" onClick={() => setActiveView('user-access')}>
                 <ShieldCheck size={18} />
                 <span>User Access</span>
@@ -4986,6 +5250,8 @@ function App({ auth }) {
           {activeView === 'mangalya-donors' && isPst ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 
           {activeView === 'previous-donors' && isPst ? <PreviousDonorsCampaign donorState={donorState} /> : null}
+
+          {activeView === 'mandali-details' && isPst ? <MandaliDetailsSection mandaliState={mandaliState} /> : null}
 
           {activeView === 'user-access' && isPst ? <UserAccessSection /> : null}
 

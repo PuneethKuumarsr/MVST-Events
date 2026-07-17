@@ -109,6 +109,7 @@ const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponso
 const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'WhatsApp PST Admins'!A:B";
 const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
 const WHATSAPP_GROUP_LOG_HEADERS = ['Group Name', 'Event', 'Creation Date', 'Participant Count', 'Status', 'Remarks'];
+const MANDALI_CONTACTS_CSV = process.env.MANDALI_CONTACTS_CSV || path.join(projectRoot, 'output', 'mandali-import', 'bangalore-arya-vysya-mandali-final.csv');
 const FREE_SPONSORSHIP_STATUS = 'free sponsorship';
 const QR_TOKEN_VERSION = 'mvstqr:v1';
 const DISTRIBUTION_OPERATIONS = {
@@ -1289,6 +1290,144 @@ function publicDonorRows(rows) {
   return rows.map(({ adminColumns, ...row }) => row);
 }
 
+function mandaliContactId(slNo, role, index, mobile, name) {
+  return crypto
+    .createHash('sha256')
+    .update([slNo, role, index, mobile, name].join('|'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function validWhatsAppMobile(rawMobile) {
+  const normalized = normalizeMobileForAuth(rawMobile);
+  return /^91[6-9]\d{9}$/.test(normalized) ? normalized : '';
+}
+
+function maskMobile(mobile) {
+  const digits = String(mobile || '').replace(/\D/g, '');
+  if (digits.length < 6) return '';
+  return `${digits.slice(0, 4)}****${digits.slice(-2)}`;
+}
+
+function splitRepresentativeContacts(details) {
+  const text = String(details || '').replace(/\r?\n/g, ' ').trim();
+  if (!text) return [];
+  const mobilePattern = /(?:\+?91[\s-]?)?[6-9](?:[\s-]?\d){9}/g;
+  const matches = [...text.matchAll(mobilePattern)];
+  if (!matches.length) return [{
+    name: text.replace(/\s+/g, ' ').trim(),
+    originalNumber: '',
+    mobile: '',
+  }];
+
+  const contacts = [];
+  let cursor = 0;
+  matches.forEach((match) => {
+    const before = text.slice(cursor, match.index).replace(/[,:;|/]+/g, ' ').trim();
+    const name = before || 'Representative';
+    contacts.push({
+      name: name.replace(/\s+/g, ' '),
+      originalNumber: match[0],
+      mobile: validWhatsAppMobile(match[0]),
+    });
+    cursor = match.index + match[0].length;
+  });
+  return contacts;
+}
+
+function normalizeMandaliCsvRows(values) {
+  if (!values || values.length < 2) return [];
+  const [headers = [], ...rows] = values;
+  const headerMap = buildHeaderMap(headers);
+  const contacts = [];
+
+  const addContact = ({ sourceRow, role, name, mobile, index }) => {
+    const contactName = String(name || '').trim();
+    const originalNumber = String(mobile || '').trim();
+    if (!contactName && !originalNumber) return;
+    const normalizedMobile = validWhatsAppMobile(originalNumber);
+    contacts.push({
+      id: mandaliContactId(sourceRow.slNo, role, index, normalizedMobile || originalNumber, contactName),
+      slNo: sourceRow.slNo,
+      area: sourceRow.area,
+      mandali: sourceRow.mandali,
+      name: contactName || 'Manual Review',
+      role,
+      originalNumber,
+      mobileNumber: normalizedMobile,
+      maskedMobile: maskMobile(normalizedMobile || originalNumber),
+      validWhatsApp: Boolean(normalizedMobile),
+      active: true,
+      notes: normalizedMobile ? '' : 'Missing / invalid WhatsApp mobile',
+      sourceFile: 'bangalore-arya-vysya-mandali-final.csv',
+    });
+  };
+
+  rows.forEach((row, rowIndex) => {
+    const sourceRow = {
+      slNo: getCell(row, headerMap, ['Sl. No.', 'Sl No']),
+      area: getCell(row, headerMap, ['Area']),
+      mandali: getCell(row, headerMap, ['Sangham Name', 'Mandali / Trust Name', 'Mandali', 'Trust Name']),
+    };
+    addContact({
+      sourceRow,
+      role: 'President',
+      name: getCell(row, headerMap, ['President Name']),
+      mobile: getCell(row, headerMap, ['President Contact No.', 'President Contact No']),
+      index: `${rowIndex}-president`,
+    });
+    addContact({
+      sourceRow,
+      role: 'Secretary',
+      name: getCell(row, headerMap, ['Secretary Name']),
+      mobile: getCell(row, headerMap, ['Secretary Contact No.', 'Secretary Contact No']),
+      index: `${rowIndex}-secretary`,
+    });
+    splitRepresentativeContacts(getCell(row, headerMap, ['Representatives Details', 'Representative Details'])).forEach((representative, representativeIndex) => {
+      addContact({
+        sourceRow,
+        role: 'Representative',
+        name: representative.name,
+        mobile: representative.mobile || representative.originalNumber,
+        index: `${rowIndex}-representative-${representativeIndex}`,
+      });
+    });
+  });
+
+  const mobileCounts = contacts.reduce((counts, contact) => {
+    if (contact.mobileNumber) counts.set(contact.mobileNumber, (counts.get(contact.mobileNumber) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  return contacts.map((contact) => ({
+    ...contact,
+    duplicateMobile: Boolean(contact.mobileNumber && mobileCounts.get(contact.mobileNumber) > 1),
+    notes: [
+      contact.notes,
+      contact.mobileNumber && mobileCounts.get(contact.mobileNumber) > 1 ? 'Duplicate WhatsApp number' : '',
+    ].filter(Boolean).join('; '),
+  }));
+}
+
+async function loadMandaliContacts() {
+  if (!fs.existsSync(MANDALI_CONTACTS_CSV)) {
+    return {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'not-configured',
+      notice: 'Mandali contacts CSV is not available on this server.',
+    };
+  }
+
+  const csv = await fs.promises.readFile(MANDALI_CONTACTS_CSV, 'utf8');
+  return {
+    rows: normalizeMandaliCsvRows(parseCsv(csv)),
+    refreshedAt: new Date().toISOString(),
+    source: 'private-csv',
+    notice: null,
+  };
+}
+
 async function loadRegistrations() {
   let result;
   try {
@@ -1998,6 +2137,21 @@ app.patch('/api/registrations/:id', requirePst, async (req, res) => {
       mode: 'read-only',
       error: error.message,
     });
+  }
+});
+
+app.get('/api/mandali-contacts', requirePst, async (req, res) => {
+  try {
+    const result = await loadMandaliContacts();
+    res.json({
+      ok: true,
+      rows: result.rows,
+      refreshedAt: result.refreshedAt,
+      source: result.source,
+      notice: result.notice,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to load Mandali contacts' });
   }
 });
 
