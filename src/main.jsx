@@ -3961,29 +3961,36 @@ function LoginPage({ auth }) {
 
   return (
     <main className="login-page">
-      <form className="login-card" onSubmit={submit}>
-        <div>
-          <p>MVST Events</p>
-          <h1>Login</h1>
-        </div>
-        <label>
-          <span>Mobile Number</span>
-          <div className="login-mobile-row">
-            <b>+91</b>
-            <input value={mobile} onChange={(event) => setMobile(event.target.value)} inputMode="numeric" autoComplete="username" placeholder="Mobile number" />
+      <div className="login-shell">
+        <form className="login-card" onSubmit={submit}>
+          <img className="login-header-image" src="/mvst-login-header.jpg" alt="Mane Manege Vasavi Seva Trust" />
+          <div className="login-title">
+            <p>MVST Seva Portal</p>
+            <h1>Login</h1>
           </div>
-        </label>
-        <label>
-          <span>PIN</span>
-          <div className="login-pin-row">
-            <input value={pin} onChange={(event) => setPin(event.target.value)} type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" placeholder="••••" />
-            <button type="button" onClick={() => setShowPin((value) => !value)}>{showPin ? 'Hide' : 'Show'}</button>
-          </div>
-        </label>
-        {auth.error ? <small>{auth.error}</small> : null}
-        {auth.notice ? <small className="success-message">{auth.notice}</small> : null}
-        <button type="submit" disabled={submitting}>{submitting ? 'Logging in' : 'Login'}</button>
-      </form>
+          <label>
+            <span>Mobile Number</span>
+            <div className="login-mobile-row">
+              <b>+91</b>
+              <input value={mobile} onChange={(event) => setMobile(event.target.value)} inputMode="numeric" autoComplete="username" placeholder="Mobile number" />
+            </div>
+          </label>
+          <label>
+            <span>PIN</span>
+            <div className="login-pin-row">
+              <input value={pin} onChange={(event) => setPin(event.target.value)} type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" placeholder="••••" />
+              <button type="button" onClick={() => setShowPin((value) => !value)}>{showPin ? 'Hide' : 'Show'}</button>
+            </div>
+          </label>
+          {auth.error ? <small>{auth.error}</small> : null}
+          {auth.notice ? <small className="success-message">{auth.notice}</small> : null}
+          <button type="submit" disabled={submitting}>{submitting ? 'Logging in' : 'Login'}</button>
+        </form>
+        <footer className="login-footer">
+          <strong>Powered by MVST SEVA PORTAL</strong>
+          <span>© 2026 Puneeth Kumar S R. All Rights Reserved. Proprietary and Confidential.</span>
+        </footer>
+      </div>
     </main>
   );
 }

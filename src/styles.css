@@ -55,15 +55,37 @@ main {
     linear-gradient(135deg, #fffaf0, #fbf6ea 48%, #f7ead9);
 }
 
+.login-shell {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
 .login-card {
-  width: min(420px, 100%);
+  width: 100%;
   display: grid;
   gap: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 250, 240, 0.95);
   box-shadow: var(--shadow);
-  padding: 22px;
+  overflow: hidden;
+  padding: 0 22px 22px;
+}
+
+.login-header-image {
+  width: calc(100% + 44px);
+  height: auto;
+  aspect-ratio: 1280 / 441;
+  object-fit: cover;
+  margin: 0 -22px 2px;
+  display: block;
+  background: var(--maroon-deep);
+}
+
+.login-title {
+  display: grid;
+  gap: 2px;
 }
 
 .login-card p {
@@ -129,6 +151,20 @@ main {
 
 .login-card small.success-message {
   color: var(--green);
+}
+
+.login-footer {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.login-footer strong {
+  color: var(--maroon);
+  letter-spacing: 0.02em;
 }
 
 .hero-band {

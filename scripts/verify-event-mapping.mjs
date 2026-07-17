@@ -899,6 +899,10 @@ assert.ok(backend.includes('const requiredFields = ['), 'Backend must calculate 
 assert.ok(backend.includes('operation.statusField') && backend.includes('operation.timeField') && backend.includes('operation.byField'), 'Each scan must update only the selected operation fields');
 assert.ok(!backend.includes('Meeting Attendance = Yes'), 'Backend must not hardcode raw formula-like multi-field updates');
 assert.ok(frontend.includes('function LoginPage'), 'Frontend must show a login page before app content');
+assert.ok(frontend.includes('/mvst-login-header.jpg'), 'Login page must use the MVST header image');
+assert.ok(frontend.includes('MVST Seva Portal'), 'Login page must show MVST Seva Portal title');
+assert.ok(frontend.includes('Powered by MVST SEVA PORTAL'), 'Login page must show powered-by footer');
+assert.ok(frontend.includes('© 2026 Puneeth Kumar S R. All Rights Reserved. Proprietary and Confidential.'), 'Login page must show proprietary footer');
 assert.ok(frontend.includes('Mobile Number'), 'Login page must ask for mobile number');
 assert.ok(frontend.includes('PIN'), 'Login page must ask for PIN');
 assert.ok(frontend.includes('Show') && frontend.includes('Hide'), 'Login page must support Show/Hide PIN');
