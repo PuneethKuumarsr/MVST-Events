@@ -245,6 +245,14 @@ assert.ok(!bulkReceiptBody.includes('saveRegistration'), 'Bulk receipt generatio
 assert.ok(!bulkReceiptBody.includes('receiptGenerated'), 'Bulk receipt generation must not write Receipt Generated status');
 assert.ok(bulkReceiptBody.includes('failures.push'), 'Bulk receipt generation must continue after one receipt fails');
 assert.ok(bulkReceiptBody.includes('Prepared: ${preparedCount}. Failed: ${failures.length}'), 'Bulk receipt generation must report prepared and failed counts');
+assert.ok(frontend.includes('async function verifyQrPrintReadiness'), 'Bulk receipt printing must run QR print readiness verification');
+assert.ok(frontend.includes('async function decodeQrDataUrl'), 'QR print readiness must decode generated QR images');
+assert.ok(frontend.includes('BarcodeDetector'), 'QR print readiness must use browser QR decoding instead of assuming success');
+assert.ok(bulkReceiptBody.includes('verifyQrPrintReadiness(rows, activeEvent'), 'Bulk ZIP generation must be blocked behind QR readiness');
+assert.ok(frontend.includes('QR Ready'), 'Receipt print readiness must show QR Ready status');
+assert.ok(frontend.includes('Receipts Safe to Print'), 'Receipt print readiness must show print safety status');
+assert.ok(frontend.includes('Google Sheet QR Token does not match encoded QR'), 'QR readiness must compare encoded QR with Sheet token');
+assert.ok(frontend.includes('QR resolves to a different participant'), 'QR readiness must verify QR resolves to the correct participant');
 assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
 assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
 assert.ok(frontend.includes('Number(participant.balance || 0) === 0'), 'Receipt eligibility must require zero balance');

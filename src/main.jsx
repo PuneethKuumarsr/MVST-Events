@@ -974,6 +974,116 @@ function buildBulkReceiptRows(rows, eventType) {
   ), 'latest');
 }
 
+async function decodeQrDataUrl(dataUrl) {
+  if (!('BarcodeDetector' in window)) {
+    throw new Error('QR decoder not available in this browser. Use desktop Chrome or Edge for print readiness verification.');
+  }
+  const blob = dataUrlToBlob(dataUrl);
+  const imageBitmap = await createImageBitmap(blob);
+  try {
+    const detector = new BarcodeDetector({ formats: ['qr_code'] });
+    const codes = await detector.detect(imageBitmap);
+    const value = codes[0]?.rawValue || '';
+    if (!value) throw new Error('QR image could not be decoded');
+    return value;
+  } finally {
+    imageBitmap.close?.();
+  }
+}
+
+function qrFailureDetails(participant, receiptNo, reason) {
+  return {
+    receiptNo: receiptNo || normalizeReceiptNumber(participant.receiptNo, participant.eventType) || 'Not Assigned',
+    participantName: participantDisplayName(participant),
+    seatNo: participant.seatNo || 'No Seat',
+    reason,
+  };
+}
+
+async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
+  const eventRows = sortReceiptSequenceRows(rows.filter((row) => row.eventType === eventType));
+  const eligibleReceiptRows = buildBulkReceiptRows(rows, eventType);
+  const activeQrTokens = eventRows.map((row) => String(row.qrToken || '').trim()).filter(Boolean);
+  const allTokenCounts = rows.reduce((counts, row) => {
+    const token = String(row.qrToken || '').trim();
+    if (token) counts.set(token, (counts.get(token) || 0) + 1);
+    return counts;
+  }, new Map());
+  const failures = [];
+  let qrImagesGenerated = 0;
+  let qrDecoded = 0;
+  let qrResolved = 0;
+  let sheetMatches = 0;
+  let receiptPreviews = 0;
+
+  for (let index = 0; index < eventRows.length; index += 1) {
+    const participant = eventRows[index];
+    const token = String(participant.qrToken || '').trim();
+    const receiptNo = suggestedReceiptNumber(rows, participant);
+    onProgress(`QR readiness ${index + 1} of ${eventRows.length}: checking QR token...`);
+    if (!token) {
+      failures.push(qrFailureDetails(participant, receiptNo, 'Missing QR Token'));
+      continue;
+    }
+    if ((allTokenCounts.get(token) || 0) > 1) {
+      failures.push(qrFailureDetails(participant, receiptNo, 'Duplicate QR Token'));
+      continue;
+    }
+    try {
+      const qrDataUrl = await qrTokenToPng(token);
+      qrImagesGenerated += 1;
+      const decoded = await decodeQrDataUrl(qrDataUrl);
+      qrDecoded += 1;
+      if (decoded !== token) {
+        failures.push(qrFailureDetails(participant, receiptNo, 'Google Sheet QR Token does not match encoded QR'));
+        continue;
+      }
+      sheetMatches += 1;
+      const resolved = rows.find((row) => String(row.qrToken || '').trim() === decoded);
+      if (!resolved || resolved.id !== participant.id) {
+        failures.push(qrFailureDetails(participant, receiptNo, 'QR resolves to a different participant'));
+        continue;
+      }
+      qrResolved += 1;
+    } catch (error) {
+      failures.push(qrFailureDetails(participant, receiptNo, error.message || 'QR image validation failed'));
+    }
+  }
+
+  for (let index = 0; index < eligibleReceiptRows.length; index += 1) {
+    const participant = eligibleReceiptRows[index];
+    const receiptNo = suggestedReceiptNumber(rows, participant);
+    onProgress(`Receipt preview ${index + 1} of ${eligibleReceiptRows.length}: verifying JPG...`);
+    try {
+      await generateReceiptJpg(participant, receiptNo);
+      receiptPreviews += 1;
+    } catch (error) {
+      failures.push(qrFailureDetails(participant, receiptNo, error.message || 'Receipt preview generation failed'));
+    }
+  }
+
+  return {
+    totalRegistrations: eventRows.length,
+    registrationsWithQrToken: activeQrTokens.length,
+    registrationsMissingQrToken: eventRows.length - activeQrTokens.length,
+    duplicateQrTokens: activeQrTokens.filter((token) => (allTokenCounts.get(token) || 0) > 1).length,
+    qrImagesGenerated,
+    qrDecoded,
+    qrResolved,
+    sheetMatches,
+    receiptPreviews,
+    receiptPreviewExpected: eligibleReceiptRows.length,
+    failures,
+    qrReady: failures.length === 0 &&
+      eventRows.length === activeQrTokens.length &&
+      qrImagesGenerated === eventRows.length &&
+      qrDecoded === eventRows.length &&
+      qrResolved === eventRows.length &&
+      sheetMatches === eventRows.length,
+    receiptsSafeToPrint: failures.length === 0 && receiptPreviews === eligibleReceiptRows.length,
+  };
+}
+
 function buildReceiptSendQueue(rows, eventType) {
   const eventRows = rows.filter((row) => row.eventType === eventType && isReceiptEligible(row));
   const orderedRows = sortReceiptSequenceRows(eventRows);
@@ -4270,6 +4380,7 @@ function App({ auth }) {
   const [markingBulkSent, setMarkingBulkSent] = useState(false);
   const [bulkReceiptGenerating, setBulkReceiptGenerating] = useState(false);
   const [bulkReceiptMessage, setBulkReceiptMessage] = useState('');
+  const [qrPrintReadiness, setQrPrintReadiness] = useState(null);
   const [receiptQueueEvent, setReceiptQueueEvent] = useState('');
   const [receiptQueue, setReceiptQueue] = useState([]);
   const [receiptQueueSkipped, setReceiptQueueSkipped] = useState([]);
@@ -4616,11 +4727,18 @@ function App({ auth }) {
       return;
     }
     setBulkReceiptGenerating(true);
-    setBulkReceiptMessage('');
+    setBulkReceiptMessage('Starting QR print readiness verification...');
+    setQrPrintReadiness(null);
     const zip = new JSZip();
     const failures = [];
     let preparedCount = 0;
     try {
+      const readiness = await verifyQrPrintReadiness(rows, activeEvent, setBulkReceiptMessage);
+      setQrPrintReadiness(readiness);
+      if (!readiness.qrReady || !readiness.receiptsSafeToPrint) {
+        setBulkReceiptMessage('QR Ready: NO. Receipts Safe to Print: NO. Fix the listed issues before bulk printing.');
+        return;
+      }
       for (let index = 0; index < eligibleRows.length; index += 1) {
         const participant = eligibleRows[index];
         const receiptNo = suggestedReceiptNumber(rows, participant);
@@ -4949,6 +5067,34 @@ function App({ auth }) {
           )}
           {bulkReceiptMessage ? <small>{bulkReceiptMessage}</small> : null}
           {!bulkZipSupported ? <small>Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.</small> : null}
+          {qrPrintReadiness ? (
+            <div className="receipt-readiness-panel">
+              <div className="receipt-meta-grid">
+                <p><span>Total registrations</span>{qrPrintReadiness.totalRegistrations}</p>
+                <p><span>With QR Token</span>{qrPrintReadiness.registrationsWithQrToken}</p>
+                <p><span>Missing QR Token</span>{qrPrintReadiness.registrationsMissingQrToken}</p>
+                <p><span>Duplicate QR Tokens</span>{qrPrintReadiness.duplicateQrTokens}</p>
+                <p><span>QR images generated</span>{qrPrintReadiness.qrImagesGenerated}</p>
+                <p><span>QR decodes successfully</span>{qrPrintReadiness.qrDecoded}</p>
+                <p><span>QR resolves correctly</span>{qrPrintReadiness.qrResolved}</p>
+                <p><span>Sheet token matches QR</span>{qrPrintReadiness.sheetMatches}</p>
+                <p><span>Receipt previews generated</span>{qrPrintReadiness.receiptPreviews} / {qrPrintReadiness.receiptPreviewExpected}</p>
+                <p><span>QR Ready</span>{qrPrintReadiness.qrReady ? 'YES' : 'NO'}</p>
+                <p><span>Receipts Safe to Print</span>{qrPrintReadiness.receiptsSafeToPrint ? 'YES' : 'NO'}</p>
+              </div>
+              {qrPrintReadiness.failures.length ? (
+                <div className="receipt-readiness-failures">
+                  <strong>Fix before printing</strong>
+                  {qrPrintReadiness.failures.slice(0, 12).map((failure, index) => (
+                    <span key={`${failure.receiptNo}-${failure.seatNo}-${index}`}>
+                      {failure.receiptNo} · {failure.participantName} · Seat {failure.seatNo} · {failure.reason}
+                    </span>
+                  ))}
+                  {qrPrintReadiness.failures.length > 12 ? <span>+ {qrPrintReadiness.failures.length - 12} more issues</span> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div> : null}
 
         {isPst ? <div className="receipt-bulk-panel receipt-send-panel">
