@@ -1758,10 +1758,11 @@ function donorMobileIsValid(donor) {
 }
 
 function previousDonationAmount(donor) {
+  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
+  if (typeText.includes('mangalya donor')) return 0;
   const explicitAmount = Number(donor.previousDonationAmount || 0);
   if (explicitAmount > 0) return explicitAmount;
   const year = String(donor.eventYear || '').trim();
-  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
   if (year && year !== ACTIVE_EVENT_YEAR && typeText.includes('general donation')) {
     return Number(donor.receivedAmount || donor.confirmedAmount || donor.amount || 0);
   }

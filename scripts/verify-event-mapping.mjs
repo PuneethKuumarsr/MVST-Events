@@ -971,6 +971,7 @@ assert.ok(frontend.includes('Last Login'), 'User Access must show last login');
 assert.ok(frontend.includes("activeView === 'user-access' && isPst"), 'User Access screen must be PST-only');
 assert.ok(frontend.includes("activeView === 'mangalya-donors' && isPst"), 'Donor module must be PST-only');
 assert.ok(frontend.includes("activeView === 'previous-donors' && isPst"), 'Previous donor campaign must be PST-only');
+assert.ok(frontend.includes("typeText.includes('mangalya donor')"), 'Previous donor campaign must exclude Mangalya Donor history rows');
 assert.ok(frontend.includes("activeView === 'whatsapp-groups' && isPst"), 'WhatsApp group module must be PST-only');
 assert.ok(frontend.includes('Bangalore Arya Vysya Mandali Details'), 'PST UI must expose Bangalore Arya Vysya Mandali Details module');
 assert.ok(frontend.includes("activeView === 'mandali-details' && isPst"), 'Mandali Details module must be PST-only');
