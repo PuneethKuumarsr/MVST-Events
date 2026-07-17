@@ -1831,7 +1831,9 @@ https://maps.app.goo.gl/zuERscMMxvcCBcbd6?g_st=awb
 We look forward to your gracious presence and valuable suggestions.
 
 *With Regards,*
-*Mane Mange Vasavi Seva Trust*`;
+*Hariprasad Varada*
+*President*
+*Manemanege Vasavi Seva Trust (R.)*`;
 }
 
 function makeMandaliWhatsAppUrl(contact) {

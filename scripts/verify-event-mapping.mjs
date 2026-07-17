@@ -978,6 +978,7 @@ assert.ok(frontend.includes('/api/mandali-contacts'), 'Mandali Details must load
 assert.ok(frontend.includes('Presidents + Secretaries'), 'Mandali bulk generator must default to Presidents + Secretaries option');
 assert.ok(frontend.includes('Representatives only'), 'Mandali bulk generator must keep representatives selectable separately');
 assert.ok(frontend.includes('Community Leaders Meeting – 19 July 2026'), 'Mandali campaign must use the meeting campaign name');
+assert.ok(frontend.includes('*Hariprasad Varada*') && frontend.includes('*President*') && frontend.includes('*Manemanege Vasavi Seva Trust (R.)*'), 'Mandali invitation must use the approved sign-off');
 assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
 assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
 assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');
