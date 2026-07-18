@@ -185,6 +185,9 @@ let cache = {
   refreshedAt: null,
   source: null,
   writeEnabled: false,
+  sheetRowsLoaded: 0,
+  appRowsLoaded: 0,
+  rowDifference: 0,
 };
 
 let donorCache = {
@@ -322,6 +325,80 @@ function nextAvailableReceiptNo(rows, eventType) {
 
 function formatReceiptNo(eventType, number) {
   return `${receiptPrefix(eventType)}-${Number(number)}`;
+}
+
+function receiptQrEventCode(eventType) {
+  return eventType === 'bhimaratha' ? 'BS' : eventType === 'shashtipoorthi' ? 'SP' : '';
+}
+
+function eventTypeFromQrCode(eventCode) {
+  const code = String(eventCode || '').trim().toUpperCase();
+  if (code === 'BS') return 'bhimaratha';
+  if (code === 'SP') return 'shashtipoorthi';
+  return '';
+}
+
+function formatReceiptNoForQr(eventType, receiptNo) {
+  const value = receiptNumericValue(receiptNo, eventType);
+  const eventCode = receiptQrEventCode(eventType);
+  if (!eventCode || value === null || value < 1 || value > 30) return '';
+  return `${eventCode}-${String(value).padStart(2, '0')}`;
+}
+
+function parseFixedSeatNumber(seatNo) {
+  const raw = String(seatNo || '').trim().toUpperCase();
+  const match = raw.match(/^([A-E])\s*[- ]\s*(0?[1-6])$/);
+  if (!match) return null;
+  const rowIndex = match[1].charCodeAt(0) - 65;
+  const seatIndex = Number(match[2]);
+  return {
+    normalized: `${match[1]}-${String(seatIndex).padStart(2, '0')}`,
+    number: rowIndex * 6 + seatIndex,
+  };
+}
+
+function validateReceiptSeatMappingForQr({ eventType, receiptNo, seatNo }) {
+  const receiptValue = receiptNumericValue(receiptNo, eventType);
+  const seat = parseFixedSeatNumber(seatNo);
+  const eventCode = receiptQrEventCode(eventType);
+  if (!eventCode) return { ok: false, reason: 'Event must resolve to BS or SP.' };
+  if (receiptValue === null || receiptValue < 1 || receiptValue > 30) {
+    return { ok: false, reason: 'Receipt No. must be in the range 01-30.' };
+  }
+  if (!seat) return { ok: false, reason: 'Seat No. must be in the range A-01 to E-06.' };
+  if (receiptValue !== seat.number) {
+    return {
+      ok: false,
+      reason: 'Receipt No. and Seat No. do not match the approved sequence. QR generation stopped.',
+    };
+  }
+  return {
+    ok: true,
+    eventCode,
+    receiptNo: formatReceiptNoForQr(eventType, receiptNo),
+    seatNo: seat.normalized,
+    qrValue: `MVST|${eventCode}|${formatReceiptNoForQr(eventType, receiptNo)}|${seat.normalized}`,
+  };
+}
+
+function parseFixedReceiptQr(rawToken) {
+  const parts = String(rawToken || '').trim().split('|').map((part) => part.trim());
+  if (parts.length !== 4 || parts[0] !== 'MVST') return null;
+  const eventType = eventTypeFromQrCode(parts[1]);
+  if (!eventType) return null;
+  const validation = validateReceiptSeatMappingForQr({
+    eventType,
+    receiptNo: parts[2],
+    seatNo: parts[3],
+  });
+  if (!validation.ok) return { eventType, receiptNo: parts[2], seatNo: parts[3], validation };
+  return {
+    eventType,
+    receiptNo: validation.receiptNo,
+    receiptNumber: receiptNumericValue(validation.receiptNo, eventType),
+    seatNo: validation.seatNo,
+    validation,
+  };
 }
 
 function timestampValue(timestamp) {
@@ -544,7 +621,6 @@ function buildAdminColumnMap(headerMap) {
 
 function requiredDistributionColumns() {
   return [
-    'qrToken',
     ...Object.values(DISTRIBUTION_OPERATIONS).flatMap((operation) => [
       operation.statusField,
       operation.timeField,
@@ -615,12 +691,19 @@ async function ensureStoredQrTokens(rows, sheets) {
 async function recordQrToken(row) {
   if (!isMongoConfigured() || !row?.id) return;
   try {
+    const validation = validateReceiptSeatMappingForQr({
+      eventType: row.eventType,
+      receiptNo: row.receiptNo,
+      seatNo: row.seatNo,
+    });
+    const tokenValue = validation.ok ? validation.qrValue : rowQrToken(row);
+    if (!tokenValue) return;
     await connectMongo();
     await QrToken.updateOne(
       { participantId: row.id },
       {
         $set: {
-          tokenHash: tokenHash(rowQrToken(row)),
+          tokenHash: tokenHash(tokenValue),
           tokenVersion: QR_TOKEN_VERSION,
           participantId: row.id,
           eventType: row.eventType,
@@ -1330,12 +1413,16 @@ async function loadFromGoogleApi() {
   );
 
   const results = await readRows();
-  let rows = results.flat();
-  if (await ensureStoredQrTokens(rows, sheets)) {
-    rows = (await readRows()).flat();
-  }
+  const rows = results.flat();
 
-  return { rows, source: 'google-api', writeEnabled: true };
+  return {
+    rows,
+    source: 'google-api',
+    writeEnabled: true,
+    sheetRowsLoaded: rows.length,
+    appRowsLoaded: rows.length,
+    rowDifference: 0,
+  };
 }
 
 async function loadFromCsvFallback() {
@@ -1351,6 +1438,9 @@ async function loadFromCsvFallback() {
     rows: results.flat(),
     source: 'public-csv',
     writeEnabled: false,
+    sheetRowsLoaded: results.flat().length,
+    appRowsLoaded: results.flat().length,
+    rowDifference: 0,
     notice:
       'Google public CSV may take a few minutes to update. For instant updates, enable Google Sheets API service account.',
   };
@@ -1534,6 +1624,7 @@ async function loadMandaliContacts() {
 }
 
 async function loadRegistrations() {
+  console.log('Reading latest registrations from Google Sheets...');
   let result;
   try {
     result = await loadFromGoogleApi();
@@ -1541,13 +1632,23 @@ async function loadRegistrations() {
     result = await loadFromCsvFallback();
   }
 
+  const refreshedAt = new Date().toISOString();
   cache = {
     rows: result.rows,
-    refreshedAt: new Date().toISOString(),
+    refreshedAt,
     source: result.source,
     writeEnabled: result.writeEnabled,
     notice: result.notice || null,
+    sheetRowsLoaded: result.sheetRowsLoaded ?? result.rows.length,
+    appRowsLoaded: result.appRowsLoaded ?? result.rows.length,
+    rowDifference: result.rowDifference ?? 0,
   };
+  console.log('Google Sheet refreshed successfully.');
+  console.log(`Rows loaded: ${cache.rows.length}`);
+  console.log(`Timestamp of latest fetch: ${refreshedAt}`);
+  console.log(`Rows in Google Sheet: ${cache.sheetRowsLoaded}`);
+  console.log(`Rows loaded into app: ${cache.appRowsLoaded}`);
+  console.log(`Difference: ${cache.rowDifference}`);
 
   return cache;
 }
@@ -1841,20 +1942,35 @@ async function scanDistributionToken({ token, operationKey, actorUser }) {
   }
 
   await loadFromGoogleApi().then((result) => {
+    const refreshedAt = new Date().toISOString();
     cache = {
       rows: result.rows,
-      refreshedAt: new Date().toISOString(),
+      refreshedAt,
       source: result.source,
       writeEnabled: result.writeEnabled,
+      sheetRowsLoaded: result.sheetRowsLoaded ?? result.rows.length,
+      appRowsLoaded: result.appRowsLoaded ?? result.rows.length,
+      rowDifference: result.rowDifference ?? 0,
     };
   });
 
-  const currentRow = cache.rows.find((row) => rowQrToken(row) === String(token || '').trim());
-  if (!currentRow) {
-    const error = new Error('Invalid QR. Participant not found.');
+  const parsedQr = parseFixedReceiptQr(token);
+  if (!parsedQr?.validation?.ok) {
+    const error = new Error(parsedQr?.validation?.reason || 'Invalid QR. Participant not found.');
     error.statusCode = 404;
     throw error;
   }
+  const matchingRows = cache.rows.filter((row) => (
+    row.eventType === parsedQr.eventType &&
+    receiptNumericValue(row.receiptNo, row.eventType) === parsedQr.receiptNumber &&
+    parseFixedSeatNumber(row.seatNo)?.normalized === parsedQr.seatNo
+  ));
+  if (matchingRows.length !== 1) {
+    const error = new Error('Invalid QR. Participant not found.');
+    error.statusCode = matchingRows.length > 1 ? 409 : 404;
+    throw error;
+  }
+  const currentRow = matchingRows[0];
   await recordQrToken(currentRow);
 
   const source = sourceForEvent(currentRow.eventType);
@@ -2137,6 +2253,9 @@ app.get('/api/registrations', requireAuth, async (req, res) => {
       refreshedAt: cache.refreshedAt,
       source: cache.source,
       writeEnabled: cache.writeEnabled,
+      sheetRowsLoaded: cache.sheetRowsLoaded,
+      appRowsLoaded: cache.appRowsLoaded,
+      rowDifference: cache.rowDifference,
       notice: cache.notice,
       mode: cache.writeEnabled ? 'read-write' : 'read-only',
     });
@@ -2146,6 +2265,9 @@ app.get('/api/registrations', requireAuth, async (req, res) => {
       rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
+      sheetRowsLoaded: cache.sheetRowsLoaded,
+      appRowsLoaded: cache.appRowsLoaded,
+      rowDifference: cache.rowDifference,
       notice: cache.notice,
       mode: 'read-only',
       error: error.message,
@@ -2162,6 +2284,9 @@ app.post('/api/registrations/refresh', requireAuth, async (req, res) => {
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
+      sheetRowsLoaded: next.sheetRowsLoaded,
+      appRowsLoaded: next.appRowsLoaded,
+      rowDifference: next.rowDifference,
       notice: next.notice,
       mode: next.writeEnabled ? 'read-write' : 'read-only',
     });
@@ -2171,6 +2296,9 @@ app.post('/api/registrations/refresh', requireAuth, async (req, res) => {
       rows: publicRows(cache.rows, req.user),
       refreshedAt: cache.refreshedAt,
       writeEnabled: false,
+      sheetRowsLoaded: cache.sheetRowsLoaded,
+      appRowsLoaded: cache.appRowsLoaded,
+      rowDifference: cache.rowDifference,
       notice: cache.notice,
       mode: 'read-only',
       error: error.message,
@@ -2187,7 +2315,6 @@ app.get('/api/distribution/audit', requireAuth, async (req, res) => {
       missingColumns,
       reusedExistingColumns: ['Kit Issued', 'Remarks'],
       proposedNewColumns: [
-        'QR Token',
         'Meeting Attendance',
         'Meeting Attendance Time',
         'Meeting Attendance By',
@@ -2238,6 +2365,9 @@ app.post('/api/distribution/scan', requireAuth, async (req, res) => {
       refreshedAt: cache.refreshedAt,
       source: cache.source,
       writeEnabled: cache.writeEnabled,
+      sheetRowsLoaded: cache.sheetRowsLoaded,
+      appRowsLoaded: cache.appRowsLoaded,
+      rowDifference: cache.rowDifference,
       mode: cache.writeEnabled ? 'read-write' : 'read-only',
     });
   } catch (error) {
@@ -2259,6 +2389,9 @@ app.patch('/api/registrations/:id', requirePst, async (req, res) => {
       refreshedAt: next.refreshedAt,
       source: next.source,
       writeEnabled: next.writeEnabled,
+      sheetRowsLoaded: next.sheetRowsLoaded,
+      appRowsLoaded: next.appRowsLoaded,
+      rowDifference: next.rowDifference,
       notice: next.notice,
       mode: 'read-write',
     });

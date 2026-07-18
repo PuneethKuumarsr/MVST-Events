@@ -555,6 +555,59 @@ function normalizeReceiptNumber(receiptNo, eventType) {
   return value === null ? '' : formatReceiptNumber(eventType, value);
 }
 
+function receiptQrEventCode(eventType) {
+  return eventType === 'bhimaratha' ? 'BS' : eventType === 'shashtipoorthi' ? 'SP' : '';
+}
+
+function formatReceiptNumberForQr(eventType, receiptNo) {
+  const value = receiptNumberValue(receiptNo, eventType);
+  const eventCode = receiptQrEventCode(eventType);
+  if (!eventCode || value === null || value < 1 || value > 30) return '';
+  return `${eventCode}-${String(value).padStart(2, '0')}`;
+}
+
+function parseFixedSeatNumber(seatNo) {
+  const raw = String(seatNo || '').trim().toUpperCase();
+  const match = raw.match(/^([A-E])\s*[- ]\s*(0?[1-6])$/);
+  if (!match) return null;
+  const rowIndex = match[1].charCodeAt(0) - 65;
+  const seatIndex = Number(match[2]);
+  return {
+    normalized: `${match[1]}-${String(seatIndex).padStart(2, '0')}`,
+    number: rowIndex * 6 + seatIndex,
+  };
+}
+
+function validateReceiptSeatMapping(participant, receiptNo) {
+  const receiptValue = receiptNumberValue(receiptNo, participant?.eventType);
+  const seat = parseFixedSeatNumber(participant?.seatNo);
+  const eventCode = receiptQrEventCode(participant?.eventType);
+  if (!eventCode) return { ok: false, reason: 'Event must resolve to BS or SP.' };
+  if (receiptValue === null || receiptValue < 1 || receiptValue > 30) {
+    return { ok: false, reason: 'Receipt No. must be in the range 01-30.' };
+  }
+  if (!seat) return { ok: false, reason: 'Seat No. must be in the range A-01 to E-06.' };
+  if (receiptValue !== seat.number) {
+    return {
+      ok: false,
+      reason: 'Receipt No. and Seat No. do not match the approved sequence. QR generation stopped.',
+    };
+  }
+  return {
+    ok: true,
+    eventCode,
+    receiptNo: formatReceiptNumberForQr(participant.eventType, receiptNo),
+    seatNo: seat.normalized,
+    qrValue: `MVST|${eventCode}|${formatReceiptNumberForQr(participant.eventType, receiptNo)}|${seat.normalized}`,
+  };
+}
+
+function fixedReceiptQrValue(participant, receiptNo) {
+  const validation = validateReceiptSeatMapping(participant, receiptNo);
+  if (!validation.ok) throw new Error(validation.reason);
+  return validation.qrValue;
+}
+
 function hasValidReceiptBookNumber(participant) {
   return receiptNumberValue(participant?.receiptNo, participant?.eventType) !== null;
 }
@@ -825,16 +878,13 @@ async function generateReceiptJpg(participant, receiptNo) {
   if (!layout) throw new Error('Receipt layout is not configured for this event');
   const safeSeatNo = String(participant.seatNo || '').trim();
   const safeReceiptNo = normalizeReceiptNumber(receiptNo, participant.eventType);
-  const safeQrToken = String(participant.qrToken || '').trim();
-  if (!safeQrToken) {
-    throw new Error('Unable to save QR Token. Receipt generation stopped. Please retry.');
-  }
+  const safeQrValue = fixedReceiptQrValue(participant, receiptNo);
   const drawBoxes = (boxes, text, options) => boxes.forEach((box) => fitReceiptText(ctx, text, box, options));
   drawBoxes(layout.receiptNo, safeReceiptNo, { maxFont: 18, minFont: 10, align: 'center' });
   drawBoxes(layout.date, receiptDate, { maxFont: 18, minFont: 10, align: 'center' });
   drawBoxes(layout.seatNo, safeSeatNo, { maxFont: 20, minFont: 11, align: 'center' });
-  if (safeQrToken && layout.qrCode) {
-    const qrImage = await loadDataUrlImage(await qrTokenToPng(safeQrToken));
+  if (safeQrValue && layout.qrCode) {
+    const qrImage = await loadDataUrlImage(await qrTokenToPng(safeQrValue));
     layout.qrCode.forEach((box) => {
       ctx.drawImage(qrImage, box.x, box.y, box.width, box.height);
     });
@@ -901,9 +951,9 @@ async function qrTokenToPng(token) {
 }
 
 async function downloadQrPng(participant) {
-  const token = String(participant.qrToken || '').trim();
-  if (!token) throw new Error('QR token missing for this participant');
-  const dataUrl = await qrTokenToPng(token);
+  const receiptNo = participant.receiptNo;
+  const qrValue = fixedReceiptQrValue(participant, receiptNo);
+  const dataUrl = await qrTokenToPng(qrValue);
   const eventName = participant.eventType === 'shashtipoorthi' ? 'Shashtipoorthi' : 'Bhimaratha';
   const seat = String(participant.seatNo || 'No-Seat').replace(/\s+/g, '').replace(/[^a-z0-9-]+/gi, '-');
   const link = document.createElement('a');
@@ -969,8 +1019,7 @@ function buildBulkReceiptRows(rows, eventType) {
     row.eventType === eventType &&
     isReceiptEligible(row) &&
     Boolean(receiptDateForParticipant(row)) &&
-    String(row.seatNo || '').trim() &&
-    !row.receiptGenerated,
+    String(row.seatNo || '').trim(),
   ), 'latest');
 }
 
@@ -1003,43 +1052,41 @@ function qrFailureDetails(participant, receiptNo, reason) {
 async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
   const eventRows = sortReceiptSequenceRows(rows.filter((row) => row.eventType === eventType));
   const eligibleReceiptRows = buildBulkReceiptRows(rows, eventType);
-  const activeQrTokens = eventRows.map((row) => String(row.qrToken || '').trim()).filter(Boolean);
-  const allTokenCounts = rows.reduce((counts, row) => {
-    const token = String(row.qrToken || '').trim();
-    if (token) counts.set(token, (counts.get(token) || 0) + 1);
-    return counts;
-  }, new Map());
+  const qrValues = [];
   const failures = [];
   let qrImagesGenerated = 0;
   let qrDecoded = 0;
   let qrResolved = 0;
   let sheetMatches = 0;
   let receiptPreviews = 0;
+  let mappingFailures = 0;
 
   for (let index = 0; index < eventRows.length; index += 1) {
     const participant = eventRows[index];
-    const token = String(participant.qrToken || '').trim();
     const receiptNo = suggestedReceiptNumber(rows, participant);
-    onProgress(`QR readiness ${index + 1} of ${eventRows.length}: checking QR token...`);
-    if (!token) {
-      failures.push(qrFailureDetails(participant, receiptNo, 'Missing QR Token'));
-      continue;
-    }
-    if ((allTokenCounts.get(token) || 0) > 1) {
-      failures.push(qrFailureDetails(participant, receiptNo, 'Duplicate QR Token'));
+    onProgress(`QR readiness ${index + 1} of ${eventRows.length}: checking receipt-seat QR mapping...`);
+    const validation = validateReceiptSeatMapping(participant, receiptNo);
+    if (!validation.ok) {
+      mappingFailures += 1;
+      failures.push(qrFailureDetails(participant, receiptNo, validation.reason));
       continue;
     }
     try {
-      const qrDataUrl = await qrTokenToPng(token);
+      qrValues.push(validation.qrValue);
+      const qrDataUrl = await qrTokenToPng(validation.qrValue);
       qrImagesGenerated += 1;
       const decoded = await decodeQrDataUrl(qrDataUrl);
       qrDecoded += 1;
-      if (decoded !== token) {
-        failures.push(qrFailureDetails(participant, receiptNo, 'Google Sheet QR Token does not match encoded QR'));
+      if (decoded !== validation.qrValue) {
+        failures.push(qrFailureDetails(participant, receiptNo, 'Decoded QR does not match expected receipt-seat value'));
         continue;
       }
       sheetMatches += 1;
-      const resolved = rows.find((row) => String(row.qrToken || '').trim() === decoded);
+      const resolved = rows.find((row) => {
+        const resolvedReceiptNo = suggestedReceiptNumber(rows, row);
+        const resolvedValidation = validateReceiptSeatMapping(row, resolvedReceiptNo);
+        return resolvedValidation.ok && resolvedValidation.qrValue === decoded;
+      });
       if (!resolved || resolved.id !== participant.id) {
         failures.push(qrFailureDetails(participant, receiptNo, 'QR resolves to a different participant'));
         continue;
@@ -1049,6 +1096,40 @@ async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
       failures.push(qrFailureDetails(participant, receiptNo, error.message || 'QR image validation failed'));
     }
   }
+
+  const fixedQrValues = [];
+  const fixedEventCode = receiptQrEventCode(eventType);
+  for (let number = 1; number <= 30; number += 1) {
+    const rowIndex = Math.floor((number - 1) / 6);
+    const seatIndex = ((number - 1) % 6) + 1;
+    const fixedSeatNo = `${String.fromCharCode(65 + rowIndex)}-${String(seatIndex).padStart(2, '0')}`;
+    const fixedReceiptNo = `${fixedEventCode}-${String(number).padStart(2, '0')}`;
+    const fixedValue = `MVST|${fixedEventCode}|${fixedReceiptNo}|${fixedSeatNo}`;
+    fixedQrValues.push(fixedValue);
+    if (!qrValues.includes(fixedValue)) {
+      try {
+        const qrDataUrl = await qrTokenToPng(fixedValue);
+        const decoded = await decodeQrDataUrl(qrDataUrl);
+        if (decoded !== fixedValue) {
+          failures.push({
+            receiptNo: fixedReceiptNo,
+            participantName: 'Blank receipt book',
+            seatNo: fixedSeatNo,
+            reason: 'Blank receipt QR decode mismatch',
+          });
+        }
+      } catch (error) {
+        failures.push({
+          receiptNo: fixedReceiptNo,
+          participantName: 'Blank receipt book',
+          seatNo: fixedSeatNo,
+          reason: error.message || 'Blank receipt QR generation failed',
+        });
+      }
+    }
+  }
+
+  const duplicateQrValues = [...new Set(qrValues.filter((value, index) => qrValues.indexOf(value) !== index))];
 
   for (let index = 0; index < eligibleReceiptRows.length; index += 1) {
     const participant = eligibleReceiptRows[index];
@@ -1064,22 +1145,26 @@ async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
 
   return {
     totalRegistrations: eventRows.length,
-    registrationsWithQrToken: activeQrTokens.length,
-    registrationsMissingQrToken: eventRows.length - activeQrTokens.length,
-    duplicateQrTokens: activeQrTokens.filter((token) => (allTokenCounts.get(token) || 0) > 1).length,
+    registrationsWithQrToken: qrValues.length,
+    registrationsMissingQrToken: eventRows.length - qrValues.length,
+    duplicateQrTokens: duplicateQrValues.length,
     qrImagesGenerated,
     qrDecoded,
     qrResolved,
     sheetMatches,
+    mappingFailures,
+    fixedQrReady: fixedQrValues.length - failures.filter((failure) => failure.participantName === 'Blank receipt book').length,
     receiptPreviews,
     receiptPreviewExpected: eligibleReceiptRows.length,
     failures,
     qrReady: failures.length === 0 &&
-      eventRows.length === activeQrTokens.length &&
+      eventRows.length === qrValues.length &&
       qrImagesGenerated === eventRows.length &&
       qrDecoded === eventRows.length &&
       qrResolved === eventRows.length &&
-      sheetMatches === eventRows.length,
+      sheetMatches === eventRows.length &&
+      duplicateQrValues.length === 0 &&
+      mappingFailures === 0,
     receiptsSafeToPrint: failures.length === 0 && receiptPreviews === eligibleReceiptRows.length,
   };
 }
@@ -1887,6 +1972,11 @@ function useParticipants() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dataSource, setDataSource] = useState('');
   const [writeEnabled, setWriteEnabled] = useState(false);
+  const [sheetSync, setSheetSync] = useState({
+    sheetRowsLoaded: 0,
+    appRowsLoaded: 0,
+    rowDifference: 0,
+  });
 
   async function loadFromBackend(forceRefresh = false) {
     const response = await fetch('/api/registrations' + (forceRefresh ? '/refresh' : ''), {
@@ -1905,13 +1995,21 @@ function useParticipants() {
   function applyPayload(payload) {
     const refreshedAt = payload.refreshedAt || new Date().toISOString();
     const nextSource = sourceText(payload.source, payload.writeEnabled);
-    setRows(payload.rows || []);
+    const nextRows = payload.rows || [];
+    const nextSheetSync = {
+      sheetRowsLoaded: Number(payload.sheetRowsLoaded ?? nextRows.length),
+      appRowsLoaded: Number(payload.appRowsLoaded ?? nextRows.length),
+      rowDifference: Number(payload.rowDifference ?? 0),
+    };
+    setRows(nextRows);
     setLastRefreshedAt(refreshedAt);
     setDataSource(nextSource);
     setWriteEnabled(Boolean(payload.writeEnabled));
+    setSheetSync(nextSheetSync);
     setStatus(`Data Source: ${nextSource}. Last refreshed: ${formatRefreshTime(refreshedAt)}`);
     setError(payload.notice || '');
     setIsLive(true);
+    return { ...payload, rows: nextRows, ...nextSheetSync };
   }
 
   async function load(forceRefresh = false, aliveRef = { current: true }) {
@@ -1922,7 +2020,7 @@ function useParticipants() {
     try {
       const payload = await loadFromBackend(forceRefresh);
       if (!aliveRef.current) return;
-      applyPayload(payload);
+      return applyPayload(payload);
     } catch (backendError) {
       if (backendError.status === 401 || backendError.status === 403) {
         if (!aliveRef.current) return;
@@ -1933,7 +2031,7 @@ function useParticipants() {
         setStatus('Login required');
         setError('Login session expired. Please logout and login again.');
         setIsLive(false);
-        return;
+        return null;
       }
       try {
         const fallbackRows = await loadCsvFallback();
@@ -1943,9 +2041,24 @@ function useParticipants() {
         setLastRefreshedAt(fallbackRefreshedAt);
         setDataSource('Google public CSV');
         setWriteEnabled(false);
+        setSheetSync({
+          sheetRowsLoaded: fallbackRows.length,
+          appRowsLoaded: fallbackRows.length,
+          rowDifference: 0,
+        });
         setStatus(`Data Source: Google public CSV. Last refreshed: ${formatRefreshTime(fallbackRefreshedAt)}`);
         setError('Google public CSV may take a few minutes to update. For instant updates, enable Google Sheets API service account.');
         setIsLive(false);
+        return {
+          ok: true,
+          rows: fallbackRows,
+          refreshedAt: fallbackRefreshedAt,
+          source: 'public-csv',
+          writeEnabled: false,
+          sheetRowsLoaded: fallbackRows.length,
+          appRowsLoaded: fallbackRows.length,
+          rowDifference: 0,
+        };
       } catch (fallbackError) {
         if (!aliveRef.current) return;
         setRows(SAMPLE_ROWS);
@@ -1953,8 +2066,14 @@ function useParticipants() {
         setDataSource('Sample data');
         setStatus('Data Source: Sample data');
         setWriteEnabled(false);
+        setSheetSync({
+          sheetRowsLoaded: SAMPLE_ROWS.length,
+          appRowsLoaded: SAMPLE_ROWS.length,
+          rowDifference: 0,
+        });
         setError(DEVELOPER_MODE ? `Google Sheets access failed: ${backendError.message}. CSV fallback failed: ${fallbackError.message}` : '');
         setIsLive(false);
+        return null;
       }
     } finally {
       if (aliveRef.current) setIsRefreshing(false);
@@ -1978,6 +2097,7 @@ function useParticipants() {
     lastRefreshedAt,
     dataSource,
     writeEnabled,
+    sheetSync,
     saveRegistration: async (id, updates) => {
       const response = await fetch(`/api/registrations/${encodeURIComponent(id)}`, {
         method: 'PATCH',
@@ -2359,7 +2479,7 @@ function AdminEditPanel({ participant, rows, writeEnabled, onSave }) {
   );
 }
 
-function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
+function ReceiptPanel({ participant, rows, writeEnabled, onSave, onFreshRows }) {
   const [receiptDataUrl, setReceiptDataUrl] = useState('');
   const [receiptNo, setReceiptNo] = useState(participant.receiptNo || '');
   const [generating, setGenerating] = useState(false);
@@ -2385,15 +2505,27 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   }, [participant]);
 
   async function ensureReceiptImage() {
-    if (!String(participant.seatNo || '').trim()) {
+    let freshRows = rows;
+    let freshParticipant = participant;
+    if (onFreshRows) {
+      try {
+        freshRows = await onFreshRows('receipt generation');
+        freshParticipant = freshRows.find((row) => row.id === participant.id) || participant;
+      } catch (error) {
+        setMessage(error.message || 'Unable to refresh Google Sheets before receipt generation');
+        return null;
+      }
+    }
+    if (!String(freshParticipant.seatNo || '').trim()) {
       setMessage('Seat No is required before receipt generation');
       return null;
     }
     setGenerating(true);
     setMessage('');
-    const nextNo = activeReceiptNo;
+    const freshSavedNo = normalizeReceiptNumber(freshParticipant.receiptNo, freshParticipant.eventType);
+    const nextNo = freshSavedNo || suggestedReceiptNumber(freshRows, freshParticipant);
     try {
-      const dataUrl = await generateReceiptJpg(participant, nextNo);
+      const dataUrl = await generateReceiptJpg(freshParticipant, nextNo);
       setReceiptDataUrl(dataUrl);
       setReceiptNo(nextNo);
       return dataUrl;
@@ -2453,8 +2585,19 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
       setMessage('Registration timestamp missing');
       return;
     }
-    const nextNo = activeReceiptNo;
-    const conflictMessage = receiptConflictMessage(rows, participant, nextNo);
+    let freshRows = rows;
+    let freshParticipant = participant;
+    if (onFreshRows) {
+      try {
+        freshRows = await onFreshRows('receipt number save');
+        freshParticipant = freshRows.find((row) => row.id === participant.id) || participant;
+      } catch (error) {
+        setMessage(error.message || 'Unable to refresh Google Sheets before saving receipt number');
+        return;
+      }
+    }
+    const nextNo = normalizeReceiptNumber(freshParticipant.receiptNo, freshParticipant.eventType) || suggestedReceiptNumber(freshRows, freshParticipant);
+    const conflictMessage = receiptConflictMessage(freshRows, freshParticipant, nextNo);
     if (conflictMessage) {
       setMessage(conflictMessage);
       return;
@@ -2462,7 +2605,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
     setGenerating(true);
     setMessage('');
     try {
-      await onSave(participant.id, {
+      await onSave(freshParticipant.id, {
         receiptNo: nextNo,
       });
       setReceiptNo(nextNo);
@@ -2555,7 +2698,7 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave }) {
   );
 }
 
-function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
+function ParticipantCard({ participant, rows, writeEnabled, onSave, onFreshRows }) {
   const event = EVENTS[participant.eventType];
   const [openedMessageType, setOpenedMessageType] = useState('');
   const [sentMessage, setSentMessage] = useState('');
@@ -2652,7 +2795,7 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave }) {
 
       <AdminEditPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} />
 
-      <ReceiptPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} />
+      <ReceiptPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} onFreshRows={onFreshRows} />
 
       <div className="links-row">
         <a className={!participant.paymentScreenshot ? 'disabled' : ''} href={participant.paymentScreenshot || undefined} target="_blank" rel="noreferrer">
@@ -4546,7 +4689,8 @@ function QRPreviewPanel({ participant }) {
   async function previewQr() {
     setMessage('');
     try {
-      setQrUrl(await qrTokenToPng(participant.qrToken));
+      const qrValue = fixedReceiptQrValue(participant, participant.receiptNo);
+      setQrUrl(await qrTokenToPng(qrValue));
     } catch (error) {
       setMessage(error.message || 'Unable to generate QR');
     }
@@ -4887,7 +5031,7 @@ function App({ auth }) {
   const isPst = user?.role === ROLE_PST;
   const isVolunteerRole = user?.role === ROLE_VOLUNTEER || user?.role === ROLE_CREW;
   const mustChangePassword = Boolean(user?.mustChangePassword);
-  const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, saveRegistration, scanDistribution, refresh } = useParticipants();
+  const { rows, status, error, isLive, isRefreshing, dataSource, writeEnabled, sheetSync, saveRegistration, scanDistribution, refresh } = useParticipants();
   const donorState = useMangalyaDonors(isPst);
   const requirementState = useSponsorshipRequirements(isPst);
   const mandaliState = useMandaliContacts(isPst);
@@ -5030,6 +5174,31 @@ function App({ auth }) {
   const receiptQueueRemaining = receiptQueueStarted ? Math.max(receiptQueue.length - receiptQueueIndex - 1, 0) : receiptQueue.length;
   const bulkZipSupported = isBulkZipSupported();
 
+  async function freshRowsForOperation(operationName = 'operation') {
+    console.log('Reading latest registrations from Google Sheets...');
+    const payload = await refresh();
+    if (!payload?.rows) {
+      throw new Error('Google Sheet data is out of sync. Please refresh from Google Sheets.');
+    }
+    const fetchedAt = payload.refreshedAt || new Date().toISOString();
+    const sheetRowsLoaded = Number(payload.sheetRowsLoaded ?? payload.rows.length);
+    const appRowsLoaded = Number(payload.appRowsLoaded ?? payload.rows.length);
+    const rowDifference = Number(payload.rowDifference ?? sheetRowsLoaded - appRowsLoaded);
+    console.log('Google Sheet refreshed successfully.');
+    console.log(`Rows loaded: ${payload.rows.length}`);
+    console.log(`Timestamp of latest fetch: ${fetchedAt}`);
+    console.log(`Rows in Google Sheet: ${sheetRowsLoaded}`);
+    console.log(`Rows loaded into app: ${appRowsLoaded}`);
+    console.log(`Difference: ${rowDifference}`);
+    if (payload.source !== 'google-api') {
+      throw new Error(`${operationName} requires fresh Google Sheets API data. Please refresh from Google Sheets.`);
+    }
+    if (rowDifference !== 0 || sheetRowsLoaded !== appRowsLoaded || payload.rows.length !== appRowsLoaded) {
+      throw new Error('Google Sheet data is out of sync. Please refresh from Google Sheets.');
+    }
+    return payload.rows;
+  }
+
   function prepareBulkQueue(queueType) {
     setBulkQueue(buildBulkQueue(rows, queueType));
     setBulkQueueType(queueType);
@@ -5109,8 +5278,16 @@ function App({ auth }) {
     requestAnimationFrame(() => scrollToSection('participant-management-dashboard'));
   }
 
-  function prepareReceiptSendQueue(eventType = activeEvent) {
-    const { ready, skipped } = buildReceiptSendQueue(rows, eventType);
+  async function prepareReceiptSendQueue(eventType = activeEvent) {
+    setReceiptQueueMessage('Reading latest registrations from Google Sheets...');
+    let freshRows = rows;
+    try {
+      freshRows = await freshRowsForOperation('Receipt WhatsApp Queue');
+    } catch (error) {
+      setReceiptQueueMessage(error.message || 'Unable to refresh Google Sheets before receipt queue');
+      return;
+    }
+    const { ready, skipped } = buildReceiptSendQueue(freshRows, eventType);
     setReceiptQueueEvent(eventType);
     setReceiptQueue(ready);
     setReceiptQueueSkipped(skipped);
@@ -5152,21 +5329,30 @@ function App({ auth }) {
   async function openReceiptQueueItem(index, rowsOverride = rows) {
     const item = receiptQueue[index];
     if (!item) return;
-    const receiptNo = suggestedReceiptNumber(rowsOverride, item.participant);
+    let freshRows = rowsOverride;
+    let freshParticipant = item.participant;
+    try {
+      freshRows = await freshRowsForOperation('Receipt WhatsApp Queue');
+      freshParticipant = freshRows.find((row) => row.id === item.participant.id) || item.participant;
+    } catch (error) {
+      setReceiptQueueMessage(error.message || 'Unable to refresh Google Sheets before opening receipt WhatsApp');
+      return;
+    }
+    const receiptNo = suggestedReceiptNumber(freshRows, freshParticipant);
     setReceiptQueueOpening(true);
     setReceiptQueueMessage('');
     try {
-      const dataUrl = await generateReceiptJpg(item.participant, receiptNo);
-      downloadReceipt(dataUrl, item.participant, receiptNo);
+      const dataUrl = await generateReceiptJpg(freshParticipant, receiptNo);
+      downloadReceipt(dataUrl, freshParticipant, receiptNo);
       const message = [
-        `Namaskara ${participantDisplayName(item.participant)}.`,
+        `Namaskara ${participantDisplayName(freshParticipant)}.`,
         '',
         `Please find the MVST receipt ${receiptNo} downloaded.`,
         'Attach the downloaded receipt JPG and send it manually.',
       ].join('\n');
       const encodedText = encodeURIComponent(message);
       window.open(`https://web.whatsapp.com/send?phone=${item.normalizedMobile}&text=${encodedText}`, '_blank', 'noopener,noreferrer');
-      setReceiptQueueMessage(`Opened ${index + 1} of ${receiptQueue.length}: ${participantDisplayName(item.participant)}. Attach the downloaded receipt JPG and send it manually. Click Receipt Sent only after sending.`);
+      setReceiptQueueMessage(`Opened ${index + 1} of ${receiptQueue.length}: ${participantDisplayName(freshParticipant)}. Attach the downloaded receipt JPG and send it manually. Click Receipt Sent only after sending.`);
     } catch (error) {
       setReceiptQueueMessage(error.message || 'Unable to open receipt WhatsApp');
     } finally {
@@ -5192,11 +5378,12 @@ function App({ auth }) {
     setReceiptQueueSaving(true);
     setReceiptQueueMessage('');
     try {
-      const alreadySavedReceiptNo = normalizeReceiptNumber(item.participant.receiptNo, item.participant.eventType);
-      let latestRows = rows;
+      const latestRows = await freshRowsForOperation('Receipt Sent confirmation');
+      const latestParticipant = latestRows.find((row) => row.id === item.participant.id) || item.participant;
+      const alreadySavedReceiptNo = normalizeReceiptNumber(latestParticipant.receiptNo, latestParticipant.eventType);
       if (!alreadySavedReceiptNo) {
-        const payload = await saveRegistration(item.participant.id, { receiptNo });
-        latestRows = payload.rows || latestRows;
+        const payload = await saveRegistration(latestParticipant.id, { receiptNo });
+        latestRows.splice(0, latestRows.length, ...(payload.rows || latestRows));
       }
       setReceiptQueueSentCount((count) => count + 1);
       setReceiptQueueMessage('Receipt number saved after confirmation.');
@@ -5261,7 +5448,15 @@ function App({ auth }) {
       setBulkReceiptMessage('Bulk ZIP download is available on desktop. Use Receipt WhatsApp Queue on mobile.');
       return;
     }
-    const eligibleRows = buildBulkReceiptRows(rows, activeEvent);
+    let freshRows = rows;
+    try {
+      setBulkReceiptMessage('Reading latest registrations from Google Sheets...');
+      freshRows = await freshRowsForOperation('Bulk receipt generation');
+    } catch (error) {
+      setBulkReceiptMessage(error.message || 'Google Sheet data is out of sync. Please refresh from Google Sheets.');
+      return;
+    }
+    const eligibleRows = buildBulkReceiptRows(freshRows, activeEvent);
     if (!eligibleRows.length) {
       setBulkReceiptMessage('No eligible receipts found for this event');
       return;
@@ -5273,7 +5468,7 @@ function App({ auth }) {
     const failures = [];
     let preparedCount = 0;
     try {
-      const readiness = await verifyQrPrintReadiness(rows, activeEvent, setBulkReceiptMessage);
+      const readiness = await verifyQrPrintReadiness(freshRows, activeEvent, setBulkReceiptMessage);
       setQrPrintReadiness(readiness);
       if (!readiness.qrReady || !readiness.receiptsSafeToPrint) {
         setBulkReceiptMessage('QR Ready: NO. Receipts Safe to Print: NO. Fix the listed issues before bulk printing.');
@@ -5281,7 +5476,7 @@ function App({ auth }) {
       }
       for (let index = 0; index < eligibleRows.length; index += 1) {
         const participant = eligibleRows[index];
-        const receiptNo = suggestedReceiptNumber(rows, participant);
+        const receiptNo = suggestedReceiptNumber(freshRows, participant);
         setBulkReceiptMessage(`Preparing receipt ${index + 1} of ${eligibleRows.length}...`);
         try {
           const dataUrl = await generateReceiptJpg(participant, receiptNo);
@@ -5514,6 +5709,7 @@ function App({ auth }) {
                 rows={rows}
                 writeEnabled={writeEnabled}
                 onSave={saveRegistration}
+                onFreshRows={freshRowsForOperation}
               />
             ))
           ) : (
@@ -5623,13 +5819,15 @@ function App({ auth }) {
             <div className="receipt-readiness-panel">
               <div className="receipt-meta-grid">
                 <p><span>Total registrations</span>{qrPrintReadiness.totalRegistrations}</p>
-                <p><span>With QR Token</span>{qrPrintReadiness.registrationsWithQrToken}</p>
-                <p><span>Missing QR Token</span>{qrPrintReadiness.registrationsMissingQrToken}</p>
-                <p><span>Duplicate QR Tokens</span>{qrPrintReadiness.duplicateQrTokens}</p>
+                <p><span>Fixed QRs matched</span>{qrPrintReadiness.registrationsWithQrToken}</p>
+                <p><span>Missing fixed QR mapping</span>{qrPrintReadiness.registrationsMissingQrToken}</p>
+                <p><span>Duplicate QR values</span>{qrPrintReadiness.duplicateQrTokens}</p>
+                <p><span>Mapping failures</span>{qrPrintReadiness.mappingFailures}</p>
+                <p><span>Blank receipt QRs ready</span>{qrPrintReadiness.fixedQrReady} / 30</p>
                 <p><span>QR images generated</span>{qrPrintReadiness.qrImagesGenerated}</p>
                 <p><span>QR decodes successfully</span>{qrPrintReadiness.qrDecoded}</p>
                 <p><span>QR resolves correctly</span>{qrPrintReadiness.qrResolved}</p>
-                <p><span>Sheet token matches QR</span>{qrPrintReadiness.sheetMatches}</p>
+                <p><span>Decoded value matches QR</span>{qrPrintReadiness.sheetMatches}</p>
                 <p><span>Receipt previews generated</span>{qrPrintReadiness.receiptPreviews} / {qrPrintReadiness.receiptPreviewExpected}</p>
                 <p><span>QR Ready</span>{qrPrintReadiness.qrReady ? 'YES' : 'NO'}</p>
                 <p><span>Receipts Safe to Print</span>{qrPrintReadiness.receiptsSafeToPrint ? 'YES' : 'NO'}</p>
@@ -5802,6 +6000,7 @@ function App({ auth }) {
                   rows={rows}
                   writeEnabled={writeEnabled}
                   onSave={saveRegistration}
+                  onFreshRows={freshRowsForOperation}
                 />
               ) : (
                 <VolunteerParticipantCard

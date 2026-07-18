@@ -220,7 +220,7 @@ assert.ok(frontend.includes('setReceiptQueueSkippedIds'), 'Receipt WhatsApp queu
 assert.ok(backend.includes('suggestedReceiptNoForRow'), 'Backend must enforce timestamp-based receipt sequence before saving');
 assert.ok(backend.includes('Receipt No. must follow timestamp order'), 'Backend must reject out-of-sequence receipt numbers');
 assert.ok(backend.includes('rows.filter((row) => row.eventType === currentRow.eventType)'), 'Backend receipt sequence must follow all event registrations, not only paid rows');
-assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(rowsOverride, item.participant)'), 'Receipt queue must use all event registrations for receipt numbers, not only eligible queue members');
+assert.ok(frontend.includes('const receiptNo = suggestedReceiptNumber(freshRows, freshParticipant)'), 'Receipt queue must use freshly loaded event registrations for receipt numbers, not only eligible queue members');
 const openReceiptQueueBody = frontend.slice(
   frontend.indexOf('async function openReceiptQueueItem'),
   frontend.indexOf('function confirmReceiptSendQueue'),
@@ -233,7 +233,7 @@ const markReceiptSentBody = frontend.slice(
   frontend.indexOf('async function markReceiptQueueItemSent'),
   frontend.indexOf('function skipReceiptQueueItem'),
 );
-assert.ok(markReceiptSentBody.includes('await saveRegistration(item.participant.id, { receiptNo })'), 'Receipt Sent must save Receipt No after confirmation');
+assert.ok(markReceiptSentBody.includes('await saveRegistration(latestParticipant.id, { receiptNo })'), 'Receipt Sent must save Receipt No after confirmation');
 assert.ok(!markReceiptSentBody.includes('receiptGenerated'), 'Receipt queue must not write Receipt Generated status');
 const bulkReceiptBody = frontend.slice(
   frontend.indexOf('async function generateBulkReceipts'),
@@ -248,10 +248,10 @@ assert.ok(bulkReceiptBody.includes('Prepared: ${preparedCount}. Failed: ${failur
 assert.ok(frontend.includes('async function verifyQrPrintReadiness'), 'Bulk receipt printing must run QR print readiness verification');
 assert.ok(frontend.includes('async function decodeQrDataUrl'), 'QR print readiness must decode generated QR images');
 assert.ok(frontend.includes('BarcodeDetector'), 'QR print readiness must use browser QR decoding instead of assuming success');
-assert.ok(bulkReceiptBody.includes('verifyQrPrintReadiness(rows, activeEvent'), 'Bulk ZIP generation must be blocked behind QR readiness');
+assert.ok(bulkReceiptBody.includes('verifyQrPrintReadiness(freshRows, activeEvent'), 'Bulk ZIP generation must be blocked behind QR readiness using fresh Google Sheets data');
 assert.ok(frontend.includes('QR Ready'), 'Receipt print readiness must show QR Ready status');
 assert.ok(frontend.includes('Receipts Safe to Print'), 'Receipt print readiness must show print safety status');
-assert.ok(frontend.includes('Google Sheet QR Token does not match encoded QR'), 'QR readiness must compare encoded QR with Sheet token');
+assert.ok(frontend.includes('Decoded QR does not match expected receipt-seat value'), 'QR readiness must compare decoded QR with the fixed receipt-seat value');
 assert.ok(frontend.includes('QR resolves to a different participant'), 'QR readiness must verify QR resolves to the correct participant');
 assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
 assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
@@ -940,15 +940,14 @@ assert.ok(qrTokenModel.includes("mongoose.model('QrToken'"), 'Mongo QR token mod
 assert.ok(qrTokenModel.includes("collection: 'qr_tokens'"), 'Mongo QR token collection must be named qr_tokens');
 assert.ok(qrTokenModel.includes('tokenHash'), 'QR tokens must be stored by token hash');
 assert.ok(!qrTokenModel.includes('mobile') && !qrTokenModel.includes('address') && !qrTokenModel.includes('paidAmount'), 'QR token model must not store participant private details');
-assert.ok(backend.includes("qrToken: ['QR Token']"), 'Backend must use the QR Token Sheet column as the QR source of truth');
-assert.ok(backend.includes('crypto.randomBytes(15)'), 'Missing QR tokens must be generated with cryptographically random bytes');
-assert.ok(backend.includes('return `MVST_${'), 'Generated QR tokens must use an opaque MVST_ URL-safe random format');
-assert.ok(backend.includes('ensureStoredQrTokens(rows, sheets)'), 'Google API load must persist blank QR Token cells immediately');
-assert.ok(backend.includes("valueInputOption: 'RAW'"), 'QR tokens must be written back exactly as generated');
-assert.ok(backend.includes('while (usedTokens.has(token)) token = generateQrToken()'), 'QR generation must protect against duplicate tokens before saving');
-assert.ok(backend.includes("return String(row.qrToken || '').trim();"), 'Existing QR Token values must be reused without fallback regeneration');
-assert.ok(!backend.includes('crypto.createHmac'), 'QR tokens must not be derived from event, row, receipt, seat, or participant data');
-assert.ok(frontend.includes('Unable to save QR Token. Receipt generation stopped. Please retry.'), 'Receipt generation must stop if a stored QR Token is unavailable');
+assert.ok(frontend.includes('function fixedReceiptQrValue(participant, receiptNo)'), 'Frontend must generate fixed receipt-seat QR values');
+assert.ok(frontend.includes('MVST|${eventCode}|${formatReceiptNumberForQr'), 'Frontend QR must use MVST|EVENT|RECEIPT_NO|SEAT_NO');
+assert.ok(frontend.includes('Receipt No. and Seat No. do not match the approved sequence. QR generation stopped.'), 'Frontend must block QR generation when receipt-seat mapping is wrong');
+assert.ok(backend.includes('function parseFixedReceiptQr(rawToken)'), 'Backend scanner must parse fixed receipt-seat QR values');
+assert.ok(backend.includes('receiptNumericValue(row.receiptNo, row.eventType) === parsedQr.receiptNumber'), 'Backend scanner must match by receipt number');
+assert.ok(backend.includes('parseFixedSeatNumber(row.seatNo)?.normalized === parsedQr.seatNo'), 'Backend scanner must match by seat number');
+assert.ok(!backend.includes('if (await ensureStoredQrTokens(rows, sheets))'), 'Active Google API load must not write random QR Token values');
+assert.ok(!frontend.includes('Unable to save QR Token. Receipt generation stopped. Please retry.'), 'Receipt generation must not depend on the old random QR Token column');
 assert.ok(distributionLogModel.includes("mongoose.model('DistributionLog'"), 'Distribution log model must be defined');
 assert.ok(distributionLogModel.includes("collection: 'distribution_logs'"), 'Mongo distribution log collection must be named distribution_logs');
 assert.ok(distributionLogModel.includes('participantId') && distributionLogModel.includes('operation') && distributionLogModel.includes('operatorUserId'), 'Distribution logs must store participant id, operation and operator');
