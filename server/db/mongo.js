@@ -16,6 +16,8 @@ export async function connectMongo() {
     connectionPromise = mongoose.connect(process.env.MONGODB_URI, {
       dbName: process.env.MONGODB_DB || 'mvst_seva_portal',
       serverSelectionTimeoutMS: 5000,
+      autoIndex: false,
+      autoCreate: false,
     }).then((connection) => {
       console.log('Mongo connected successfully');
       console.log(`Database: ${connection.connection.db.databaseName}`);

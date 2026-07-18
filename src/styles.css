@@ -2968,6 +2968,30 @@ main {
   cursor: pointer;
 }
 
+.inline-receipt-input {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.inline-receipt-input span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.inline-receipt-input input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.mangalya-scan-result {
+  border-color: rgba(142, 27, 43, 0.35);
+  background: #fff8e6;
+}
+
 .donor-actions button:first-child {
   background: rgba(255, 250, 240, 0.84);
   color: var(--maroon);

@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { buildWhatsAppMessage, normalizeWhatsAppMessage } from './whatsappMessages.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
+import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mangalya_Donor_Receipt.jpeg';
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
 import './styles.css';
 
@@ -48,6 +49,18 @@ const RECEIPT_TEMPLATES = {
 const RECEIPT_PREFIXES = { bhimaratha: 'BS', shashtipoorthi: 'SP' };
 const LEGACY_RECEIPT_PREFIXES = { bhimaratha: 'BS26', shashtipoorthi: 'SP26' };
 const RECEIPT_TEXT_COLOR = '#0B2D5C';
+const MANGALYA_RATE = 15000;
+const MANGALYA_RECEIPT_TEXT_COLOR = '#0B2D5C';
+const mangalyaReceiptLayout = {
+  receiptNo: { x: 556, y: 249, width: 98, height: 24 },
+  date: { x: 1408, y: 270, width: 122, height: 24 },
+  donorName: { x: 635, y: 310, width: 815, height: 43 },
+  rate: { x: 735, y: 431, width: 185, height: 24 },
+  quantity: { x: 955, y: 431, width: 115, height: 24 },
+  total: { x: 1115, y: 431, width: 220, height: 24 },
+  qrCode: { x: 1435, y: 85, width: 76, height: 76 },
+  qrLabel: { x: 1430, y: 162, width: 86, height: 18 },
+};
 const receiptLayouts = {
   shashtipoorthi: {
     receiptNo: [
@@ -899,6 +912,104 @@ async function generateReceiptJpg(participant, receiptNo) {
     });
   });
 
+  return canvas.toDataURL('image/jpeg', 0.95);
+}
+
+function normalizeMangalyaReceiptNumber(value) {
+  const raw = String(value || '').trim().toUpperCase();
+  const match = raw.match(/^M\s*-?\s*(\d{1,3})$/);
+  if (!match) return '';
+  return `M${String(Number(match[1])).padStart(3, '0')}`;
+}
+
+function mangalyaQuantity(donor) {
+  const quantity = Number(donor?.quantity || donor?.confirmedQuantity || donor?.sponsored2026 || donor?.receivedQuantity || 0);
+  return Number.isInteger(quantity) && quantity >= 1 ? quantity : 0;
+}
+
+function mangalyaTotal(donor) {
+  return mangalyaQuantity(donor) * MANGALYA_RATE;
+}
+
+function buildMangalyaInvitationMessage(donor) {
+  const quantity = mangalyaQuantity(donor);
+  const total = donor.totalAmount || mangalyaTotal(donor);
+  return [
+    `🙏 Namaskara ${sponsorDisplayName(donor)},`,
+    '',
+    'Thank you for your generous Mangalya sponsorship for the',
+    '4th Samoohika Shashtipoorthi Shanthi organised by',
+    'Mane Manege Vasavi Seva Trust (R), Bengaluru.',
+    '',
+    `Mangalyas Sponsored: ${quantity}`,
+    `Receipt Number: ${donor.receiptNumber || 'Not assigned'}`,
+    `Total Amount: ${formatCurrency(total)}`,
+    '',
+    'Please show the attached QR code on your mobile at the registration counter on the event day.',
+    '',
+    'After scanning, our volunteers will be able to identify and honour you appropriately.',
+    '',
+    'Event:',
+    '4th Samoohika Shashtipoorthi Shanthi',
+    'Date: 02-08-2026',
+    'Venue: Shubh Convention, JP Nagar',
+    '',
+    'Thank you once again for your valuable support. 🙏',
+    '',
+    '- MVST Seva Portal',
+    'Mane Manege Vasavi Seva Trust (R), Bengaluru',
+  ].join('\n');
+}
+
+function makeMangalyaInvitationWhatsAppUrl(donor) {
+  const mobile = normalizeIndianMobileNumber(donor.contactNo || donor.mobile);
+  const encodedText = encodeURIComponent(buildMangalyaInvitationMessage(donor));
+  return `https://wa.me/${mobile}?text=${encodedText}`;
+}
+
+async function generateMangalyaReceiptJpg(donor, qrValue) {
+  const receiptNo = normalizeMangalyaReceiptNumber(donor.receiptNumber);
+  if (!receiptNo) throw new Error('Valid Mangalya receipt number is required.');
+  const quantity = mangalyaQuantity(donor);
+  if (!quantity) throw new Error('Number of Mangalyas must be at least 1.');
+  if (!qrValue) throw new Error('Secure Mangalya donor QR is required.');
+  const image = await loadReceiptImage(mangalyaDonorReceiptTemplate);
+  const outputWidth = 3000;
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const scale = outputWidth / sourceWidth;
+  const canvas = document.createElement('canvas');
+  canvas.width = outputWidth;
+  canvas.height = Math.round(sourceHeight * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  ctx.scale(scale, scale);
+
+  const today = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date());
+  const qrImage = await loadDataUrlImage(await qrTokenToPng(qrValue));
+  const layout = mangalyaReceiptLayout;
+  const drawMangalyaBox = (box, text, options = {}) => fitReceiptText(ctx, text, box, {
+    maxFont: options.maxFont || 18,
+    minFont: options.minFont || 9,
+    align: options.align || 'center',
+    weight: options.weight || 600,
+  });
+  ctx.fillStyle = MANGALYA_RECEIPT_TEXT_COLOR;
+  drawMangalyaBox(layout.receiptNo, receiptNo, { maxFont: 18 });
+  drawMangalyaBox(layout.date, today, { maxFont: 17 });
+  drawMangalyaBox(layout.donorName, sponsorDisplayName(donor), { maxFont: 20 });
+  drawMangalyaBox(layout.rate, `Rate: ${formatCurrency(MANGALYA_RATE)}`, { maxFont: 13 });
+  drawMangalyaBox(layout.quantity, `Qty: ${quantity}`, { maxFont: 13 });
+  drawMangalyaBox(layout.total, `Total: ${formatCurrency(quantity * MANGALYA_RATE)}`, { maxFont: 13 });
+  ctx.drawImage(qrImage, layout.qrCode.x, layout.qrCode.y, layout.qrCode.width, layout.qrCode.height);
+  drawMangalyaBox(layout.qrLabel, `Mangalya Donor QR\nReceipt: ${receiptNo}`, { maxFont: 7, minFont: 5 });
   return canvas.toDataURL('image/jpeg', 0.95);
 }
 
@@ -2193,6 +2304,52 @@ function useMangalyaDonors(enabled = true) {
       applyPayload(payload);
       return payload;
     },
+    prepareQr: async (id, body = {}) => {
+      const response = await fetch(`/api/mangalya-sponsorship/${encodeURIComponent(id)}/qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to generate Mangalya donor QR');
+      await load(true);
+      return payload;
+    },
+    regenerateQr: async (id, body = {}) => {
+      const response = await fetch(`/api/mangalya-sponsorship/${encodeURIComponent(id)}/regenerate-qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to regenerate Mangalya donor QR');
+      await load(true);
+      return payload;
+    },
+    revokeQr: async (id) => {
+      const response = await fetch(`/api/mangalya-sponsorship/${encodeURIComponent(id)}/revoke-qr`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to revoke Mangalya donor QR');
+      await load(true);
+      return payload;
+    },
+    markInvitationPrepared: async (id, body = {}) => {
+      const response = await fetch(`/api/mangalya-sponsorship/${encodeURIComponent(id)}/invitation-prepared`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to mark invitation prepared');
+      await load(true);
+      return payload;
+    },
   };
 }
 
@@ -2870,10 +3027,15 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const [previewType, setPreviewType] = useState('appeal');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [qrSaving, setQrSaving] = useState(false);
+  const [receiptNumberInput, setReceiptNumberInput] = useState(sponsor.receiptNumber || '');
+  const [lastQrUrl, setLastQrUrl] = useState('');
+  const [receiptPreview, setReceiptPreview] = useState('');
   const [opened, setOpened] = useState(false);
   const [openedMessageType, setOpenedMessageType] = useState('appeal');
   const validation = mobileValidationStatus(sponsor.contactNo);
   const canOpenWhatsApp = validation.status === 'ok';
+  const identityReady = sponsor.identityReady !== false && Boolean(sponsor.donorId || !String(sponsor.id || '').startsWith('missing-donor-id:'));
 
   useEffect(() => {
     setForm({
@@ -2888,10 +3050,16 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     setOpened(false);
     setOpenedMessageType('appeal');
     setPreviewType('appeal');
+    setReceiptNumberInput(sponsor.receiptNumber || '');
+    setLastQrUrl('');
+    setReceiptPreview('');
   }, [sponsor]);
 
   async function saveSponsor(updates) {
-    if (!writeEnabled || !sponsor.id) return;
+    if (!writeEnabled || !sponsor.id || !identityReady) {
+      setMessage('Donor ID migration is required before saving this donor.');
+      return;
+    }
     setSaving(true);
     setMessage('');
     try {
@@ -2929,6 +3097,101 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     setPreviewOpen(true);
   }
 
+  async function prepareMangalyaQr(options = {}) {
+    if (!writeEnabled || !sponsor.id || !sponsor.prepareQr || !identityReady) {
+      setMessage('Donor ID migration is required before generating QR.');
+      return null;
+    }
+    if (!sponsor.receiptNumber) {
+      setMessage('Save the physical receipt number to Google Sheets before generating QR.');
+      return null;
+    }
+    setQrSaving(true);
+    setMessage('');
+    try {
+      const payload = await sponsor.prepareQr(sponsor.id, {});
+      const mergedDonor = {
+        ...sponsor,
+        ...(payload.donor || {}),
+        contactNo: sponsor.contactNo,
+        qrUrl: payload.donor?.qrUrl || '',
+      };
+      setLastQrUrl(mergedDonor.qrUrl);
+      setReceiptNumberInput(mergedDonor.receiptNumber || receiptNumberInput);
+      setMessage('Mangalya donor QR ready. Invitation Prepared, not delivered.');
+      return mergedDonor;
+    } catch (error) {
+      setMessage(error.message || 'Unable to prepare Mangalya donor QR');
+      return null;
+    } finally {
+      setQrSaving(false);
+    }
+  }
+
+  async function saveReceiptNumber() {
+    if (!identityReady) {
+      setMessage('Donor ID migration is required before saving receipt number.');
+      return;
+    }
+    const nextReceipt = receiptNumberInput.trim();
+    if (!nextReceipt) {
+      setMessage('Enter physical receipt number first.');
+      return;
+    }
+    if (!window.confirm(`Save ${nextReceipt.toUpperCase()} as the physical receipt number for this donor?`)) return;
+    await saveSponsor({ receiptNumber: nextReceipt });
+  }
+
+  async function previewMangalyaReceipt(download = false) {
+    const donorWithQr = lastQrUrl
+      ? { ...sponsor, receiptNumber: receiptNumberInput || sponsor.receiptNumber, qrUrl: lastQrUrl }
+      : await prepareMangalyaQr();
+    if (!donorWithQr?.qrUrl) return;
+    setQrSaving(true);
+    try {
+      const dataUrl = await generateMangalyaReceiptJpg(donorWithQr, donorWithQr.qrUrl);
+      setReceiptPreview(dataUrl);
+      if (download) downloadBlob(dataUrlToBlob(dataUrl), `MVST-Mangalya-Receipt-${donorWithQr.receiptNumber}.jpg`);
+    } catch (error) {
+      setMessage(error.message || 'Unable to generate Mangalya donor receipt');
+    } finally {
+      setQrSaving(false);
+    }
+  }
+
+  async function openMangalyaInvitation() {
+    if (!canOpenWhatsApp || !sponsor.markInvitationPrepared) return;
+    const donorWithQr = lastQrUrl
+      ? { ...sponsor, receiptNumber: receiptNumberInput || sponsor.receiptNumber, qrUrl: lastQrUrl }
+      : await prepareMangalyaQr();
+    if (!donorWithQr?.qrUrl) return;
+    const url = makeMangalyaInvitationWhatsAppUrl({ ...donorWithQr, contactNo: sponsor.contactNo });
+    const decodedMessage = decodeURIComponent(url.split('text=')[1] || '');
+    console.debug('[MVST Mangalya donor invitation decoded message]', decodedMessage);
+    try {
+      await sponsor.markInvitationPrepared(sponsor.id, { whatsappDestination: sponsor.contactNo });
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setMessage('WhatsApp Opened. Invitation Prepared, not delivered.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to record invitation prepared');
+    }
+  }
+
+  async function revokeMangalyaQr() {
+    if (!writeEnabled || !sponsor.id || !sponsor.revokeQr || !identityReady) return;
+    setQrSaving(true);
+    setMessage('');
+    try {
+      await sponsor.revokeQr(sponsor.id);
+      setLastQrUrl('');
+      setMessage('Mangalya donor QR revoked.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to revoke QR');
+    } finally {
+      setQrSaving(false);
+    }
+  }
+
   return (
     <article className="donor-card sponsorship-card">
       <div className="participant-top">
@@ -2945,10 +3208,16 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       <div className="money-grid sponsorship-money-grid">
         <span><small>Previous Qty</small><b>{sponsor.sponsored2025 || 0}</b></span>
         <span><small>Confirmed Qty</small><b>{sponsor.confirmedQuantity || sponsor.sponsored2026 || 0}</b></span>
-        <span><small>Amount</small><b>{formatCurrency(sponsor.amount || sponsorAmount(sponsor))}</b></span>
+        <span><small>Rate</small><b>{formatCurrency(MANGALYA_RATE)}</b></span>
+        <span><small>Total</small><b>{formatCurrency(sponsor.totalAmount || mangalyaTotal(sponsor))}</b></span>
       </div>
 
       <div className="detail-grid donor-detail-grid">
+        <p><span>Donor ID</span>{sponsor.donorId || 'Migration required'}</p>
+        <p><span>Receipt Number</span>{sponsor.receiptNumber || 'Not assigned'}</p>
+        <p><span>QR Status</span>{sponsor.qrStatus || 'NOT_GENERATED'}</p>
+        <p><span>Arrival Status</span>{sponsor.arrivalStatus || 'NOT_ARRIVED'}</p>
+        <p><span>Honour Status</span>{sponsor.honourStatus || 'PENDING'}{sponsor.honouredAt ? ` - ${formatRefreshTime(sponsor.honouredAt)}` : ''}</p>
         <p><span>Remarks</span>{sponsor.remarks || 'No remarks'}</p>
         <p>
           <span>Journey Status</span>
@@ -2983,6 +3252,21 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       </div>
 
       <div className="donor-actions">
+        {!identityReady ? <small className="donor-note">Donor ID migration is required before QR, receipt, invitation, or status updates.</small> : null}
+        <label className="inline-receipt-input">
+          <span>Physical Receipt No.</span>
+          <input value={receiptNumberInput} onChange={(event) => setReceiptNumberInput(event.target.value)} placeholder="M001" disabled={qrSaving} />
+        </label>
+        <button type="button" onClick={saveReceiptNumber} disabled={!writeEnabled || qrSaving || !identityReady || !receiptNumberInput || Boolean(sponsor.receiptNumber)}>
+          Save Receipt No
+        </button>
+        <button type="button" onClick={() => prepareMangalyaQr()} disabled={!writeEnabled || qrSaving || !identityReady}>
+          {qrSaving ? 'Preparing' : 'Generate QR'}
+        </button>
+        <button type="button" onClick={() => previewMangalyaReceipt(false)} disabled={qrSaving || !identityReady}>Preview Receipt</button>
+        <button type="button" onClick={() => previewMangalyaReceipt(true)} disabled={qrSaving || !identityReady}>Download Receipt</button>
+        <button type="button" onClick={openMangalyaInvitation} disabled={!canOpenWhatsApp || qrSaving || !identityReady}>Send WhatsApp Invitation</button>
+        <button type="button" onClick={revokeMangalyaQr} disabled={!writeEnabled || qrSaving || !identityReady}>Revoke QR</button>
         {DONOR_JOURNEY_STEPS.map((step) => (
           <button
             className={donorJourneySent(sponsor, step.type) ? 'journey-sent-button' : ''}
@@ -2994,9 +3278,9 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
             {step.label}
           </button>
         ))}
-        <button type="button" onClick={() => setEditing(!editing)}>Edit</button>
-        <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving}>Mark Paid</button>
-        <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving}>Mark Received</button>
+        <button type="button" onClick={() => setEditing(!editing)} disabled={!identityReady}>Edit</button>
+        <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving || !identityReady}>Mark Paid</button>
+        <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving || !identityReady}>Mark Received</button>
       </div>
 
       {opened ? (
@@ -3027,6 +3311,21 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       ) : null}
       {message ? <small className="donor-note">{message}</small> : null}
       {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
+      {receiptPreview ? (
+        <div className="receipt-modal-backdrop">
+          <div className="receipt-modal">
+            <div className="receipt-modal-head">
+              <span>Mangalya Donor Receipt Preview</span>
+              <button type="button" onClick={() => setReceiptPreview('')}><X size={16} /></button>
+            </div>
+            <img src={receiptPreview} alt="Mangalya donor receipt preview" />
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => downloadBlob(dataUrlToBlob(receiptPreview), `MVST-Mangalya-Receipt-${receiptNumberInput || sponsor.receiptNumber}.jpg`)}>Download JPG</button>
+              <button type="button" onClick={() => setReceiptPreview('')}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -3589,7 +3888,7 @@ function PreviousDonorsCampaign({ donorState }) {
 }
 
 function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 0 }) {
-  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor, prepareQr, regenerateQr, revokeQr, markInvitationPrepared } = donorState;
   const requirements = requirementState?.requirements || [];
   const [bulkQueue, setBulkQueue] = useState([]);
   const [bulkStarted, setBulkStarted] = useState(false);
@@ -3969,7 +4268,12 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
       <div className="participants-list donor-list">
         {visibleDonors.length ? visibleDonors.map((sponsor) => (
-          <MangalyaSponsorCard key={sponsor.id} sponsor={sponsor} writeEnabled={writeEnabled} onSave={saveDonor} />
+          <MangalyaSponsorCard
+            key={sponsor.id}
+            sponsor={{ ...sponsor, prepareQr, regenerateQr, revokeQr, markInvitationPrepared }}
+            writeEnabled={writeEnabled}
+            onSave={saveDonor}
+          />
         )) : (
           <div className="empty-state"><Gift size={28} /><p>No Mangalya sponsors found for this filter.</p></div>
         )}
@@ -5117,6 +5421,8 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   const [listState, setListState] = useState(null);
   const [eventFilter, setEventFilter] = useState('All');
   const [selectedQrParticipant, setSelectedQrParticipant] = useState(null);
+  const [scannedMangalyaDonor, setScannedMangalyaDonor] = useState(null);
+  const [donorActionSaving, setDonorActionSaving] = useState(false);
   const operation = DISTRIBUTION_OPERATIONS[activeOperation];
   const searchableRows = rows.filter((row) => {
     const text = [participantDisplayName(row), row.seatNo, row.mobileNumber, EVENTS[row.eventType]?.shortLabel].join(' ').toLowerCase();
@@ -5148,6 +5454,17 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
     setScanState({ type: 'saving', message: 'Saving scan to Google Sheet...' });
     try {
       const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation });
+      if (result.recordType === 'MANGALYA') {
+        setScannedMangalyaDonor(result.donor);
+        setScanState({
+          type: result.donor?.honourStatus === 'HONOURED' ? 'duplicate' : 'success',
+          message: result.donor?.honourStatus === 'HONOURED'
+            ? `Already Honoured · ${result.donor?.donorName || 'Mangalya donor'}`
+            : `Mangalya Donor Verified · ${result.donor?.donorName || 'Donor'} · Receipt ${result.donor?.receiptNumber || '-'}`,
+        });
+        setManualToken('');
+        return;
+      }
       const participant = result.participant;
       if (result.status === 'already-completed') {
         setScanState({
@@ -5171,6 +5488,34 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   function openList(filterType, operationKey) {
     setListState({ filterType, operationKey });
     setEventFilter('All');
+  }
+
+  async function performMangalyaDonorAction(action) {
+    if (!scannedMangalyaDonor?.id || donorActionSaving) return;
+    setDonorActionSaving(true);
+    try {
+      const response = await fetch(`/api/mangalya-sponsorship/${encodeURIComponent(scannedMangalyaDonor.id)}/${action}`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || (action === 'honour'
+          ? 'Could not save the honour status. The donor has NOT been marked as honoured. Please retry.'
+          : 'Could not save donor status. Please retry.'));
+      }
+      setScannedMangalyaDonor(payload.donor);
+      setScanState({
+        type: payload.status?.includes('already') ? 'duplicate' : 'success',
+        message: payload.status === 'already-honoured'
+          ? `Already Honoured · ${payload.donor?.honouredAt || '-'} · ${payload.donor?.honouredBy || '-'}`
+          : `${action === 'arrive' ? 'Mangalya donor arrival saved' : action === 'honour' ? 'Mangalya donor honoured' : 'Honour reversed'} · ${payload.donor?.donorName || ''}`,
+      });
+    } catch (error) {
+      setScanState({ type: 'error', message: error.message || 'Could not save the honour status. The donor has NOT been marked as honoured. Please retry.' });
+    } finally {
+      setDonorActionSaving(false);
+    }
   }
 
   return (
@@ -5241,6 +5586,46 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
         </div>
         <small>{scannerSupported ? 'Tap Start Camera Scanner to request camera permission. Manual token entry remains available for owner/admin fallback.' : 'Camera requires HTTPS and a device camera. Use manual token entry, seat search, or participant search if camera is unavailable.'}</small>
       </div>
+
+      {scannedMangalyaDonor ? (
+        <div className="distribution-scanner-card mangalya-scan-result">
+          <div className="distribution-scanner-head">
+            <div>
+              <span>✓ Mangalya Donor Verified</span>
+              <strong>{scannedMangalyaDonor.donorName || 'Mangalya donor'}</strong>
+            </div>
+            <StatusPill tone={scannedMangalyaDonor.honourStatus === 'HONOURED' ? 'success' : 'warning'}>
+              {scannedMangalyaDonor.honourStatus === 'HONOURED' ? 'Already Honoured' : 'Pending Honour'}
+            </StatusPill>
+          </div>
+          <div className="receipt-meta-grid">
+            <p><span>Receipt No.</span>{scannedMangalyaDonor.receiptNumber || '-'}</p>
+            <p><span>Mobile</span>{scannedMangalyaDonor.mobile || '-'}</p>
+            <p><span>Mangalyas Sponsored</span>{scannedMangalyaDonor.quantity || 0}</p>
+            <p><span>Total Sponsorship</span>{formatCurrency(scannedMangalyaDonor.totalAmount || 0)}</p>
+            <p><span>Payment Status</span>{scannedMangalyaDonor.paymentStatus || '-'}</p>
+            <p><span>Arrival Status</span>{scannedMangalyaDonor.arrivalStatus || 'NOT_ARRIVED'}</p>
+            <p><span>Honour Status</span>{scannedMangalyaDonor.honourStatus || 'PENDING'}</p>
+            {scannedMangalyaDonor.honouredAt ? <p><span>Honoured At</span>{formatRefreshTime(scannedMangalyaDonor.honouredAt)}</p> : null}
+            {scannedMangalyaDonor.honouredBy ? <p><span>Honoured By</span>{scannedMangalyaDonor.honouredBy}</p> : null}
+          </div>
+          <div className="receipt-queue-actions">
+            <button type="button" onClick={() => performMangalyaDonorAction('arrive')} disabled={donorActionSaving || scannedMangalyaDonor.arrivalStatus === 'ARRIVED'}>
+              Mark Arrived
+            </button>
+            <button type="button" onClick={() => performMangalyaDonorAction('honour')} disabled={donorActionSaving || scannedMangalyaDonor.honourStatus === 'HONOURED'}>
+              Mark Honoured
+            </button>
+            {isPst ? (
+              <button type="button" onClick={() => performMangalyaDonorAction('undo-honour')} disabled={donorActionSaving}>
+                Undo Honour
+              </button>
+            ) : null}
+            <button type="button" onClick={() => setScannedMangalyaDonor(null)} disabled={donorActionSaving}>Close</button>
+          </div>
+          {scannedMangalyaDonor.honourStatus === 'HONOURED' ? <small>⚠ Already Honoured. Duplicate honouring is prevented.</small> : null}
+        </div>
+      ) : null}
 
       <VolunteerDistributionMonitor rows={rows} />
 
