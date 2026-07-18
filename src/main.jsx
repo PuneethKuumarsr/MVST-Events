@@ -23,6 +23,7 @@ import {
   Keyboard,
   LogOut,
   MessageCircle,
+  Phone,
   QrCode,
   RefreshCw,
   Save,
@@ -4317,7 +4318,7 @@ function VolunteerParticipantCard({ participant }) {
       </div>
       <div className="volunteer-call-row">
         <span>{participant.mobileNumber || 'Mobile missing'}</span>
-        {validMobile ? <a href={`tel:+${mobile}`}>?? Call</a> : <small>Valid mobile required</small>}
+        {validMobile ? <a href={`tel:+${mobile}`}><Phone size={16} /> Call</a> : <small>Valid mobile required</small>}
       </div>
       <div className="volunteer-status-grid">
         {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
@@ -5199,7 +5200,7 @@ function VolunteerDistributionMonitor({ rows }) {
               </div>
               <div className="volunteer-call-row">
                 <span>{participant.mobileNumber || 'Mobile missing'}</span>
-                {validMobile ? <a href={`tel:+${mobile}`}>?? Call</a> : <small>Valid mobile required</small>}
+                {validMobile ? <a href={`tel:+${mobile}`}><Phone size={16} /> Call</a> : <small>Valid mobile required</small>}
               </div>
               <div className="volunteer-status-grid">
                 {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
