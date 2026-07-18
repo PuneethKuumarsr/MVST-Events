@@ -858,6 +858,11 @@ assert.ok(frontend.includes('QRCode.toDataURL'), 'QR module must generate downlo
 assert.ok(frontend.includes('Preview QR'), 'QR module must provide QR preview');
 assert.ok(frontend.includes('Download QR PNG'), 'QR module must provide QR download');
 assert.ok(frontend.includes('BarcodeDetector'), 'QR module must support camera QR scanning where browsers permit it');
+assert.ok(packageJson.includes('"html5-qrcode"'), 'QR scanner fallback library must be bundled with the app');
+assert.ok(frontend.includes("import { Html5Qrcode as BundledHtml5Qrcode } from 'html5-qrcode'"), 'QR scanner must import the bundled fallback decoder');
+assert.ok(!frontend.includes('unpkg.com/html5-qrcode'), 'QR scanner must not depend on a runtime CDN script');
+assert.ok(frontend.includes("setScannerMode('html5')"), 'QR scanner fallback must set html5 mode before initialization');
+assert.ok(frontend.includes('await waitForScannerRegion()'), 'QR scanner fallback must wait for the visible scanner region before starting');
 assert.ok(frontend.includes('Manual QR token entry'), 'QR module must provide owner/admin manual fallback');
 assert.ok(frontend.includes('scanDistributionQr'), 'QR scans must call the backend scan endpoint');
 assert.ok(frontend.includes('Saving scan to Google Sheet'), 'QR scan must not show success until save is in progress/confirmed');

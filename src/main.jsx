@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Html5Qrcode as BundledHtml5Qrcode } from 'html5-qrcode';
 import JSZip from 'jszip';
 import QRCode from 'qrcode';
 import {
@@ -5221,6 +5222,7 @@ function QRVideoScanner({ disabled, onScan }) {
   const [fallbackElement, setFallbackElement] = useState(null);
   const [status, setStatus] = useState('Ready to start camera scanner.');
   const [scannerState, setScannerState] = useState('idle');
+  const [scannerMode, setScannerMode] = useState(null);
   const streamRef = useRef(null);
   const timeoutRef = useRef(null);
   const html5ScannerRef = useRef(null);
@@ -5239,7 +5241,7 @@ function QRVideoScanner({ disabled, onScan }) {
       mediaDevicesAvailable: Boolean(navigator.mediaDevices),
       getUserMediaAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
       barcodeDetectorAvailable: 'BarcodeDetector' in window,
-      scannerFallbackLibraryAvailable: Boolean(window.Html5Qrcode),
+      scannerFallbackLibraryAvailable: Boolean(BundledHtml5Qrcode || window.Html5Qrcode),
       ...extra,
     };
     console.log('MVST QR scanner diagnostics', diagnostics);
@@ -5254,6 +5256,7 @@ function QRVideoScanner({ disabled, onScan }) {
       streamRef.current = null;
     }
     if (videoElement) videoElement.srcObject = null;
+    setScannerMode(null);
     if (html5ScannerRef.current) {
       const scanner = html5ScannerRef.current;
       html5ScannerRef.current = null;
@@ -5266,23 +5269,13 @@ function QRVideoScanner({ disabled, onScan }) {
   useEffect(() => () => stopScanner(), []);
 
   async function loadHtml5QrCode() {
-    if (window.Html5Qrcode) return window.Html5Qrcode;
-    await new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[data-mvst-html5-qrcode="true"]');
-      if (existing) {
-        existing.addEventListener('load', resolve, { once: true });
-        existing.addEventListener('error', reject, { once: true });
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
-      script.async = true;
-      script.dataset.mvstHtml5Qrcode = 'true';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
+    return BundledHtml5Qrcode || window.Html5Qrcode;
+  }
+
+  function waitForScannerRegion() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
     });
-    return window.Html5Qrcode;
   }
 
   async function startBarcodeDetectorLoop(stream) {
@@ -5290,6 +5283,7 @@ function QRVideoScanner({ disabled, onScan }) {
     videoElement.srcObject = stream;
     await videoElement.play();
     const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    setScannerMode('barcode');
     setScannerState('active');
     setStatus('Camera scanner active. Point at the QR code.');
     logScannerDiagnostics({ scannerStart: 'success', selectedDevice: stream.getVideoTracks()[0]?.label || 'camera' });
@@ -5320,15 +5314,18 @@ function QRVideoScanner({ disabled, onScan }) {
     if (!Html5Qrcode) throw new Error('QR scanner failed to initialize.');
     const scannerId = fallbackElement.id || 'mvst-html5-qr-reader';
     fallbackElement.id = scannerId;
+    setScannerMode('html5');
+    setScannerState('active');
+    setStatus('Starting QR scanner fallback...');
+    await waitForScannerRegion();
     const scanner = new Html5Qrcode(scannerId, false);
     html5ScannerRef.current = scanner;
     await scanner.start(
-      { facingMode: { ideal: 'environment' } },
+      { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 260, height: 260 } },
       (decodedText) => window.__mvstQrScanHandler?.(decodedText),
       () => {},
     );
-    setScannerState('active');
     setStatus('Camera scanner active. Point at the QR code.');
     logScannerDiagnostics({ scannerFallbackLibraryAvailable: true, scannerStart: 'success', selectedDevice: 'html5-qrcode fallback' });
   }
@@ -5368,6 +5365,7 @@ function QRVideoScanner({ disabled, onScan }) {
       });
     } catch (error) {
       setScannerState('error');
+      setScannerMode(null);
       const message = error?.name === 'NotAllowedError'
         ? 'Camera permission was denied. Please allow camera access in browser settings.'
         : error?.name === 'NotFoundError'
@@ -5389,6 +5387,7 @@ function QRVideoScanner({ disabled, onScan }) {
       }
     } catch (error) {
       setScannerState('error');
+      setScannerMode(null);
       setStatus(error.message || 'QR scanner failed to initialize.');
       logScannerDiagnostics({ scannerStart: 'failure', error: error.message });
       if (streamRef.current) {
@@ -5405,8 +5404,8 @@ function QRVideoScanner({ disabled, onScan }) {
           <Camera size={16} /> {scannerState === 'requesting' ? 'Opening camera...' : 'Start Camera Scanner'}
         </button>
       ) : null}
-      <video ref={setVideoElement} muted playsInline aria-label="QR scanner camera preview" hidden={scannerState !== 'active' || !('BarcodeDetector' in window)} />
-      <div ref={setFallbackElement} className="html5-qr-region" hidden={scannerState !== 'active' || ('BarcodeDetector' in window)} />
+      <video ref={setVideoElement} muted playsInline aria-label="QR scanner camera preview" hidden={scannerState !== 'active' || scannerMode !== 'barcode'} />
+      <div ref={setFallbackElement} className="html5-qr-region" hidden={scannerState !== 'active' || scannerMode !== 'html5'} />
       <small>{status}</small>
     </div>
   );
