@@ -54,9 +54,18 @@ const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const MANGALYA_RATE = 15000;
 const MANGALYA_RECEIPT_TEXT_COLOR = '#0B2D5C';
 const mangalyaReceiptLayout = {
-  receiptNo: { x: 556, y: 249, width: 98, height: 24 },
-  date: { x: 1408, y: 270, width: 122, height: 24 },
-  donorName: { x: 635, y: 310, width: 815, height: 43 },
+  receiptNo: [
+    { x: 88, y: 219, width: 86, height: 28 },
+    { x: 556, y: 249, width: 98, height: 24 },
+  ],
+  date: [
+    { x: 383, y: 221, width: 92, height: 25 },
+    { x: 1408, y: 270, width: 122, height: 24 },
+  ],
+  donorName: [
+    { x: 135, y: 271, width: 328, height: 41 },
+    { x: 635, y: 310, width: 815, height: 43 },
+  ],
   rate: { x: 735, y: 431, width: 185, height: 24 },
   quantity: { x: 955, y: 431, width: 115, height: 24 },
   total: { x: 1115, y: 431, width: 220, height: 24 },
@@ -1003,10 +1012,13 @@ async function generateMangalyaReceiptJpg(donor, qrValue) {
     align: options.align || 'center',
     weight: options.weight || 600,
   });
+  const drawMangalyaBoxes = (boxes, text, options = {}) => {
+    (Array.isArray(boxes) ? boxes : [boxes]).forEach((box) => drawMangalyaBox(box, text, options));
+  };
   ctx.fillStyle = MANGALYA_RECEIPT_TEXT_COLOR;
-  drawMangalyaBox(layout.receiptNo, receiptNo, { maxFont: 18 });
-  drawMangalyaBox(layout.date, today, { maxFont: 17 });
-  drawMangalyaBox(layout.donorName, sponsorDisplayName(donor), { maxFont: 20 });
+  drawMangalyaBoxes(layout.receiptNo, receiptNo, { maxFont: 18 });
+  drawMangalyaBoxes(layout.date, today, { maxFont: 17 });
+  drawMangalyaBoxes(layout.donorName, sponsorDisplayName(donor), { maxFont: 20 });
   drawMangalyaBox(layout.rate, `Rate: ${formatCurrency(MANGALYA_RATE)}`, { maxFont: 13 });
   drawMangalyaBox(layout.quantity, `Qty: ${quantity}`, { maxFont: 13 });
   drawMangalyaBox(layout.total, `Total: ${formatCurrency(quantity * MANGALYA_RATE)}`, { maxFont: 13 });
