@@ -50,6 +50,7 @@ const RECEIPT_TEMPLATES = {
 };
 const RECEIPT_PREFIXES = { bhimaratha: 'BS', shashtipoorthi: 'SP' };
 const LEGACY_RECEIPT_PREFIXES = { bhimaratha: 'BS26', shashtipoorthi: 'SP26' };
+const PUBLIC_PORTAL_ORIGIN = (import.meta.env.VITE_PUBLIC_PORTAL_ORIGIN || import.meta.env.VITE_PUBLIC_APP_URL || 'https://mvst-events.onrender.com').replace(/\/+$/, '');
 const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const MANGALYA_RATE = 15000;
 const MANGALYA_RECEIPT_TEXT_COLOR = '#0B2D5C';
@@ -572,7 +573,7 @@ function receiptNumberValue(receiptNo, eventType) {
 }
 
 function formatReceiptNumber(eventType, number) {
-  return `${receiptPrefix(eventType)}-${Number(number)}`;
+  return `${receiptPrefix(eventType)}-${String(Number(number)).padStart(2, '0')}`;
 }
 
 function normalizeReceiptNumber(receiptNo, eventType) {
@@ -623,14 +624,37 @@ function validateReceiptSeatMapping(participant, receiptNo) {
     eventCode,
     receiptNo: formatReceiptNumberForQr(participant.eventType, receiptNo),
     seatNo: seat.normalized,
-    qrValue: `MVST|${eventCode}|${formatReceiptNumberForQr(participant.eventType, receiptNo)}|${seat.normalized}`,
+    qrToken: `MVST|${eventCode}|${formatReceiptNumberForQr(participant.eventType, receiptNo)}|${seat.normalized}`,
   };
+}
+
+function receiptQrPortalUrl(qrToken) {
+  return `${PUBLIC_PORTAL_ORIGIN}/qr/receipt?token=${encodeURIComponent(qrToken)}`;
+}
+
+function extractReceiptQrToken(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('MVST|')) return raw;
+  try {
+    const parsed = new URL(raw);
+    return parsed.searchParams.get('token') || raw;
+  } catch {
+    return raw;
+  }
+}
+
+function receiptQrTokenFromCurrentUrl() {
+  if (typeof window === 'undefined') return '';
+  const path = window.location.pathname || '';
+  if (!path.startsWith('/qr/receipt')) return '';
+  return extractReceiptQrToken(window.location.href);
 }
 
 function fixedReceiptQrValue(participant, receiptNo) {
   const validation = validateReceiptSeatMapping(participant, receiptNo);
   if (!validation.ok) throw new Error(validation.reason);
-  return validation.qrValue;
+  return receiptQrPortalUrl(validation.qrToken);
 }
 
 function hasValidReceiptBookNumber(participant) {
@@ -1198,20 +1222,21 @@ async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
       continue;
     }
     try {
-      qrValues.push(validation.qrValue);
-      const qrDataUrl = await qrTokenToPng(validation.qrValue);
+      const qrUrl = receiptQrPortalUrl(validation.qrToken);
+      qrValues.push(qrUrl);
+      const qrDataUrl = await qrTokenToPng(qrUrl);
       qrImagesGenerated += 1;
       const decoded = await decodeQrDataUrl(qrDataUrl);
       qrDecoded += 1;
-      if (decoded !== validation.qrValue) {
-        failures.push(qrFailureDetails(participant, receiptNo, 'Decoded QR does not match expected receipt-seat value'));
+      if (decoded !== qrUrl || extractReceiptQrToken(decoded) !== validation.qrToken) {
+        failures.push(qrFailureDetails(participant, receiptNo, 'Decoded QR does not match expected portal receipt-seat URL'));
         continue;
       }
       sheetMatches += 1;
       const resolved = rows.find((row) => {
         const resolvedReceiptNo = suggestedReceiptNumber(rows, row);
         const resolvedValidation = validateReceiptSeatMapping(row, resolvedReceiptNo);
-        return resolvedValidation.ok && resolvedValidation.qrValue === decoded;
+        return resolvedValidation.ok && receiptQrPortalUrl(resolvedValidation.qrToken) === decoded;
       });
       if (!resolved || resolved.id !== participant.id) {
         failures.push(qrFailureDetails(participant, receiptNo, 'QR resolves to a different participant'));
@@ -1231,17 +1256,18 @@ async function verifyQrPrintReadiness(rows, eventType, onProgress = () => {}) {
     const fixedSeatNo = `${String.fromCharCode(65 + rowIndex)}-${String(seatIndex).padStart(2, '0')}`;
     const fixedReceiptNo = `${fixedEventCode}-${String(number).padStart(2, '0')}`;
     const fixedValue = `MVST|${fixedEventCode}|${fixedReceiptNo}|${fixedSeatNo}`;
-    fixedQrValues.push(fixedValue);
-    if (!qrValues.includes(fixedValue)) {
+    const fixedUrl = receiptQrPortalUrl(fixedValue);
+    fixedQrValues.push(fixedUrl);
+    if (!qrValues.includes(fixedUrl)) {
       try {
-        const qrDataUrl = await qrTokenToPng(fixedValue);
+        const qrDataUrl = await qrTokenToPng(fixedUrl);
         const decoded = await decodeQrDataUrl(qrDataUrl);
-        if (decoded !== fixedValue) {
+        if (decoded !== fixedUrl || extractReceiptQrToken(decoded) !== fixedValue) {
           failures.push({
             receiptNo: fixedReceiptNo,
             participantName: 'Blank receipt book',
             seatNo: fixedSeatNo,
-            reason: 'Blank receipt QR decode mismatch',
+            reason: 'Blank receipt QR portal URL decode mismatch',
           });
         }
       } catch (error) {
@@ -5423,7 +5449,7 @@ function QRVideoScanner({ disabled, onScan }) {
     </div>
   );
 }
-function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst }) {
+function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst, initialScanToken = '' }) {
   const [activeOperation, setActiveOperation] = useState('meetingAttendance');
   const operatorName = user?.name || user?.mobile || '';
   const [manualToken, setManualToken] = useState('');
@@ -5443,6 +5469,12 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   const scannerSupported = typeof window !== 'undefined' &&
     window.isSecureContext &&
     Boolean(navigator.mediaDevices?.getUserMedia);
+
+  useEffect(() => {
+    if (!initialScanToken) return;
+    setManualToken(initialScanToken);
+    setScanState({ type: 'idle', message: 'QR loaded from portal link. Select operation and tap Scan Token.' });
+  }, [initialScanToken]);
 
   useEffect(() => {
     if (scanState.type === 'success' || scanState.type === 'duplicate' || scanState.type === 'error') {
@@ -5685,6 +5717,7 @@ function App({ auth }) {
   const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
+  const [linkedReceiptQrToken, setLinkedReceiptQrToken] = useState('');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
   const [verifiedFilter, setVerifiedFilter] = useState('All');
@@ -5712,6 +5745,14 @@ function App({ auth }) {
   const [receiptQueueSkippedIds, setReceiptQueueSkippedIds] = useState(() => new Set());
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalFilter, setBalanceModalFilter] = useState('All');
+
+  useEffect(() => {
+    const token = receiptQrTokenFromCurrentUrl();
+    if (!token) return;
+    setLinkedReceiptQrToken(token);
+    setActiveView('qr-distribution');
+    window.history.replaceState({}, '', window.location.origin + window.location.pathname.replace(/^\/qr\/receipt$/, '/'));
+  }, []);
 
   useEffect(() => {
     if (mustChangePassword && activeView !== 'change-password') {
@@ -6390,7 +6431,7 @@ function App({ auth }) {
 
           {activeView === 'trust-bank-qr' && !mustChangePassword ? <TrustBankQrSection /> : null}
 
-          {activeView === 'qr-distribution' && !mustChangePassword ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} /> : null}
+          {activeView === 'qr-distribution' && !mustChangePassword ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} initialScanToken={linkedReceiptQrToken} /> : null}
 
           {activeView === 'mangalya-donors' && isPst && !mustChangePassword ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
 

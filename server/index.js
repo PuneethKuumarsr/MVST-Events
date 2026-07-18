@@ -119,6 +119,7 @@ const QR_TOKEN_VERSION = 'mvstqr:v1';
 const MANGALYA_EVENT_YEAR = process.env.MANGALYA_EVENT_YEAR || process.env.VITE_ACTIVE_EVENT_YEAR || '2026';
 const MANGALYA_RATE = 15000;
 const MANGALYA_QR_PREFIX = '/qr/mangalya/';
+const PUBLIC_PORTAL_ORIGIN = (process.env.PUBLIC_PORTAL_ORIGIN || process.env.VITE_PUBLIC_PORTAL_ORIGIN || process.env.VITE_PUBLIC_APP_URL || 'https://mvst-events.onrender.com').replace(/\/+$/, '');
 const DISTRIBUTION_OPERATIONS = {
   meetingAttendance: {
     label: 'Meeting Attendance',
@@ -327,11 +328,11 @@ function nextAvailableReceiptNo(rows, eventType) {
   const highest = rows
     .filter((row) => row.eventType === eventType)
     .reduce((max, row) => Math.max(max, receiptNumericValue(row.receiptNo, eventType) || 0), 0);
-  return `${receiptPrefix(eventType)}-${highest + 1}`;
+  return `${receiptPrefix(eventType)}-${String(highest + 1).padStart(2, '0')}`;
 }
 
 function formatReceiptNo(eventType, number) {
-  return `${receiptPrefix(eventType)}-${Number(number)}`;
+  return `${receiptPrefix(eventType)}-${String(Number(number)).padStart(2, '0')}`;
 }
 
 function receiptQrEventCode(eventType) {
@@ -384,12 +385,28 @@ function validateReceiptSeatMappingForQr({ eventType, receiptNo, seatNo }) {
     eventCode,
     receiptNo: formatReceiptNoForQr(eventType, receiptNo),
     seatNo: seat.normalized,
-    qrValue: `MVST|${eventCode}|${formatReceiptNoForQr(eventType, receiptNo)}|${seat.normalized}`,
+    qrToken: `MVST|${eventCode}|${formatReceiptNoForQr(eventType, receiptNo)}|${seat.normalized}`,
   };
 }
 
+function receiptQrPortalUrl(qrToken) {
+  return `${PUBLIC_PORTAL_ORIGIN}/qr/receipt?token=${encodeURIComponent(qrToken)}`;
+}
+
+function extractFixedReceiptQrToken(rawToken) {
+  const raw = String(rawToken || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('MVST|')) return raw;
+  try {
+    const parsed = new URL(raw);
+    return parsed.searchParams.get('token') || raw;
+  } catch {
+    return raw;
+  }
+}
+
 function parseFixedReceiptQr(rawToken) {
-  const parts = String(rawToken || '').trim().split('|').map((part) => part.trim());
+  const parts = extractFixedReceiptQrToken(rawToken).split('|').map((part) => part.trim());
   if (parts.length !== 4 || parts[0] !== 'MVST') return null;
   const eventType = eventTypeFromQrCode(parts[1]);
   if (!eventType) return null;
@@ -404,6 +421,7 @@ function parseFixedReceiptQr(rawToken) {
     receiptNo: validation.receiptNo,
     receiptNumber: receiptNumericValue(validation.receiptNo, eventType),
     seatNo: validation.seatNo,
+    qrUrl: receiptQrPortalUrl(validation.qrToken),
     validation,
   };
 }
@@ -703,7 +721,7 @@ async function recordQrToken(row) {
       receiptNo: row.receiptNo,
       seatNo: row.seatNo,
     });
-    const tokenValue = validation.ok ? validation.qrValue : rowQrToken(row);
+    const tokenValue = validation.ok ? validation.qrToken : rowQrToken(row);
     if (!tokenValue) return;
     await connectMongo();
     await QrToken.updateOne(
