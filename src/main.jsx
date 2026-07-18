@@ -20,6 +20,7 @@ import {
   Image,
   IndianRupee,
   Keyboard,
+  LogOut,
   MessageCircle,
   QrCode,
   RefreshCw,
@@ -5840,7 +5841,7 @@ function App({ auth }) {
             <span>Change Password</span>
           </button>
           <button type="button" onClick={auth.logout}>
-            <X size={18} />
+            <LogOut size={18} />
             <span>Logout</span>
           </button>
         </aside>
