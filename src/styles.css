@@ -1814,6 +1814,130 @@ main {
   color: var(--ink-soft);
 }
 
+.trust-bank-home-section {
+  margin-bottom: 18px;
+}
+
+.trust-bank-home-card {
+  width: 100%;
+  border: 1px solid rgba(143, 27, 43, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(255, 248, 230, 0.98), rgba(255, 235, 170, 0.45));
+  color: var(--maroon);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+}
+
+.trust-bank-home-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.trust-bank-home-card strong {
+  font-size: 1rem;
+}
+
+.trust-bank-home-card small {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.trust-bank-card {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  border: 1px solid rgba(143, 27, 43, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 252, 240, 0.94);
+  padding: 16px;
+  box-shadow: var(--shadow-soft);
+}
+
+.trust-bank-image-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  width: min(100%, 420px);
+}
+
+.trust-bank-image-button img,
+.trust-bank-modal .receipt-modal img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  image-rendering: auto;
+}
+
+.trust-bank-details {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 8px;
+}
+
+.trust-bank-details p {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(143, 27, 43, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 246, 220, 0.72);
+  padding: 10px 12px;
+}
+
+.trust-bank-details span {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trust-bank-details strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.trust-bank-details small,
+.trust-bank-card > small {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.trust-bank-actions {
+  width: min(100%, 520px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trust-bank-actions button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--maroon);
+  color: #fffaf0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+  padding: 11px 12px;
+  min-height: 44px;
+}
+
+.trust-bank-modal .receipt-modal {
+  max-width: min(94vw, 640px);
+}
+
+.trust-bank-modal .receipt-modal img {
+  max-height: 72vh;
+  object-fit: contain;
+  background: #fff;
+}
+
 .qr-preview-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2103,6 +2227,7 @@ main {
   .distribution-stats-grid,
   .volunteer-name-grid,
   .volunteer-status-grid,
+  .trust-bank-actions,
   .user-access-form {
     grid-template-columns: 1fr;
   }

@@ -4682,6 +4682,128 @@ function DistributionListModal({ rows, operationKey, filterType, eventFilter, se
   );
 }
 
+const TRUST_BANK_QR_IMAGE = '/trust-bank-qr.jpeg';
+const TRUST_UPI_ID = '9844400809m@pnb';
+const TRUST_MERCHANT_NAME = 'Mane Manege Vasavi Seva Trust';
+
+function TrustBankQrSection({ compact = false, onOpenPage }) {
+  const [fullScreenOpen, setFullScreenOpen] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function copyUpiId() {
+    setMessage('');
+    try {
+      await navigator.clipboard.writeText(TRUST_UPI_ID);
+      setMessage('UPI ID copied.');
+    } catch {
+      setMessage('Unable to copy UPI ID. Please copy it manually.');
+    }
+  }
+
+  function downloadQr() {
+    const link = document.createElement('a');
+    link.href = TRUST_BANK_QR_IMAGE;
+    link.download = 'MVST-Trust-Bank-QR.jpeg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function shareQr() {
+    setMessage('');
+    try {
+      const response = await fetch(TRUST_BANK_QR_IMAGE, { cache: 'no-store' });
+      const blob = await response.blob();
+      const file = new File([blob], 'MVST-Trust-Bank-QR.jpeg', { type: blob.type || 'image/jpeg' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'MVST Trust Bank QR',
+          text: `${TRUST_MERCHANT_NAME}\nUPI ID: ${TRUST_UPI_ID}`,
+        });
+        setMessage('Share sheet opened.');
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({
+          title: 'MVST Trust Bank QR',
+          text: `${TRUST_MERCHANT_NAME}\nUPI ID: ${TRUST_UPI_ID}`,
+          url: window.location.origin + TRUST_BANK_QR_IMAGE,
+        });
+        setMessage('Share sheet opened.');
+        return;
+      }
+      setMessage('Sharing is not supported here. Please use Download QR.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to share QR.');
+    }
+  }
+
+  if (compact) {
+    return (
+      <button className="trust-bank-home-card" type="button" onClick={onOpenPage}>
+        <QrCode size={24} />
+        <span>
+          <strong>Trust Bank QR</strong>
+          <small>View or share the official Trust payment QR</small>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="management-section trust-bank-section">
+      <div className="section-heading">
+        <div>
+          <p>{TRUST_MERCHANT_NAME}</p>
+          <h2>Bank Payment QR</h2>
+        </div>
+      </div>
+
+      <div className="trust-bank-card">
+        <button className="trust-bank-image-button" type="button" onClick={() => setFullScreenOpen(true)} aria-label="View Trust Bank QR full screen">
+          <img src={TRUST_BANK_QR_IMAGE} alt="Mane Manege Vasavi Seva Trust bank payment QR" />
+        </button>
+        <div className="trust-bank-details">
+          <p><span>Merchant Name</span><strong>{TRUST_MERCHANT_NAME}</strong></p>
+          <p><span>UPI ID</span><strong>{TRUST_UPI_ID}</strong></p>
+          <small>Payment QR only. Separate from participant receipt QR and QR Operations scanner.</small>
+        </div>
+        <div className="trust-bank-actions">
+          <button type="button" onClick={() => setFullScreenOpen(true)}><ExternalLink size={16} /> View Full Screen</button>
+          <button type="button" onClick={downloadQr}><Download size={16} /> Download QR</button>
+          <button type="button" onClick={shareQr}><Share2 size={16} /> Share QR</button>
+          <button type="button" onClick={copyUpiId}><ClipboardList size={16} /> Copy UPI ID</button>
+        </div>
+        {message ? <small>{message}</small> : null}
+      </div>
+
+      {fullScreenOpen ? (
+        <div className="receipt-modal-backdrop trust-bank-modal" role="dialog" aria-modal="true" aria-label="Trust Bank QR full screen">
+          <div className="receipt-modal">
+            <div className="receipt-modal-head">
+              <div>
+                <span>{TRUST_MERCHANT_NAME}</span>
+                <strong>Bank Payment QR</strong>
+              </div>
+              <button type="button" onClick={() => setFullScreenOpen(false)} aria-label="Close Trust Bank QR">
+                <X size={18} />
+              </button>
+            </div>
+            <img src={TRUST_BANK_QR_IMAGE} alt="Mane Manege Vasavi Seva Trust bank payment QR full screen" />
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => setFullScreenOpen(false)}>Close</button>
+              <button type="button" onClick={downloadQr}><Download size={16} /> Download QR</button>
+              <button type="button" onClick={shareQr}><Share2 size={16} /> Share QR</button>
+              <button type="button" onClick={copyUpiId}>Copy UPI ID</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function QRPreviewPanel({ participant }) {
   const [qrUrl, setQrUrl] = useState('');
   const [message, setMessage] = useState('');
@@ -5198,7 +5320,7 @@ function App({ auth }) {
       setActiveView('change-password');
       return;
     }
-    if (isVolunteerRole && !['qr-distribution', 'shashtipoorthi', 'bhimaratha', 'change-password'].includes(activeView)) {
+    if (isVolunteerRole && !['home', 'trust-bank-qr', 'qr-distribution', 'shashtipoorthi', 'bhimaratha', 'change-password'].includes(activeView)) {
       setActiveView('qr-distribution');
     }
   }, [isVolunteerRole, activeView, mustChangePassword]);
@@ -5671,9 +5793,19 @@ function App({ auth }) {
               </button>
             </>
           ) : null}
+          {!isPst ? (
+            <button className={activeView === 'home' ? 'active' : ''} type="button" onClick={() => setActiveView('home')}>
+              <ClipboardList size={18} />
+              <span>Home</span>
+            </button>
+          ) : null}
           <button className={activeView === 'qr-distribution' ? 'active' : ''} type="button" onClick={() => setActiveView('qr-distribution')}>
             <QrCode size={18} />
             <span>QR Operations</span>
+          </button>
+          <button className={activeView === 'trust-bank-qr' ? 'active' : ''} type="button" onClick={() => setActiveView('trust-bank-qr')}>
+            <IndianRupee size={18} />
+            <span>Trust Bank QR</span>
           </button>
           <button className={activeView === 'shashtipoorthi' ? 'active' : ''} type="button" onClick={() => openEventView('shashtipoorthi')}>
             <HeartHandshake size={18} />
@@ -5729,6 +5861,12 @@ function App({ auth }) {
             <section className="error-strip">
               <AlertTriangle size={18} />
               <span>{error}</span>
+            </section>
+          ) : null}
+
+          {activeView === 'home' && !mustChangePassword ? (
+            <section className="trust-bank-home-section">
+              <TrustBankQrSection compact onOpenPage={() => setActiveView('trust-bank-qr')} />
             </section>
           ) : null}
 
@@ -5851,6 +5989,8 @@ function App({ auth }) {
           ) : null}
 
           {activeView === 'whatsapp-groups' && isPst && !mustChangePassword ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
+
+          {activeView === 'trust-bank-qr' && !mustChangePassword ? <TrustBankQrSection /> : null}
 
           {activeView === 'qr-distribution' && !mustChangePassword ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} /> : null}
 
