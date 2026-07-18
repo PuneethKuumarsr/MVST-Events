@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import JSZip from 'jszip';
 import QRCode from 'qrcode';
@@ -1547,7 +1547,7 @@ function buildGroupMobileNumbersText(preview) {
 }
 
 function buildBalanceReminderMessage(participant) {
-  return `🙏 Jai Vasavi 🙏
+  return `?? Jai Vasavi ??
 Dear ${participantDisplayName(participant)},
 Thank you for registering for the ${eventDisplayName(participant.eventType)}.
 Our records show:
@@ -1558,7 +1558,7 @@ We kindly request you to clear the above balance on or before the Kit Distributi
 On receipt of the full payment, your seat confirmation, receipt, and kit collection formalities will be completed.
 For any clarification, please contact us.
 Thank you.
-🙏 Jai Vasavi 🙏
+?? Jai Vasavi ??
 Mane Manege Vasavi Seva Trust (R.), Bengaluru`;
 }
 
@@ -1736,7 +1736,7 @@ function buildMangalyaDonorAppealMessage(donor) {
   const category = sponsorCategory(donor);
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
-  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 We hope you and your family are doing well by the grace of Vasavi Matha.
 
@@ -1754,26 +1754,26 @@ Your generosity will help us continue this noble tradition and bless many deserv
 
 Kindly reply to this message or contact us if you wish to continue your support.
 
-🙏 Thank you for your continued trust and generosity.
+?? Thank you for your continued trust and generosity.
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorThankYouMessage(donor) {
   const eventName = sponsorEventName(donor);
-  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 Thank you so much for your kind and generous confirmation to sponsor ${sponsorContributionText(donor)} for ${eventName}.
 
 Your valuable support means a lot to us and will help us continue this noble seva of blessing senior couples through this sacred ceremony.
 
-💛 Confirmed Sponsorship: ${sponsorContributionText(donor)}
+?? Confirmed Sponsorship: ${sponsorContributionText(donor)}
 
 Our Trust representative will get in touch with you shortly regarding the contribution.
 
 May Vasavi Matha bless you and your family with good health, happiness and prosperity.
 
-🙏 With heartfelt gratitude,
+?? With heartfelt gratitude,
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
@@ -1781,24 +1781,24 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 function buildMangalyaDonorPaymentReceivedMessage(donor) {
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
-  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 We are pleased to confirm receipt of your generous contribution towards ${sponsorContributionText(donor)} for ${eventName}.
 
-💛 Sponsored: ${sponsorContributionText(donor)}
-💰 Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
+?? Sponsored: ${sponsorContributionText(donor)}
+?? Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
 
 Your support is deeply appreciated and will help us conduct this sacred event successfully.
 
-📄 Your official receipt has been generated and is shared herewith.
+?? Your official receipt has been generated and is shared herewith.
 
-📩 We hope you have received the invitation card handed over by our Trust representative.
+?? We hope you have received the invitation card handed over by our Trust representative.
 
-💐 We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
+?? We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
 
 May Vasavi Matha shower her choicest blessings upon you and your family with good health, happiness, prosperity and success in all your endeavours.
 
-🙏 Your generosity and continued support inspire us to carry forward this noble seva. We sincerely thank you for being a part of this sacred initiative.
+?? Your generosity and continued support inspire us to carry forward this noble seva. We sincerely thank you for being a part of this sacred initiative.
 
 With heartfelt gratitude,
 
@@ -1807,7 +1807,7 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 
 function buildMangalyaDonorPostEventThankYouMessage(donor) {
   const eventName = sponsorEventName(donor);
-  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${sponsorContributionText(donor)}.
 
@@ -1815,7 +1815,7 @@ With the blessings of Vasavi Matha and the generous support of donors like you, 
 
 Your contribution played a valuable role in making this sacred event a grand success and in blessing many senior couples.
 
-🙏 We sincerely thank you for your trust, generosity and continued support.
+?? We sincerely thank you for your trust, generosity and continued support.
 
 May Vasavi Matha bless you and your family with good health, happiness, prosperity and success.
 
@@ -1863,7 +1863,7 @@ function isPreviousDonor(donor) {
 }
 
 function buildPreviousDonorAppealMessage(donor) {
-  return `🙏 Jai Vasavi 🙏
+  return `?? Jai Vasavi ??
 
 Dear ${sponsorDisplayName(donor)},
 
@@ -1871,8 +1871,8 @@ With your generous support, last year's Shanthi Mahotsava 2025 event was a grand
 
 This year also, Manemanege Vasavi Seva Trust is organizing:
 
-🌸 4th Samoohika Shashtipoorthi Shanthi
-🌸 2nd Samoohika Bheemaratha Shanthi
+?? 4th Samoohika Shashtipoorthi Shanthi
+?? 2nd Samoohika Bheemaratha Shanthi
 
 Date: Sunday, 02-Aug-2026
 Venue: Shubh Convention, JP Nagar, Bengaluru
@@ -1885,7 +1885,7 @@ For sponsorship or donations, kindly contact us.
 
 Thank you for your continued trust and support.
 
-🙏 Manemanege Vasavi Seva Trust & Team`;
+?? Manemanege Vasavi Seva Trust & Team`;
 }
 
 function makePreviousDonorWhatsAppUrl(donor) {
@@ -1895,7 +1895,7 @@ function makePreviousDonorWhatsAppUrl(donor) {
 }
 
 function buildMandaliInvitationMessage(contact) {
-  return `🙏 *Invitation*
+  return `?? *Invitation*
 Dear Sri. *${contact.name || 'Community Leader'}*
 *${contact.role || 'Representative'}*
 *${contact.mandali || 'Arya Vysya Mandali'}, ${contact.area || 'Bengaluru'}*
@@ -1904,15 +1904,15 @@ The *Mane Mange Vasavi Seva Trust* cordially invites you to a special meeting re
 
 This meeting has been organized to discuss the program arrangements and coordination. Your valuable presence, guidance, and support will greatly contribute to the success of this prestigious community event.
 
-📅 *Meeting Details*
+?? *Meeting Details*
 *Date:* Sunday, 19th July 2026
 *Time:* 11:30 AM
 *Venue:* Ashaktha Poshaka Sabha, V.V. Puram, Bengaluru
 
-📍 *Location:*
+?? *Location:*
 https://maps.app.goo.gl/zuERscMMxvcCBcbd6?g_st=awb
 
-🍽️ *Followed by lunch.*
+??? *Followed by lunch.*
 
 We look forward to your gracious presence and valuable suggestions.
 
@@ -3032,10 +3032,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
 const PREVIOUS_DONOR_FILTERS = [
   { id: 'all', label: 'All Previous Donors', test: () => true },
-  { id: '10000', label: '₹10,000 Donors', test: (amount) => amount === 10000 },
-  { id: '25000', label: '₹25,000 Donors', test: (amount) => amount === 25000 },
-  { id: '50000', label: '₹50,000 Donors', test: (amount) => amount === 50000 },
-  { id: '100000', label: '₹1,00,000+ Donors', test: (amount) => amount >= 100000 },
+  { id: '10000', label: '?10,000 Donors', test: (amount) => amount === 10000 },
+  { id: '25000', label: '?25,000 Donors', test: (amount) => amount === 25000 },
+  { id: '50000', label: '?50,000 Donors', test: (amount) => amount === 50000 },
+  { id: '100000', label: '?1,00,000+ Donors', test: (amount) => amount >= 100000 },
 ];
 
 const MANDALI_RECIPIENT_FILTERS = [
@@ -4011,7 +4011,7 @@ function VolunteerParticipantCard({ participant }) {
       </div>
       <div className="volunteer-call-row">
         <span>{participant.mobileNumber || 'Mobile missing'}</span>
-        {validMobile ? <a href={`tel:+${mobile}`}>📞 Call</a> : <small>Valid mobile required</small>}
+        {validMobile ? <a href={`tel:+${mobile}`}>?? Call</a> : <small>Valid mobile required</small>}
       </div>
       <div className="volunteer-status-grid">
         {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
@@ -4771,7 +4771,7 @@ function VolunteerDistributionMonitor({ rows }) {
               </div>
               <div className="volunteer-call-row">
                 <span>{participant.mobileNumber || 'Mobile missing'}</span>
-                {validMobile ? <a href={`tel:+${mobile}`}>📞 Call</a> : <small>Valid mobile required</small>}
+                {validMobile ? <a href={`tel:+${mobile}`}>?? Call</a> : <small>Valid mobile required</small>}
               </div>
               <div className="volunteer-status-grid">
                 {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
@@ -4791,7 +4791,13 @@ function VolunteerDistributionMonitor({ rows }) {
 
 function QRVideoScanner({ disabled, onScan }) {
   const [videoElement, setVideoElement] = useState(null);
-  const [status, setStatus] = useState('');
+  const [fallbackElement, setFallbackElement] = useState(null);
+  const [status, setStatus] = useState('Ready to start camera scanner.');
+  const [scannerState, setScannerState] = useState('idle');
+  const streamRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const html5ScannerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     window.__mvstQrScanHandler = onScan;
@@ -4800,65 +4806,184 @@ function QRVideoScanner({ disabled, onScan }) {
     };
   }, [onScan]);
 
-  useEffect(() => {
-    if (!videoElement || disabled || !('BarcodeDetector' in window)) return undefined;
-    let cancelled = false;
-    let stream = null;
-    let timeoutId = null;
-    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+  function logScannerDiagnostics(extra = {}) {
+    const diagnostics = {
+      isSecureContext: window.isSecureContext,
+      mediaDevicesAvailable: Boolean(navigator.mediaDevices),
+      getUserMediaAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
+      barcodeDetectorAvailable: 'BarcodeDetector' in window,
+      scannerFallbackLibraryAvailable: Boolean(window.Html5Qrcode),
+      ...extra,
+    };
+    console.log('MVST QR scanner diagnostics', diagnostics);
+  }
 
-    async function start() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-          audio: false,
-        });
-        videoElement.srcObject = stream;
-        await videoElement.play();
-        setStatus('Camera scanner active. Point at the QR code.');
-        scanLoop();
-      } catch (error) {
-        setStatus('Camera permission blocked. Use manual token entry.');
-      }
+  function stopScanner() {
+    cancelledRef.current = true;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
+    if (videoElement) videoElement.srcObject = null;
+    if (html5ScannerRef.current) {
+      const scanner = html5ScannerRef.current;
+      html5ScannerRef.current = null;
+      Promise.resolve(scanner.stop?.()).catch(() => {}).finally(() => {
+        Promise.resolve(scanner.clear?.()).catch(() => {});
+      });
+    }
+  }
+
+  useEffect(() => () => stopScanner(), []);
+
+  async function loadHtml5QrCode() {
+    if (window.Html5Qrcode) return window.Html5Qrcode;
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-mvst-html5-qrcode="true"]');
+      if (existing) {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+      script.async = true;
+      script.dataset.mvstHtml5Qrcode = 'true';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+    return window.Html5Qrcode;
+  }
+
+  async function startBarcodeDetectorLoop(stream) {
+    if (!videoElement) throw new Error('Camera preview is not ready.');
+    videoElement.srcObject = stream;
+    await videoElement.play();
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    setScannerState('active');
+    setStatus('Camera scanner active. Point at the QR code.');
+    logScannerDiagnostics({ scannerStart: 'success', selectedDevice: stream.getVideoTracks()[0]?.label || 'camera' });
 
     async function scanLoop() {
-      if (cancelled || disabled) return;
+      if (cancelledRef.current || disabled) return;
       try {
         const codes = await detector.detect(videoElement);
         const token = codes[0]?.rawValue;
         if (token) {
           window.__mvstQrScanHandler?.(token);
-          timeoutId = setTimeout(scanLoop, 2200);
+          timeoutRef.current = setTimeout(scanLoop, 2200);
           return;
         }
       } catch (error) {
-        setStatus('Camera scan failed. Use manual token entry.');
+        setStatus('QR scanner failed to initialize. Use manual token entry, seat search, or participant search.');
+        logScannerDiagnostics({ scannerStart: 'failure', error: error.message });
       }
-      timeoutId = setTimeout(scanLoop, 350);
+      timeoutRef.current = setTimeout(scanLoop, 350);
     }
 
-    start();
-    return () => {
-      cancelled = true;
-      if (timeoutId) clearTimeout(timeoutId);
-      if (stream) stream.getTracks().forEach((track) => track.stop());
-      if (videoElement) videoElement.srcObject = null;
-    };
-  }, [videoElement, disabled]);
+    scanLoop();
+  }
 
-  if (!('BarcodeDetector' in window)) {
-    return <div className="camera-fallback"><Camera size={20} /><span>Camera QR scanning is not available in this browser.</span></div>;
+  async function startHtml5Fallback() {
+    if (!fallbackElement) throw new Error('QR scanner fallback is not ready.');
+    const Html5Qrcode = await loadHtml5QrCode();
+    if (!Html5Qrcode) throw new Error('QR scanner failed to initialize.');
+    const scannerId = fallbackElement.id || 'mvst-html5-qr-reader';
+    fallbackElement.id = scannerId;
+    const scanner = new Html5Qrcode(scannerId, false);
+    html5ScannerRef.current = scanner;
+    await scanner.start(
+      { facingMode: { ideal: 'environment' } },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      (decodedText) => window.__mvstQrScanHandler?.(decodedText),
+      () => {},
+    );
+    setScannerState('active');
+    setStatus('Camera scanner active. Point at the QR code.');
+    logScannerDiagnostics({ scannerFallbackLibraryAvailable: true, scannerStart: 'success', selectedDevice: 'html5-qrcode fallback' });
+  }
+
+  async function startScanner() {
+    if (disabled || scannerState === 'requesting' || scannerState === 'active') return;
+    setScannerState('requesting');
+    setStatus('Opening camera...');
+    cancelledRef.current = false;
+    logScannerDiagnostics();
+
+    if (!window.isSecureContext) {
+      setScannerState('error');
+      setStatus('Camera requires HTTPS.');
+      logScannerDiagnostics({ scannerStart: 'failure', error: 'insecure-context' });
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerState('error');
+      setStatus('No camera was found on this device.');
+      logScannerDiagnostics({ scannerStart: 'failure', error: 'getUserMedia unavailable' });
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      logScannerDiagnostics({
+        cameraPermissionResult: 'granted',
+        cameraDevicesFound: devices.filter((device) => device.kind === 'videoinput').length,
+        selectedDevice: stream.getVideoTracks()[0]?.label || 'camera',
+      });
+    } catch (error) {
+      setScannerState('error');
+      const message = error?.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Please allow camera access in browser settings.'
+        : error?.name === 'NotFoundError'
+          ? 'No camera was found on this device.'
+          : 'QR scanner failed to initialize.';
+      setStatus(message);
+      logScannerDiagnostics({ cameraPermissionResult: 'denied', scannerStart: 'failure', error: error?.message || error?.name });
+      return;
+    }
+
+    try {
+      if ('BarcodeDetector' in window) {
+        await startBarcodeDetectorLoop(stream);
+      } else {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setStatus('Starting QR scanner fallback...');
+        await startHtml5Fallback();
+      }
+    } catch (error) {
+      setScannerState('error');
+      setStatus(error.message || 'QR scanner failed to initialize.');
+      logScannerDiagnostics({ scannerStart: 'failure', error: error.message });
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    }
   }
 
   return (
     <div className="camera-scanner">
-      <video ref={setVideoElement} muted playsInline aria-label="QR scanner camera preview" />
-      <small>{status || 'Starting camera scanner...'}</small>
+      {scannerState !== 'active' ? (
+        <button type="button" onClick={startScanner} disabled={disabled || scannerState === 'requesting'}>
+          <Camera size={16} /> {scannerState === 'requesting' ? 'Opening camera...' : 'Start Camera Scanner'}
+        </button>
+      ) : null}
+      <video ref={setVideoElement} muted playsInline aria-label="QR scanner camera preview" hidden={scannerState !== 'active' || !('BarcodeDetector' in window)} />
+      <div ref={setFallbackElement} className="html5-qr-region" hidden={scannerState !== 'active' || ('BarcodeDetector' in window)} />
+      <small>{status}</small>
     </div>
   );
 }
-
 function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst }) {
   const [activeOperation, setActiveOperation] = useState('meetingAttendance');
   const operatorName = user?.name || user?.mobile || '';
@@ -4874,7 +4999,9 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
     const text = [participantDisplayName(row), row.seatNo, row.mobileNumber, EVENTS[row.eventType]?.shortLabel].join(' ').toLowerCase();
     return !search.trim() || text.includes(search.trim().toLowerCase());
   });
-  const scannerSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
+  const scannerSupported = typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    Boolean(navigator.mediaDevices?.getUserMedia);
 
   useEffect(() => {
     if (scanState.type === 'success' || scanState.type === 'duplicate' || scanState.type === 'error') {
@@ -4945,12 +5072,12 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
 
       <div className="distribution-groups">
         <article className="distribution-group-card">
-          <p>📅 Kit Distribution Day</p>
+          <p>?? Kit Distribution Day</p>
           <button className={activeOperation === 'meetingAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('meetingAttendance')}>Meeting Attendance</button>
           <button className={activeOperation === 'kitCollection' ? 'active' : ''} type="button" onClick={() => setActiveOperation('kitCollection')}>Kit Collection</button>
         </article>
         <article className="distribution-group-card">
-          <p>🌸 Mahotsava Day</p>
+          <p>?? Mahotsava Day</p>
           <button className={activeOperation === 'eventAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('eventAttendance')}>Event Attendance</button>
           <button className={activeOperation === 'madalakkiDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('madalakkiDistribution')}>Madalakki Distribution</button>
           <button className={activeOperation === 'photoFrameDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('photoFrameDistribution')}>Photo Frame Distribution</button>
@@ -4989,7 +5116,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
             {isSaving ? 'Saving' : 'Scan Token'}
           </button>
         </div>
-        <small>{scannerSupported ? 'Camera QR scanning can be enabled in supported browsers. Manual token entry remains available for owner/admin fallback.' : 'Camera QR scanning is not available in this browser. Use manual token entry, seat search, or participant search.'}</small>
+        <small>{scannerSupported ? 'Tap Start Camera Scanner to request camera permission. Manual token entry remains available for owner/admin fallback.' : 'Camera requires HTTPS and a device camera. Use manual token entry, seat search, or participant search if camera is unavailable.'}</small>
       </div>
 
       <VolunteerDistributionMonitor rows={rows} />

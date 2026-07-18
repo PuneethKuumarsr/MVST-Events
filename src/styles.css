@@ -1773,12 +1773,37 @@ main {
   padding: 10px;
 }
 
+.camera-scanner button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--maroon);
+  color: #fffaf0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+  padding: 12px 14px;
+  min-height: 46px;
+}
+
+.camera-scanner button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .camera-scanner video {
   width: 100%;
   max-height: 320px;
   border-radius: 8px;
   background: #1d1715;
   object-fit: cover;
+}
+
+.html5-qr-region {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #1d1715;
 }
 
 .camera-fallback {
