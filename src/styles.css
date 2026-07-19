@@ -1753,18 +1753,117 @@ main {
 }
 
 .scan-status.success {
+  background: #f4ead2;
+  color: var(--maroon-deep);
+}
+
+.scan-status.duplicate {
+  background: #f4ead2;
+  color: var(--maroon-deep);
+}
+
+.scan-status.error {
+  background: #f4ead2;
+  color: var(--maroon-deep);
+}
+
+.scan-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(44, 17, 18, 0.36);
+  backdrop-filter: blur(3px);
+}
+
+.scan-popup-card {
+  position: relative;
+  width: min(430px, 100%);
+  border: 1px solid rgba(140, 29, 45, 0.18);
+  border-radius: 10px;
+  background: #fffaf0;
+  box-shadow: 0 22px 60px rgba(74, 29, 23, 0.26);
+  padding: 26px 20px 20px;
+  text-align: center;
+}
+
+.scan-popup-card h3 {
+  margin: 10px 0 8px;
+  color: var(--maroon-deep);
+  font-size: 1.45rem;
+}
+
+.scan-popup-card > strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1.08rem;
+  line-height: 1.3;
+}
+
+.scan-popup-icon {
+  width: 74px;
+  height: 74px;
+  margin: 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: rgba(45, 122, 79, 0.12);
   color: var(--green);
 }
 
-.scan-status.duplicate {
-  background: rgba(169, 101, 18, 0.12);
+.scan-popup-backdrop.duplicate .scan-popup-icon {
+  background: rgba(169, 101, 18, 0.14);
   color: var(--amber);
 }
 
-.scan-status.error {
-  background: rgba(163, 55, 55, 0.12);
+.scan-popup-backdrop.error .scan-popup-icon {
+  background: rgba(163, 55, 55, 0.14);
   color: var(--red);
+}
+
+.scan-popup-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #f4ead2;
+  color: var(--maroon-deep);
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.scan-popup-details {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  text-align: left;
+}
+
+.scan-popup-details p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  border-radius: 8px;
+  background: #fff4d9;
+  padding: 10px 12px;
+  color: var(--maroon-deep);
+  font-weight: 850;
+}
+
+.scan-popup-details span {
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.scan-popup-card small {
+  color: var(--ink-soft);
+  font-weight: 800;
 }
 
 .camera-scanner {

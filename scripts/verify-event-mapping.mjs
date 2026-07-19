@@ -155,7 +155,7 @@ assert.ok(frontend.includes("bhimaratha: 'BS'"), 'Bhimaratha receipt numbers mus
 assert.ok(frontend.includes("shashtipoorthi: 'SP'"), 'Shashtipoorthi receipt numbers must use SP prefix');
 assert.ok(frontend.includes('LEGACY_RECEIPT_PREFIXES'), 'Frontend must still parse old BS26/SP26 receipt values');
 assert.match(frontend, /\\d\{1,3\}/, 'Receipt parser must accept old padded and new non-padded receipt suffixes');
-assert.ok(frontend.includes('return `${receiptPrefix(eventType)}-${Number(number)}`'), 'Receipt formatter must not zero-pad the suffix');
+assert.ok(frontend.includes("return `${receiptPrefix(eventType)}-${String(Number(number)).padStart(2, '0')}`"), 'Receipt formatter must display/save receipt numbers with a two-digit print-book suffix');
 assert.ok(backend.includes('sanitizedUpdates.receiptNo = formatReceiptNo(currentRow.eventType, parsedReceipt)'), 'Backend must normalize padded receipt values before saving');
 assert.ok(frontend.includes('function receiptBookAudit(rows, eventType)'), 'Frontend must audit event-wise receipt-book numbers');
 assert.ok(frontend.includes('Last Used Receipt No.'), 'Receipt panel must show last used receipt number');
@@ -253,7 +253,7 @@ assert.ok(frontend.includes('BarcodeDetector'), 'QR print readiness must use bro
 assert.ok(bulkReceiptBody.includes('verifyQrPrintReadiness(freshRows, activeEvent'), 'Bulk ZIP generation must be blocked behind QR readiness using fresh Google Sheets data');
 assert.ok(frontend.includes('QR Ready'), 'Receipt print readiness must show QR Ready status');
 assert.ok(frontend.includes('Receipts Safe to Print'), 'Receipt print readiness must show print safety status');
-assert.ok(frontend.includes('Decoded QR does not match expected receipt-seat value'), 'QR readiness must compare decoded QR with the fixed receipt-seat value');
+assert.ok(frontend.includes('Decoded QR does not match expected portal receipt-seat URL'), 'QR readiness must compare decoded QR with the portal URL and embedded fixed receipt-seat token');
 assert.ok(frontend.includes('QR resolves to a different participant'), 'QR readiness must verify QR resolves to the correct participant');
 assert.ok(frontend.includes('function isReceiptEligible(participant)'), 'Frontend must define receipt eligibility validation');
 assert.ok(frontend.includes("String(participant.paymentStatus || '').trim() === 'Full Paid'"), 'Receipt eligibility must require Full Paid status');
@@ -558,7 +558,7 @@ const receiptNumberForTest = (receiptNo, eventType) => {
   const match = raw.match(new RegExp(`^(?:${prefixes})-(\\d{1,3})$`));
   return match ? Number(match[1]) : null;
 };
-const formatReceiptForTest = (eventType, number) => `${receiptPrefixesForTest[eventType]}-${Number(number)}`;
+const formatReceiptForTest = (eventType, number) => `${receiptPrefixesForTest[eventType]}-${String(Number(number)).padStart(2, '0')}`;
 const receiptAuditForTest = (rows, eventType) => {
   const counts = new Map();
   let highest = 0;
@@ -589,13 +589,13 @@ assert.equal(receiptNumberForTest('BS26-2', 'bhimaratha'), 2, 'New BS26-2 format
 assert.equal(receiptNumberForTest('SP26-001', 'shashtipoorthi'), 1, 'Existing SP26-001 must be accepted');
 assert.equal(receiptNumberForTest('SP26-019', 'shashtipoorthi'), 19, 'Existing SP26-019 must be parsed as 19');
 assert.equal(formatReceiptForTest('shashtipoorthi', receiptNumberForTest('SP26-019', 'shashtipoorthi')), 'SP-19', 'SP26-019 must display/save as SP-19');
-assert.equal(formatReceiptForTest('bhimaratha', receiptNumberForTest('BS26-002', 'bhimaratha')), 'BS-2', 'BS26-002 must display/save as BS-2');
+assert.equal(formatReceiptForTest('bhimaratha', receiptNumberForTest('BS26-002', 'bhimaratha')), 'BS-02', 'BS26-002 must display/save as BS-02');
 assert.equal(receiptNumberForTest('BS26-001', 'shashtipoorthi'), null, 'Wrong event prefix must be rejected');
 assert.equal(receiptNumberForTest('SP26-001', 'bhimaratha'), null, 'Wrong event prefix must be rejected');
 assert.equal(receiptNumberForTest('D-06', 'bhimaratha'), null, 'Seat number must never be used as receipt number');
 assert.equal(receiptNumberForTest('bhimaratha:2', 'bhimaratha'), null, 'Participant ID must never be used as receipt number');
-assert.equal(receiptAudit.suggestedNext, 'SP-2');
-assert.equal(bhimarathaReceiptAudit.suggestedNext, 'BS-2');
+assert.equal(receiptAudit.suggestedNext, 'SP-02');
+assert.equal(bhimarathaReceiptAudit.suggestedNext, 'BS-02');
 assert.equal(receiptAudit.duplicates[0][0], '1');
 const suggestionBeforePreview = receiptAudit.suggestedNext;
 const suggestionAfterPreview = receiptAudit.suggestedNext;
@@ -625,7 +625,7 @@ assert.equal(
     { id: 'b2', eventType: 'bhimaratha', timestamp: '02/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
     { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
   ], { id: 'b2', eventType: 'bhimaratha', timestamp: '02/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' }),
-  'BS-2',
+  'BS-02',
   'Timestamp ascending must determine the Bhimaratha receipt sequence',
 );
 assert.equal(
@@ -633,7 +633,7 @@ assert.equal(
     { id: 'b1', eventType: 'bhimaratha', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
     { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' },
   ], { id: 's1', eventType: 'shashtipoorthi', timestamp: '01/07/2026 10:00:00', paymentStatus: 'Full Paid', balance: 0, receiptNo: '' }),
-  'SP-1',
+  'SP-01',
   'Shashtipoorthi must maintain an independent receipt sequence',
 );
 const physicalReceiptOrderRows = [
@@ -650,43 +650,43 @@ const registrationOrderAllocationRows = [
 ];
 assert.equal(
   suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[0]),
-  'SP-1',
-  'Registration 1 Full Paid must get SP-1',
+  'SP-01',
+  'Registration 1 Full Paid must get SP-01',
 );
 assert.equal(
   suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[1]),
-  'SP-2',
-  'Registration 2 Part Paid must reserve SP-2',
+  'SP-02',
+  'Registration 2 Part Paid must reserve SP-02',
 );
 assert.equal(
   suggestedReceiptForTest(registrationOrderAllocationRows, registrationOrderAllocationRows[2]),
-  'SP-3',
-  'Registration 3 Full Paid must keep SP-3 and not compress around Part Paid rows',
+  'SP-03',
+  'Registration 3 Full Paid must keep SP-03 and not compress around Part Paid rows',
 );
 assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[0]), true, 'Registration 1 Full Paid receipt must be allowed');
 assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[1]), false, 'Registration 2 Part Paid receipt must be blocked');
 assert.equal(receiptEligibilityForTest(registrationOrderAllocationRows[2]), true, 'Registration 3 Full Paid receipt must be allowed');
 assert.equal(
   suggestedReceiptForTest(registrationOrderAllocationRows, { ...registrationOrderAllocationRows[1], paymentStatus: 'Full Paid', balance: 0 }),
-  'SP-2',
-  'Registration 2 keeps SP-2 after becoming Full Paid',
+  'SP-02',
+  'Registration 2 keeps SP-02 after becoming Full Paid',
 );
 assert.equal(
   suggestedReceiptForTest(physicalReceiptOrderRows, physicalReceiptOrderRows[3]),
-  'SP-4',
-  'Part Paid B-01 must reserve SP-4 by registration order',
+  'SP-04',
+  'Part Paid B-01 must reserve SP-04 by registration order',
 );
 assert.equal(
   suggestedReceiptForTest(physicalReceiptOrderRows, physicalReceiptOrderRows[4]),
-  'SP-5',
-  'Full Paid B-02 must not take B-01 reserved SP-4',
+  'SP-05',
+  'Full Paid B-02 must not take B-01 reserved SP-04',
 );
 assert.equal(receiptEligibilityForTest(physicalReceiptOrderRows[3]), false, 'Part Paid B-01 receipt JPG must remain blocked');
 assert.equal(receiptEligibilityForTest({ ...physicalReceiptOrderRows[3], paymentStatus: 'Full Paid', balance: 0 }), true, 'B-01 receipt JPG becomes available after full payment');
 assert.equal(
   suggestedReceiptForTest(physicalReceiptOrderRows, { ...physicalReceiptOrderRows[3], paymentStatus: 'Full Paid', balance: 0 }),
-  'SP-4',
-  'B-01 keeps SP-4 after becoming Full Paid',
+  'SP-04',
+  'B-01 keeps SP-04 after becoming Full Paid',
 );
 const bulkZipRowsForTest = [
   { id: 'zip-ready-no-mobile', eventType: 'shashtipoorthi', timestamp: '7/7/2026 10:00:00', seatNo: 'D-01', paymentStatus: 'Full Paid', balance: 0, receiptGenerated: false, mobileNumber: '' },
@@ -948,7 +948,11 @@ assert.ok(qrTokenModel.includes("collection: 'qr_tokens'"), 'Mongo QR token coll
 assert.ok(qrTokenModel.includes('tokenHash'), 'QR tokens must be stored by token hash');
 assert.ok(!qrTokenModel.includes('mobile') && !qrTokenModel.includes('address') && !qrTokenModel.includes('paidAmount'), 'QR token model must not store participant private details');
 assert.ok(frontend.includes('function fixedReceiptQrValue(participant, receiptNo)'), 'Frontend must generate fixed receipt-seat QR values');
-assert.ok(frontend.includes('MVST|${eventCode}|${formatReceiptNumberForQr'), 'Frontend QR must use MVST|EVENT|RECEIPT_NO|SEAT_NO');
+assert.ok(frontend.includes('receiptQrPortalUrl(validation.qrToken)'), 'Printed receipt QR must encode an HTTPS portal URL');
+assert.ok(frontend.includes('/qr/receipt?token='), 'Receipt QR URL must open the MVST portal receipt route');
+assert.ok(frontend.includes('MVST|${eventCode}|${formatReceiptNumberForQr'), 'Frontend QR must preserve MVST|EVENT|RECEIPT_NO|SEAT_NO as the embedded safe token');
+assert.ok(frontend.includes('function extractReceiptQrToken'), 'Frontend must unwrap receipt QR URLs back to the fixed token for validation');
+assert.ok(backend.includes('function extractFixedReceiptQrToken'), 'Backend scanner must accept HTTPS receipt QR URLs as well as raw tokens');
 assert.ok(frontend.includes('Receipt No. and Seat No. do not match the approved sequence. QR generation stopped.'), 'Frontend must block QR generation when receipt-seat mapping is wrong');
 assert.ok(backend.includes('function parseFixedReceiptQr(rawToken)'), 'Backend scanner must parse fixed receipt-seat QR values');
 assert.ok(backend.includes('receiptNumericValue(row.receiptNo, row.eventType) === parsedQr.receiptNumber'), 'Backend scanner must match by receipt number');

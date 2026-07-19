@@ -5449,12 +5449,42 @@ function QRVideoScanner({ disabled, onScan }) {
     </div>
   );
 }
+
+function ScanResultPopup({ result, onClose }) {
+  const isSuccess = result.type === 'success';
+  const isDuplicate = result.type === 'duplicate';
+  const icon = isSuccess ? <CheckCircle2 size={42} /> : isDuplicate ? <BadgeCheck size={42} /> : <AlertTriangle size={42} />;
+  const hasDate = result.completedAt && result.completedAt !== '-';
+  const shownAt = hasDate ? formatRefreshTime(result.completedAt) : '';
+  return (
+    <div className={`scan-popup-backdrop ${result.type}`} role="status" aria-live="assertive">
+      <div className="scan-popup-card">
+        <button type="button" className="scan-popup-close" onClick={onClose} aria-label="Close scan popup">
+          <X size={18} />
+        </button>
+        <div className="scan-popup-icon">{icon}</div>
+        <h3>{result.title}</h3>
+        <strong>{result.participantName}</strong>
+        <div className="scan-popup-details">
+          {result.eventLabel ? <p><span>Event</span>{result.eventLabel}</p> : null}
+          {result.seatNo ? <p><span>Seat / Receipt</span>{result.seatNo}</p> : null}
+          <p><span>Operation</span>{result.operationLabel}</p>
+          {shownAt ? <p><span>Date & Time</span>{shownAt}</p> : null}
+          {result.completedBy ? <p><span>By</span>{result.completedBy}</p> : null}
+        </div>
+        <small>{isSuccess ? 'Returning to scanner for next QR...' : isDuplicate ? 'Original status was not overwritten.' : 'Status was not changed.'}</small>
+      </div>
+    </div>
+  );
+}
+
 function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst, initialScanToken = '' }) {
   const [activeOperation, setActiveOperation] = useState('meetingAttendance');
   const operatorName = user?.name || user?.mobile || '';
   const [manualToken, setManualToken] = useState('');
   const [search, setSearch] = useState('');
   const [scanState, setScanState] = useState({ type: 'idle', message: 'Select operation and scan a QR.' });
+  const [scanPopup, setScanPopup] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [listState, setListState] = useState(null);
   const [eventFilter, setEventFilter] = useState('All');
@@ -5484,6 +5514,12 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
     return undefined;
   }, [scanState]);
 
+  useEffect(() => {
+    if (!scanPopup) return undefined;
+    const timeout = setTimeout(() => setScanPopup(null), 2200);
+    return () => clearTimeout(timeout);
+  }, [scanPopup]);
+
   async function handleTokenScan(token) {
     if (isSaving) return;
     if (!operatorName.trim()) {
@@ -5500,6 +5536,16 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation });
       if (result.recordType === 'MANGALYA') {
         setScannedMangalyaDonor(result.donor);
+        setScanPopup({
+          type: result.donor?.honourStatus === 'HONOURED' ? 'duplicate' : 'success',
+          title: result.donor?.honourStatus === 'HONOURED' ? 'Already Honoured' : 'Mangalya Donor Verified',
+          participantName: result.donor?.donorName || 'Mangalya donor',
+          eventLabel: 'Mangalya Sponsorship',
+          seatNo: result.donor?.receiptNumber || '-',
+          operationLabel: result.donor?.honourStatus === 'HONOURED' ? 'Already Honoured' : 'Donor Verified',
+          completedAt: result.donor?.honouredAt || result.completedAt || new Date().toISOString(),
+          completedBy: result.donor?.honouredBy || operatorName,
+        });
         setScanState({
           type: result.donor?.honourStatus === 'HONOURED' ? 'duplicate' : 'success',
           message: result.donor?.honourStatus === 'HONOURED'
@@ -5511,11 +5557,31 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       }
       const participant = result.participant;
       if (result.status === 'already-completed') {
+        setScanPopup({
+          type: 'duplicate',
+          title: 'Already Completed',
+          participantName: participantDisplayName(participant),
+          eventLabel: EVENTS[participant.eventType]?.shortLabel || participant.eventType,
+          seatNo: participant.seatNo || '-',
+          operationLabel: operation.label,
+          completedAt: result.completedAt || '-',
+          completedBy: result.completedBy || '-',
+        });
         setScanState({
           type: 'duplicate',
           message: `Already Completed · ${operation.label} · ${participantDisplayName(participant)} · Seat ${participant.seatNo || '-'} · ${result.completedAt || '-'} · ${result.completedBy || '-'}`,
         });
       } else {
+        setScanPopup({
+          type: 'success',
+          title: 'Completed Successfully',
+          participantName: participantDisplayName(participant),
+          eventLabel: EVENTS[participant.eventType]?.shortLabel || participant.eventType,
+          seatNo: participant.seatNo || '-',
+          operationLabel: operation.completedLabel,
+          completedAt: result.completedAt || new Date().toISOString(),
+          completedBy: operatorName,
+        });
         setScanState({
           type: 'success',
           message: `Completed Successfully · ${operation.completedLabel} · ${participantDisplayName(participant)} · ${EVENTS[participant.eventType]?.shortLabel} · Seat ${participant.seatNo || '-'} · ${result.completedAt}`,
@@ -5523,6 +5589,16 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       }
       setManualToken('');
     } catch (error) {
+      setScanPopup({
+        type: 'error',
+        title: 'Scan Failed',
+        participantName: error.message || 'Status was not changed.',
+        eventLabel: '',
+        seatNo: '',
+        operationLabel: operation.label,
+        completedAt: '',
+        completedBy: '',
+      });
       setScanState({ type: 'error', message: error.message || 'Save Failed. Status was not changed. Please scan again.' });
     } finally {
       setIsSaving(false);
@@ -5549,6 +5625,22 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
           : 'Could not save donor status. Please retry.'));
       }
       setScannedMangalyaDonor(payload.donor);
+      setScanPopup({
+        type: payload.status?.includes('already') ? 'duplicate' : 'success',
+        title: payload.status === 'already-honoured'
+          ? 'Already Honoured'
+          : action === 'arrive'
+            ? 'Arrival Saved'
+            : action === 'honour'
+              ? 'Honour Saved'
+              : 'Honour Reversed',
+        participantName: payload.donor?.donorName || 'Mangalya donor',
+        eventLabel: 'Mangalya Sponsorship',
+        seatNo: payload.donor?.receiptNumber || '-',
+        operationLabel: action === 'arrive' ? 'Donor Arrival' : action === 'honour' ? 'Donor Honour' : 'Honour Reversal',
+        completedAt: payload.donor?.honouredAt || payload.donor?.arrivalAt || new Date().toISOString(),
+        completedBy: payload.donor?.honouredBy || payload.donor?.arrivalBy || operatorName,
+      });
       setScanState({
         type: payload.status?.includes('already') ? 'duplicate' : 'success',
         message: payload.status === 'already-honoured'
@@ -5556,6 +5648,16 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
           : `${action === 'arrive' ? 'Mangalya donor arrival saved' : action === 'honour' ? 'Mangalya donor honoured' : 'Honour reversed'} · ${payload.donor?.donorName || ''}`,
       });
     } catch (error) {
+      setScanPopup({
+        type: 'error',
+        title: 'Save Failed',
+        participantName: error.message || 'Could not save donor status.',
+        eventLabel: 'Mangalya Sponsorship',
+        seatNo: '',
+        operationLabel: action === 'arrive' ? 'Donor Arrival' : action === 'honour' ? 'Donor Honour' : 'Honour Reversal',
+        completedAt: '',
+        completedBy: '',
+      });
       setScanState({ type: 'error', message: error.message || 'Could not save the honour status. The donor has NOT been marked as honoured. Please retry.' });
     } finally {
       setDonorActionSaving(false);
@@ -5699,6 +5801,13 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
           eventFilter={eventFilter}
           setEventFilter={setEventFilter}
           onClose={() => setListState(null)}
+        />
+      ) : null}
+
+      {scanPopup ? (
+        <ScanResultPopup
+          result={scanPopup}
+          onClose={() => setScanPopup(null)}
         />
       ) : null}
     </section>
@@ -5860,6 +5969,11 @@ function App({ auth }) {
     ? mobileValidationStatus(currentReceiptQueueItem.participant.mobileNumber).status
     : 'Not started';
   const receiptQueueRemaining = receiptQueueStarted ? Math.max(receiptQueue.length - receiptQueueIndex - 1, 0) : receiptQueue.length;
+  const activeEventRegistrationCount = rows.filter((row) => row.eventType === activeEvent).length;
+  const activeEventBulkReceiptCount = buildBulkReceiptRows(rows, activeEvent).length;
+  const receiptQueueEventRegistrationCount = receiptQueueEvent
+    ? rows.filter((row) => row.eventType === receiptQueueEvent).length
+    : 0;
   const bulkZipSupported = isBulkZipSupported();
 
   async function freshRowsForOperation(operationName = 'operation') {
@@ -6508,7 +6622,8 @@ function App({ auth }) {
         {isPst ? <div className="receipt-bulk-panel">
           <div>
             <p>Bulk Receipt Generation</p>
-            <span>{eventDisplayName(activeEvent)} eligible: {buildBulkReceiptRows(rows, activeEvent).length}</span>
+            <span>{eventDisplayName(activeEvent)} registrations: {activeEventRegistrationCount}</span>
+            <span>Receipt-ready for ZIP: {activeEventBulkReceiptCount}</span>
           </div>
           {bulkZipSupported ? (
             <button type="button" onClick={generateBulkReceipts} disabled={bulkReceiptGenerating}>
@@ -6571,7 +6686,7 @@ function App({ auth }) {
               <div className="bulk-preview-head">
                 <div>
                   <p>{eventDisplayName(receiptQueueEvent)} Receipt Queue</p>
-                  <h3>Ready: {receiptQueue.length} · Skipped: {receiptQueueSkipped.length}</h3>
+                  <h3>Total: {receiptQueueEventRegistrationCount} · Ready: {receiptQueue.length} · Skipped: {receiptQueueSkipped.length}</h3>
                 </div>
                 <button type="button" onClick={clearReceiptSendQueue}>Close</button>
               </div>
