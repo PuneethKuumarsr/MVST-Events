@@ -8,6 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectMongo, isMongoConfigured } from './db/mongo.js';
 import { DistributionLog } from './models/DistributionLog.js';
+import { GeneralDonorAudit } from './models/GeneralDonorAudit.js';
+import { GeneralDonorOperation } from './models/GeneralDonorOperation.js';
 import { MangalyaDonorAudit } from './models/MangalyaDonorAudit.js';
 import { MangalyaDonorOperation } from './models/MangalyaDonorOperation.js';
 import { QrToken } from './models/QrToken.js';
@@ -1601,6 +1603,24 @@ async function recordMangalyaAudit({ donorSourceId, eventYear, eventType, user, 
   });
 }
 
+async function recordGeneralDonorAudit({ donorSourceId, eventYear, eventType, user, remarks = '' }) {
+  if (!isMongoConfigured()) return;
+  await connectMongo();
+  await GeneralDonorAudit.create({
+    eventYear,
+    donorSourceId,
+    eventType,
+    actorUserId: String(user?.id || ''),
+    actorName: actorName(user),
+    remarks,
+  });
+}
+
+function isGeneralPreviousDonor(row) {
+  const typeText = [row.contributionType, row.category, row.canonicalCategory].join(' ').toLowerCase();
+  return Number(row.previousDonationAmount || 0) > 0 && !typeText.includes('mangalya donor') && !typeText.includes('mangalya');
+}
+
 async function loadMangalyaOperationsForRows(rows) {
   const identifiedRows = rows.filter((row) => row.donorId);
   if (!isMongoConfigured() || !identifiedRows.length) return new Map();
@@ -1610,6 +1630,20 @@ async function loadMangalyaOperationsForRows(rows) {
     donorSourceId: row.donorId,
   }));
   const operations = await MangalyaDonorOperation.find({
+    $or: keys,
+  }).lean();
+  return new Map(operations.map((operation) => [`${operation.eventYear}:${operation.donorSourceId}`, operation]));
+}
+
+async function loadGeneralDonorOperationsForRows(rows) {
+  const identifiedRows = rows.filter((row) => row.donorId && isGeneralPreviousDonor(row));
+  if (!isMongoConfigured() || !identifiedRows.length) return new Map();
+  await connectMongo();
+  const keys = identifiedRows.map((row) => ({
+    eventYear: donorEventYear(row),
+    donorSourceId: row.donorId,
+  }));
+  const operations = await GeneralDonorOperation.find({
     $or: keys,
   }).lean();
   return new Map(operations.map((operation) => [`${operation.eventYear}:${operation.donorSourceId}`, operation]));
@@ -1639,6 +1673,24 @@ function mergeMangalyaOperations(rows, operationsMap) {
       honourStatus: operation.honourStatus || 'PENDING',
       honouredAt: operation.honouredAt || null,
       honouredBy: operation.honouredBy || '',
+    };
+  });
+}
+
+function mergeGeneralDonorOperations(rows, operationsMap) {
+  return rows.map((row) => {
+    if (!isGeneralPreviousDonor(row)) return row;
+    const operation = row.donorId ? operationsMap.get(`${donorEventYear(row)}:${row.donorId}`) || {} : {};
+    return {
+      ...row,
+      donorType: 'DONOR',
+      eventYear: donorEventYear(row),
+      qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
+      previousDonorCampaignName: operation.campaignName || '',
+      previousDonorCampaignStatus: operation.campaignStatus || 'Pending',
+      previousDonorCampaignStatusAt: operation.campaignStatusAt || null,
+      previousDonorCampaignStatusBy: operation.campaignStatusBy || '',
+      previousDonorCampaignRemarks: operation.campaignRemarks || '',
     };
   });
 }
@@ -1911,9 +1963,10 @@ async function loadMangalyaDonors() {
   });
   const normalizedRows = normalizeDonorRows(response.data.values);
   const operations = await loadMangalyaOperationsForRows(normalizedRows);
+  const generalOperations = await loadGeneralDonorOperationsForRows(normalizedRows);
 
   donorCache = {
-    rows: mergeMangalyaOperations(normalizedRows, operations),
+    rows: mergeGeneralDonorOperations(mergeMangalyaOperations(normalizedRows, operations), generalOperations),
     refreshedAt: new Date().toISOString(),
     source: 'google-api',
     writeEnabled: true,
@@ -2515,6 +2568,102 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
   };
 }
 
+async function findGeneralDonorById(donorId) {
+  await loadMangalyaDonors();
+  const matches = donorCache.rows.filter((row) => row.donorId === donorId && isGeneralPreviousDonor(row));
+  if (matches.length !== 1) throw donorIdentityError();
+  return matches[0];
+}
+
+async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = false, req }) {
+  if (!isMongoConfigured()) {
+    const error = new Error('MongoDB is required for donor QR operations.');
+    error.statusCode = 503;
+    throw error;
+  }
+  const donor = await findGeneralDonorById(donorId);
+  if (!donor.donorId) throw donorIdentityError();
+  if (!donorPaymentVerified(donor)) {
+    const error = new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  await connectMongo();
+  const eventYear = donorEventYear(donor);
+  const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId: donor.donorId });
+  const clearToken = operation?.tokenRef && !regenerate ? operation.tokenRef : createMangalyaToken();
+  const update = {
+    qrStatus: 'ACTIVE',
+    tokenRef: clearToken,
+    tokenHash: tokenHash(clearToken),
+  };
+  const next = await GeneralDonorOperation.findOneAndUpdate(
+    { eventYear, donorSourceId: donor.donorId },
+    {
+      $setOnInsert: { eventYear, donorSourceId: donor.donorId },
+      $set: update,
+    },
+    { new: true, upsert: true },
+  ).lean();
+  await recordGeneralDonorAudit({
+    donorSourceId: donor.donorId,
+    eventYear,
+    eventType: regenerate ? 'GENERAL_DONOR_QR_REGENERATED' : 'GENERAL_DONOR_QR_GENERATED',
+    user,
+  });
+  return {
+    donor: {
+      id: donor.id,
+      donorId: donor.donorId,
+      donorType: 'DONOR',
+      qrStatus: next.qrStatus,
+      qrUrl: `${publicOrigin(req)}/qr/donor/${clearToken}`,
+    },
+    token: clearToken,
+  };
+}
+
+async function updateGeneralDonorCampaignStatus({ donorId, status, campaignName, remarks = '', user, whatsappDestination = '' }) {
+  if (!isMongoConfigured()) {
+    const error = new Error('MongoDB is required for donor campaign history.');
+    error.statusCode = 503;
+    throw error;
+  }
+  const allowedStatuses = new Set(['Pending', 'Sent', 'Skipped', 'Failed']);
+  if (!allowedStatuses.has(status)) {
+    const error = new Error('Invalid donor campaign status.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const donor = await findGeneralDonorById(donorId);
+  await connectMongo();
+  const eventYear = donorEventYear(donor);
+  const next = await GeneralDonorOperation.findOneAndUpdate(
+    { eventYear, donorSourceId: donor.donorId },
+    {
+      $setOnInsert: { eventYear, donorSourceId: donor.donorId },
+      $set: {
+        campaignName: String(campaignName || 'Previous Donors Campaign 2026').trim(),
+        campaignStatus: status,
+        campaignStatusAt: new Date(),
+        campaignStatusBy: actorName(user),
+        campaignRemarks: String(remarks || '').trim(),
+        whatsappDestination: maskMobile(whatsappDestination || donor.contactNo || ''),
+      },
+    },
+    { new: true, upsert: true },
+  ).lean();
+  await recordGeneralDonorAudit({
+    donorSourceId: donor.donorId,
+    eventYear,
+    eventType: 'GENERAL_DONOR_CAMPAIGN_STATUS',
+    user,
+    remarks: `${status}: ${remarks || ''}`.trim(),
+  });
+  return { donor, operation: next };
+}
+
 async function resolveMangalyaToken(rawToken, user = null) {
   if (!isMongoConfigured()) return null;
   const token = String(rawToken || '').trim();
@@ -2962,6 +3111,62 @@ app.post(['/api/mangalya-sponsorship/:id/revoke-qr', '/api/mangalya-donors/:id/r
     ).lean();
     await recordMangalyaAudit({ donorSourceId: donor.donorId, eventYear: donorEventYear(donor), eventType: 'MANGALYA_QR_REVOKED', user: req.user });
     res.json({ ok: true, donor: publicMangalyaDonor(donor, next || operation, req.user) });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/previous-donors/:id/qr', requirePst, async (req, res) => {
+  try {
+    const result = await generateOrResolveGeneralDonorQr({
+      donorId: req.params.id,
+      user: req.user,
+      regenerate: false,
+      req,
+    });
+    res.json({ ok: true, message: 'Donor QR generated', donor: result.donor, token: result.token });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/previous-donors/:id/regenerate-qr', requirePst, async (req, res) => {
+  try {
+    const result = await generateOrResolveGeneralDonorQr({
+      donorId: req.params.id,
+      user: req.user,
+      regenerate: true,
+      req,
+    });
+    res.json({ ok: true, message: 'Donor QR regenerated', donor: result.donor, token: result.token });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/previous-donors/:id/campaign-status', requirePst, async (req, res) => {
+  try {
+    const result = await updateGeneralDonorCampaignStatus({
+      donorId: req.params.id,
+      status: req.body?.status,
+      campaignName: req.body?.campaignName,
+      remarks: req.body?.remarks,
+      whatsappDestination: req.body?.whatsappDestination,
+      user: req.user,
+    });
+    res.json({
+      ok: true,
+      donor: {
+        id: result.donor.id,
+        donorId: result.donor.donorId,
+        donorType: 'DONOR',
+        previousDonorCampaignName: result.operation.campaignName,
+        previousDonorCampaignStatus: result.operation.campaignStatus,
+        previousDonorCampaignStatusAt: result.operation.campaignStatusAt,
+        previousDonorCampaignStatusBy: result.operation.campaignStatusBy,
+        previousDonorCampaignRemarks: result.operation.campaignRemarks,
+      },
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({ ok: false, error: error.message });
   }

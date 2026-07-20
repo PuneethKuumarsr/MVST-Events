@@ -1125,7 +1125,7 @@ function donorPaymentVerified(donor) {
 
 function donorQrPayload(donor, donationType) {
   if (!donorPaymentVerified(donor)) throw new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
-  if (donationType === 'Mangalya Donor' && donor.qrUrl) return donor.qrUrl;
+  if (donor.qrUrl) return donor.qrUrl;
   if (!donor.donorId) throw new Error('Donor ID migration is required before generating QR pass.');
   return `MVST|${donationType === 'Mangalya Donor' ? 'MANGALYA_DONOR' : 'DONOR'}|${donor.donorId}`;
 }
@@ -2504,6 +2504,30 @@ function useMangalyaDonors(enabled = true) {
       await load(true);
       return payload;
     },
+    prepareGeneralDonorQr: async (id, body = {}) => {
+      const response = await fetch(`/api/previous-donors/${encodeURIComponent(id)}/qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to generate donor QR');
+      await load(true);
+      return payload;
+    },
+    recordPreviousDonorCampaignStatus: async (id, body = {}) => {
+      const response = await fetch(`/api/previous-donors/${encodeURIComponent(id)}/campaign-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to save donor campaign status');
+      await load(true);
+      return payload;
+    },
   };
 }
 
@@ -3771,7 +3795,7 @@ function MandaliDetailsSection({ mandaliState, user }) {
 }
 
 function PreviousDonorsCampaign({ donorState }) {
-  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor } = donorState;
+  const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor, prepareGeneralDonorQr, recordPreviousDonorCampaignStatus } = donorState;
   const campaignName = 'Previous Donors Campaign 2026';
   const [filterId, setFilterId] = useState('all');
   const [query, setQuery] = useState('');
@@ -3806,6 +3830,23 @@ function PreviousDonorsCampaign({ donorState }) {
   const currentQueueDonor = queue[queueIndex];
   const previousDonorProgress = queueCounts(queue, statusMap);
 
+  useEffect(() => {
+    const mongoStatus = {};
+    previousDonors.forEach((donor) => {
+      if (donor.previousDonorCampaignStatus && donor.previousDonorCampaignStatus !== 'Pending') {
+        mongoStatus[donor.id] = {
+          campaign: donor.previousDonorCampaignName || campaignName,
+          recipient: sponsorDisplayName(donor),
+          status: donor.previousDonorCampaignStatus,
+          at: donor.previousDonorCampaignStatusAt || '',
+          user: donor.previousDonorCampaignStatusBy || '',
+          remarks: donor.previousDonorCampaignRemarks || '',
+        };
+      }
+    });
+    setStatusMap({ ...readQueueStatus(campaignName), ...mongoStatus });
+  }, [previousDonors]);
+
   function startEdit(donor) {
     setEditingId(donor.id);
     setMobileDraft(donor.contactNo || '');
@@ -3837,7 +3878,11 @@ function PreviousDonorsCampaign({ donorState }) {
   async function previewDonorQrPass(donor) {
     setQrPreview({ open: true, donor, dataUrl: '', message: 'Generating donor QR pass...' });
     try {
-      const dataUrl = await generateDonorQrPassJpg(donor, { donationType: 'Donor' });
+      const payload = donor.qrUrl
+        ? { donor }
+        : await prepareGeneralDonorQr(donor.id, {});
+      const qrDonor = { ...donor, ...(payload.donor || {}) };
+      const dataUrl = await generateDonorQrPassJpg(qrDonor, { donationType: 'Donor' });
       setQrPreview({ open: true, donor, dataUrl, message: '' });
     } catch (qrError) {
       setQrPreview({ open: true, donor, dataUrl: '', message: qrError.message || 'Unable to generate donor QR pass' });
@@ -3846,7 +3891,10 @@ function PreviousDonorsCampaign({ donorState }) {
 
   async function downloadPreviousDonorQrPass(donor) {
     try {
-      await downloadDonorQrPass(donor, { donationType: 'Donor' });
+      const payload = donor.qrUrl
+        ? { donor }
+        : await prepareGeneralDonorQr(donor.id, {});
+      await downloadDonorQrPass({ ...donor, ...(payload.donor || {}) }, { donationType: 'Donor' });
       setMessage('Donor QR pass downloaded.');
     } catch (qrError) {
       setMessage(qrError.message || 'Unable to download donor QR pass');
@@ -3871,7 +3919,7 @@ function PreviousDonorsCampaign({ donorState }) {
     setMessage('');
   }
 
-  function recordPreviousDonorStatus(donor, statusValue, remarks = '') {
+  async function recordPreviousDonorStatus(donor, statusValue, remarks = '') {
     const stamp = queueAuditStamp();
     const nextStatus = writeQueueStatus(campaignName, donor.id, {
       campaign: campaignName,
@@ -3884,6 +3932,14 @@ function PreviousDonorsCampaign({ donorState }) {
       remarks,
     });
     setStatusMap(nextStatus);
+    if (recordPreviousDonorCampaignStatus) {
+      await recordPreviousDonorCampaignStatus(donor.id, {
+        campaignName,
+        status: statusValue,
+        remarks,
+        whatsappDestination: donor.contactNo,
+      });
+    }
     return nextStatus;
   }
 
@@ -3898,7 +3954,7 @@ function PreviousDonorsCampaign({ donorState }) {
     }
   }
 
-  function openQueueDonor(index) {
+  async function openQueueDonor(index) {
     const donor = queue[index];
     if (!donor) return;
     try {
@@ -3907,11 +3963,11 @@ function PreviousDonorsCampaign({ donorState }) {
       if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
       const url = makePreviousDonorWhatsAppUrl(donor);
       if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
-      const nextStatus = recordPreviousDonorStatus(donor, 'Sent', 'Opened WhatsApp for manual sending.');
+      const nextStatus = await recordPreviousDonorStatus(donor, 'Sent', 'Opened WhatsApp for manual sending.');
       window.open(url, '_blank', 'noopener,noreferrer');
       advancePreviousDonorQueue(nextStatus, index + 1);
     } catch (openError) {
-      recordPreviousDonorStatus(donor, 'Failed', openError.message || 'WhatsApp validation failed.');
+      await recordPreviousDonorStatus(donor, 'Failed', openError.message || 'WhatsApp validation failed.').catch(() => {});
       setMessage(openError.message || 'WhatsApp validation failed.');
     }
     setQueueStarted(true);
@@ -3925,9 +3981,12 @@ function PreviousDonorsCampaign({ donorState }) {
 
   function skipQueueDonor() {
     if (!currentQueueDonor) return;
-    const nextStatus = recordPreviousDonorStatus(currentQueueDonor, 'Skipped', 'Skipped by operator.');
-    setQueueStarted(true);
-    advancePreviousDonorQueue(nextStatus);
+    recordPreviousDonorStatus(currentQueueDonor, 'Skipped', 'Skipped by operator.')
+      .then((nextStatus) => {
+        setQueueStarted(true);
+        advancePreviousDonorQueue(nextStatus);
+      })
+      .catch((statusError) => setMessage(statusError.message || 'Unable to save skipped status'));
   }
 
   async function copyAllMessages() {

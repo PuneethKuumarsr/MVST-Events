@@ -20,6 +20,8 @@ const qrTokenModel = readFileSync(new URL('../server/models/QrToken.js', import.
 const distributionLogModel = readFileSync(new URL('../server/models/DistributionLog.js', import.meta.url), 'utf8');
 const mangalyaOperationModel = readFileSync(new URL('../server/models/MangalyaDonorOperation.js', import.meta.url), 'utf8');
 const mangalyaAuditModel = readFileSync(new URL('../server/models/MangalyaDonorAudit.js', import.meta.url), 'utf8');
+const generalDonorOperationModel = readFileSync(new URL('../server/models/GeneralDonorOperation.js', import.meta.url), 'utf8');
+const generalDonorAuditModel = readFileSync(new URL('../server/models/GeneralDonorAudit.js', import.meta.url), 'utf8');
 
 assert.match(frontend, /id: 'bhimaratha',[\s\S]*1lAiv6mWGXtVlxZ-4p1krjhc3bmau_Pgl1PKq0GylnJw/, 'CSV fallback first Google Sheet must map to Bhimaratha');
 assert.match(frontend, /id: 'shashtipoorthi',[\s\S]*1PyxCC2HN7hCls-xR8Ao62xVZbM6w0OEa8Ri_OUu7XQo/, 'CSV fallback second Google Sheet must map to Shashtipoorthi');
@@ -1025,9 +1027,25 @@ assert.ok(frontend.includes("recordQueueStatus(contact, 'Sent'"), 'Mandali queue
 assert.ok(frontend.includes("recordQueueStatus(currentContact, 'Skipped'"), 'Mandali queue must save Skipped status');
 assert.ok(frontend.includes("recordPreviousDonorStatus(donor, 'Sent'"), 'Previous donor queue must save Sent status when WhatsApp opens');
 assert.ok(frontend.includes("recordPreviousDonorStatus(currentQueueDonor, 'Skipped'"), 'Previous donor queue must save Skipped status');
+assert.ok(frontend.includes('prepareGeneralDonorQr'), 'Previous donor QR pass must use the Mongo-backed donor QR endpoint');
+assert.ok(frontend.includes('recordPreviousDonorCampaignStatus'), 'Previous donor queue must call the Mongo-backed campaign status endpoint');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
 assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');
+assert.ok(backend.includes("import { GeneralDonorOperation }"), 'Backend must import the General Donor Mongo operation model');
+assert.ok(backend.includes("import { GeneralDonorAudit }"), 'Backend must import the General Donor Mongo audit model');
+assert.ok(backend.includes('/api/previous-donors/:id/qr'), 'Previous donors must have a Mongo-backed QR endpoint');
+assert.ok(backend.includes('/api/previous-donors/:id/campaign-status'), 'Previous donor campaign status must be stored through the backend');
+assert.ok(backend.includes("donorType: 'DONOR'"), 'General previous donors must be identified as Donor records');
+assert.ok(backend.includes("whatsappDestination: maskMobile"), 'Previous donor campaign storage must mask WhatsApp destinations');
+assert.ok(generalDonorOperationModel.includes("collection: 'general_donor_operations'"), 'General donor operations must use a separate Mongo collection');
+assert.ok(generalDonorOperationModel.includes('tokenHash'), 'General donor operation must store QR token hash');
+assert.ok(generalDonorOperationModel.includes('campaignStatus'), 'General donor operation must store campaign status');
+assert.ok(generalDonorOperationModel.includes('eventYear: 1, donorSourceId: 1'), 'General donor operation must declare unique event/donor identity index');
+assert.ok(generalDonorOperationModel.includes('eventYear: 1, campaignName: 1, campaignStatus: 1'), 'General donor operation must support campaign resume lookups');
+assert.ok(generalDonorAuditModel.includes("collection: 'general_donor_audits'"), 'General donor audit must use a separate Mongo collection');
+assert.ok(generalDonorAuditModel.includes('GENERAL_DONOR_CAMPAIGN_STATUS'), 'General donor audit must track campaign status changes');
+assert.ok(generalDonorAuditModel.includes('GENERAL_DONOR_QR_GENERATED'), 'General donor audit must track QR generation');
 assert.ok(backend.includes('MANDALI_CONTACTS_CSV'), 'Backend must read Mandali contacts from private CSV path');
 assert.ok(backend.includes("role: 'Representative'"), 'Backend must import representative details as Representative');
 assert.ok(!backend.includes("role: 'Secretary', name: representative"), 'Backend must not infer Secretary from representative details');
