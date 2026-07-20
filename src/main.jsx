@@ -747,6 +747,14 @@ function receiptFileName(participant, receiptNo) {
   return `MVST-Receipt-${event}-${seat}-${receipt}.jpg`;
 }
 
+function safeFilePart(value, fallback = 'QR-Pass') {
+  return String(value || fallback)
+    .trim()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80) || fallback;
+}
+
 function loadReceiptImage(src) {
   return new Promise((resolve, reject) => {
     const image = new window.Image();
@@ -1098,6 +1106,112 @@ async function qrTokenToPng(token) {
       light: '#fffaf0',
     },
   });
+}
+
+function donorDonationType(donor) {
+  const text = [donor.donorType, donor.contributionType, donor.category, donor.canonicalCategory]
+    .join(' ')
+    .toLowerCase();
+  if (text.includes('mangalya') || Number(donor.confirmedQuantity || donor.sponsored2026 || donor.sponsored2025 || 0) > 0) {
+    return 'Mangalya Donor';
+  }
+  return 'Donor';
+}
+
+function donorPaymentVerified(donor) {
+  const status = String(donor?.status || donor?.paymentStatus || '').trim().toLowerCase();
+  return Boolean(donor?.treasurerVerified) || status.includes('received');
+}
+
+function donorQrPayload(donor, donationType) {
+  if (!donorPaymentVerified(donor)) throw new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
+  if (donationType === 'Mangalya Donor' && donor.qrUrl) return donor.qrUrl;
+  if (!donor.donorId) throw new Error('Donor ID migration is required before generating QR pass.');
+  return `MVST|${donationType === 'Mangalya Donor' ? 'MANGALYA_DONOR' : 'DONOR'}|${donor.donorId}`;
+}
+
+function splitTextLines(ctx, text, maxWidth, maxLines = 2) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  });
+  if (current) lines.push(current);
+  if (lines.length <= maxLines) return lines;
+  const clipped = lines.slice(0, maxLines);
+  while (ctx.measureText(`${clipped[maxLines - 1]}...`).width > maxWidth && clipped[maxLines - 1].length > 3) {
+    clipped[maxLines - 1] = clipped[maxLines - 1].slice(0, -1);
+  }
+  clipped[maxLines - 1] = `${clipped[maxLines - 1]}...`;
+  return clipped;
+}
+
+async function generateDonorQrPassJpg(donor, options = {}) {
+  const donationType = options.donationType || donorDonationType(donor);
+  const payload = options.qrPayload || donorQrPayload(donor, donationType);
+  const isMangalya = donationType === 'Mangalya Donor';
+  const theme = isMangalya
+    ? { background: '#ecfdf5', header: '#047857', subHeader: '#bbf7d0', name: '#064e3b', accent: '#0f766e', footer: '#15803d' }
+    : { background: '#eff6ff', header: '#1d4ed8', subHeader: '#dbeafe', name: '#0b2d5c', accent: '#7f1d1d', footer: '#2563eb' };
+  const qrDataUrl = await QRCode.toDataURL(payload, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 900,
+    color: {
+      dark: '#000000',
+      light: '#ffffff',
+    },
+  });
+  const qrImage = await loadDataUrlImage(qrDataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1240;
+  canvas.height = 1600;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = theme.background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = theme.header;
+  ctx.fillRect(0, 0, canvas.width, 220);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 56px Arial';
+  ctx.fillText('MVST Events QR Pass', canvas.width / 2, 82);
+  ctx.fillStyle = theme.subHeader;
+  ctx.font = '700 34px Arial';
+  ctx.fillText(donationType, canvas.width / 2, 155);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(96, 292, 1048, 1048);
+  ctx.drawImage(qrImage, 168, 364, 904, 904);
+
+  ctx.fillStyle = theme.name;
+  ctx.font = '700 44px Arial';
+  const name = sponsorDisplayName(donor);
+  const nameLines = splitTextLines(ctx, name, 980, 2);
+  nameLines.forEach((line, index) => ctx.fillText(line, canvas.width / 2, 1390 + (index * 50)));
+
+  ctx.fillStyle = theme.accent;
+  ctx.font = '700 38px Arial';
+  ctx.fillText(`Donation Type: ${donationType}`, canvas.width / 2, nameLines.length > 1 ? 1510 : 1470);
+
+  ctx.fillStyle = theme.footer;
+  ctx.font = '700 24px Arial';
+  ctx.fillText('Please show this QR during MVST event operations', canvas.width / 2, 1550);
+  return canvas.toDataURL('image/jpeg', 0.95);
+}
+
+async function downloadDonorQrPass(donor, options = {}) {
+  const dataUrl = await generateDonorQrPassJpg(donor, options);
+  const donationType = options.donationType || donorDonationType(donor);
+  downloadBlob(dataUrlToBlob(dataUrl), `MVST-${safeFilePart(donationType)}-QR-${safeFilePart(sponsorDisplayName(donor))}.jpg`);
+  return dataUrl;
 }
 
 async function downloadQrPng(participant) {
@@ -1699,7 +1813,7 @@ function buildGroupMobileNumbersText(preview) {
 }
 
 function buildBalanceReminderMessage(participant) {
-  return `?? Jai Vasavi ??
+  return `🙏 Jai Vasavi 🙏
 Dear ${participantDisplayName(participant)},
 Thank you for registering for the ${eventDisplayName(participant.eventType)}.
 Our records show:
@@ -1710,7 +1824,7 @@ We kindly request you to clear the above balance on or before the Kit Distributi
 On receipt of the full payment, your seat confirmation, receipt, and kit collection formalities will be completed.
 For any clarification, please contact us.
 Thank you.
-?? Jai Vasavi ??
+🙏 Jai Vasavi 🙏
 Mane Manege Vasavi Seva Trust (R.), Bengaluru`;
 }
 
@@ -1888,7 +2002,7 @@ function buildMangalyaDonorAppealMessage(donor) {
   const category = sponsorCategory(donor);
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
-  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 We hope you and your family are doing well by the grace of Vasavi Matha.
 
@@ -1906,26 +2020,26 @@ Your generosity will help us continue this noble tradition and bless many deserv
 
 Kindly reply to this message or contact us if you wish to continue your support.
 
-?? Thank you for your continued trust and generosity.
+🙏 Thank you for your continued trust and generosity.
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
 function buildMangalyaDonorThankYouMessage(donor) {
   const eventName = sponsorEventName(donor);
-  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 Thank you so much for your kind and generous confirmation to sponsor ${sponsorContributionText(donor)} for ${eventName}.
 
 Your valuable support means a lot to us and will help us continue this noble seva of blessing senior couples through this sacred ceremony.
 
-?? Confirmed Sponsorship: ${sponsorContributionText(donor)}
+💛 Confirmed Sponsorship: ${sponsorContributionText(donor)}
 
 Our Trust representative will get in touch with you shortly regarding the contribution.
 
 May Vasavi Matha bless you and your family with good health, happiness and prosperity.
 
-?? With heartfelt gratitude,
+🙏 With heartfelt gratitude,
 
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
@@ -1933,24 +2047,24 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 function buildMangalyaDonorPaymentReceivedMessage(donor) {
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
-  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 We are pleased to confirm receipt of your generous contribution towards ${sponsorContributionText(donor)} for ${eventName}.
 
-?? Sponsored: ${sponsorContributionText(donor)}
-?? Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
+💛 Sponsored: ${sponsorContributionText(donor)}
+💰 Contribution Received: ${amount ? formatCurrency(amount) : 'As confirmed'}
 
 Your support is deeply appreciated and will help us conduct this sacred event successfully.
 
-?? Your official receipt has been generated and is shared herewith.
+📄 Your official receipt has been generated and is shared herewith.
 
-?? We hope you have received the invitation card handed over by our Trust representative.
+📩 We hope you have received the invitation card handed over by our Trust representative.
 
-?? We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
+💐 We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
 
 May Vasavi Matha shower her choicest blessings upon you and your family with good health, happiness, prosperity and success in all your endeavours.
 
-?? Your generosity and continued support inspire us to carry forward this noble seva. We sincerely thank you for being a part of this sacred initiative.
+🙏 Your generosity and continued support inspire us to carry forward this noble seva. We sincerely thank you for being a part of this sacred initiative.
 
 With heartfelt gratitude,
 
@@ -1959,7 +2073,7 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 
 function buildMangalyaDonorPostEventThankYouMessage(donor) {
   const eventName = sponsorEventName(donor);
-  return `?? Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous sponsorship of ${sponsorContributionText(donor)}.
 
@@ -1967,7 +2081,7 @@ With the blessings of Vasavi Matha and the generous support of donors like you, 
 
 Your contribution played a valuable role in making this sacred event a grand success and in blessing many senior couples.
 
-?? We sincerely thank you for your trust, generosity and continued support.
+🙏 We sincerely thank you for your trust, generosity and continued support.
 
 May Vasavi Matha bless you and your family with good health, happiness, prosperity and success.
 
@@ -2015,7 +2129,7 @@ function isPreviousDonor(donor) {
 }
 
 function buildPreviousDonorAppealMessage(donor) {
-  return `?? Jai Vasavi ??
+  return `🙏 Jai Vasavi 🙏
 
 Dear ${sponsorDisplayName(donor)},
 
@@ -2023,8 +2137,8 @@ With your generous support, last year's Shanthi Mahotsava 2025 event was a grand
 
 This year also, Manemanege Vasavi Seva Trust is organizing:
 
-?? 4th Samoohika Shashtipoorthi Shanthi
-?? 2nd Samoohika Bheemaratha Shanthi
+🌸 4th Samoohika Shashtipoorthi Shanthi
+🌸 2nd Samoohika Bheemaratha Shanthi
 
 Date: Sunday, 02-Aug-2026
 Venue: Shubh Convention, JP Nagar, Bengaluru
@@ -2037,7 +2151,7 @@ For sponsorship or donations, kindly contact us.
 
 Thank you for your continued trust and support.
 
-?? Manemanege Vasavi Seva Trust & Team`;
+🙏 Manemanege Vasavi Seva Trust & Team`;
 }
 
 function makePreviousDonorWhatsAppUrl(donor) {
@@ -2047,7 +2161,7 @@ function makePreviousDonorWhatsAppUrl(donor) {
 }
 
 function buildMandaliInvitationMessage(contact) {
-  return `?? *Invitation*
+  return `🙏 *Invitation*
 Dear Sri. *${contact.name || 'Community Leader'}*
 *${contact.role || 'Representative'}*
 *${contact.mandali || 'Arya Vysya Mandali'}, ${contact.area || 'Bengaluru'}*
@@ -2056,15 +2170,15 @@ The *Mane Mange Vasavi Seva Trust* cordially invites you to a special meeting re
 
 This meeting has been organized to discuss the program arrangements and coordination. Your valuable presence, guidance, and support will greatly contribute to the success of this prestigious community event.
 
-?? *Meeting Details*
+📅 *Meeting Details*
 *Date:* Sunday, 19th July 2026
 *Time:* 11:30 AM
 *Venue:* Ashaktha Poshaka Sabha, V.V. Puram, Bengaluru
 
-?? *Location:*
+📍 *Location:*
 https://maps.app.goo.gl/zuERscMMxvcCBcbd6?g_st=awb
 
-??? *Followed by lunch.*
+🍽️ *Followed by lunch.*
 
 We look forward to your gracious presence and valuable suggestions.
 
@@ -3078,6 +3192,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const canOpenWhatsApp = validation.status === 'ok';
   const normalizedContact = normalizeIndianMobileNumber(sponsor.contactNo);
   const identityReady = sponsor.identityReady !== false && Boolean(sponsor.donorId || !String(sponsor.id || '').startsWith('missing-donor-id:'));
+  const qrPaymentReady = donorPaymentVerified(sponsor);
 
   useEffect(() => {
     setForm({
@@ -3143,6 +3258,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   async function prepareMangalyaQr(options = {}) {
     if (!writeEnabled || !sponsor.id || !sponsor.prepareQr || !identityReady) {
       setMessage('Donor ID migration is required before generating QR.');
+      return null;
+    }
+    if (!qrPaymentReady) {
+      setMessage('QR will be enabled after Treasurer Verified / Payment Received.');
       return null;
     }
     if (!sponsor.receiptNumber) {
@@ -3235,6 +3354,22 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     }
   }
 
+  async function downloadMangalyaQrPass() {
+    const donorWithQr = lastQrUrl
+      ? { ...sponsor, receiptNumber: receiptNumberInput || sponsor.receiptNumber, qrUrl: lastQrUrl }
+      : await prepareMangalyaQr();
+    if (!donorWithQr?.qrUrl) return;
+    setQrSaving(true);
+    try {
+      await downloadDonorQrPass(donorWithQr, { donationType: 'Mangalya Donor' });
+      setMessage('Mangalya donor QR pass downloaded.');
+    } catch (error) {
+      setMessage(error.message || 'Unable to download donor QR pass');
+    } finally {
+      setQrSaving(false);
+    }
+  }
+
   return (
     <article className="donor-card sponsorship-card">
       <div className="participant-top">
@@ -3303,6 +3438,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
       <div className="donor-actions">
         {!identityReady ? <small className="donor-note">Donor ID migration is required before QR, receipt, invitation, or status updates.</small> : null}
+        {identityReady && !qrPaymentReady ? <small className="donor-note">QR enabled only after Treasurer Verified / Payment Received.</small> : null}
         <label className="inline-receipt-input">
           <span>Physical Receipt No.</span>
           <input value={receiptNumberInput} onChange={(event) => setReceiptNumberInput(event.target.value)} placeholder="M001" disabled={qrSaving} />
@@ -3310,9 +3446,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <button type="button" onClick={saveReceiptNumber} disabled={!writeEnabled || qrSaving || !identityReady || !receiptNumberInput || Boolean(sponsor.receiptNumber)}>
           Save Receipt No
         </button>
-        <button type="button" onClick={() => prepareMangalyaQr()} disabled={!writeEnabled || qrSaving || !identityReady}>
+        <button type="button" onClick={() => prepareMangalyaQr()} disabled={!writeEnabled || qrSaving || !identityReady || !qrPaymentReady}>
           {qrSaving ? 'Preparing' : 'Generate QR'}
         </button>
+        <button type="button" onClick={downloadMangalyaQrPass} disabled={!writeEnabled || qrSaving || !identityReady || !qrPaymentReady}>Download QR Pass</button>
         <button type="button" onClick={() => previewMangalyaReceipt(false)} disabled={qrSaving || !identityReady}>Preview Receipt</button>
         <button type="button" onClick={() => previewMangalyaReceipt(true)} disabled={qrSaving || !identityReady}>Download Receipt</button>
         <button type="button" onClick={openMangalyaInvitation} disabled={!canOpenWhatsApp || qrSaving || !identityReady}>Send WhatsApp Invitation</button>
@@ -3382,10 +3519,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 
 const PREVIOUS_DONOR_FILTERS = [
   { id: 'all', label: 'All Previous Donors', test: () => true },
-  { id: '10000', label: '?10,000 Donors', test: (amount) => amount === 10000 },
-  { id: '25000', label: '?25,000 Donors', test: (amount) => amount === 25000 },
-  { id: '50000', label: '?50,000 Donors', test: (amount) => amount === 50000 },
-  { id: '100000', label: '?1,00,000+ Donors', test: (amount) => amount >= 100000 },
+  { id: '10000', label: '₹10,000 Donors', test: (amount) => amount === 10000 },
+  { id: '25000', label: '₹25,000 Donors', test: (amount) => amount === 25000 },
+  { id: '50000', label: '₹50,000 Donors', test: (amount) => amount === 50000 },
+  { id: '100000', label: '₹1,00,000+ Donors', test: (amount) => amount >= 100000 },
 ];
 
 const MANDALI_RECIPIENT_FILTERS = [
@@ -3647,6 +3784,7 @@ function PreviousDonorsCampaign({ donorState }) {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueOpened, setQueueOpened] = useState(false);
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
+  const [qrPreview, setQrPreview] = useState({ open: false, donor: null, dataUrl: '', message: '' });
   const previousDonors = useMemo(() => donors.filter(isPreviousDonor), [donors]);
   const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
 
@@ -3694,6 +3832,25 @@ function PreviousDonorsCampaign({ donorState }) {
     if (!donorMobileIsValid(donor)) return;
     const url = makePreviousDonorWhatsAppUrl(donor);
     window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  async function previewDonorQrPass(donor) {
+    setQrPreview({ open: true, donor, dataUrl: '', message: 'Generating donor QR pass...' });
+    try {
+      const dataUrl = await generateDonorQrPassJpg(donor, { donationType: 'Donor' });
+      setQrPreview({ open: true, donor, dataUrl, message: '' });
+    } catch (qrError) {
+      setQrPreview({ open: true, donor, dataUrl: '', message: qrError.message || 'Unable to generate donor QR pass' });
+    }
+  }
+
+  async function downloadPreviousDonorQrPass(donor) {
+    try {
+      await downloadDonorQrPass(donor, { donationType: 'Donor' });
+      setMessage('Donor QR pass downloaded.');
+    } catch (qrError) {
+      setMessage(qrError.message || 'Unable to download donor QR pass');
+    }
   }
 
   function prepareQueue() {
@@ -3892,6 +4049,7 @@ function PreviousDonorsCampaign({ donorState }) {
         {visibleDonors.length ? visibleDonors.map((donor) => {
           const validation = mobileValidationStatus(donor.contactNo);
           const isEditing = editingId === donor.id;
+          const qrReady = donorPaymentVerified(donor);
           return (
             <article className="donor-card sponsorship-card previous-donor-card" key={donor.id}>
               <div className="participant-top">
@@ -3922,8 +4080,11 @@ function PreviousDonorsCampaign({ donorState }) {
 
               <div className="donor-actions">
                 <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Open WhatsApp</button>
+                <button type="button" onClick={() => previewDonorQrPass(donor)} disabled={!donor.donorId || !qrReady}>Preview QR Pass</button>
+                <button type="button" onClick={() => downloadPreviousDonorQrPass(donor)} disabled={!donor.donorId || !qrReady}>Download QR Pass</button>
                 <button type="button" onClick={() => startEdit(donor)}>Edit Mobile</button>
               </div>
+              {!qrReady ? <small className="donor-note">QR enabled only after Treasurer Verified / Payment Received.</small> : null}
             </article>
           );
         }) : (
@@ -3933,6 +4094,21 @@ function PreviousDonorsCampaign({ donorState }) {
 
       {message ? <small className="donor-note">{message}</small> : null}
       {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
+      {qrPreview.open ? (
+        <div className="receipt-modal-backdrop">
+          <div className="receipt-modal">
+            <div className="receipt-modal-head">
+              <span>Donor QR Pass Preview</span>
+              <button type="button" onClick={() => setQrPreview({ open: false, donor: null, dataUrl: '', message: '' })}><X size={16} /></button>
+            </div>
+            {qrPreview.dataUrl ? <img src={qrPreview.dataUrl} alt="Donor QR pass preview" /> : <p>{qrPreview.message}</p>}
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => qrPreview.dataUrl && downloadBlob(dataUrlToBlob(qrPreview.dataUrl), `MVST-Donor-QR-${safeFilePart(sponsorDisplayName(qrPreview.donor || {}))}.jpg`)} disabled={!qrPreview.dataUrl}>Download JPG</button>
+              <button type="button" onClick={() => setQrPreview({ open: false, donor: null, dataUrl: '', message: '' })}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -4115,8 +4291,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     <section className="management-section mangalya-donors-section">
       <div className="section-heading">
         <div>
-          <p>Sponsorship Management</p>
-          <h2>Requirement and donor contribution tracking</h2>
+          <p>Mangalya Donors</p>
+          <h2>Mangalya sponsorship and donor tracking</h2>
         </div>
         <button className="refresh-button compact" type="button" onClick={refresh} disabled={isRefreshing}>
           <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
@@ -5696,12 +5872,12 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
 
       <div className="distribution-groups">
         <article className="distribution-group-card">
-          <p>?? Kit Distribution Day</p>
+          <p>📅 Kit Distribution Day</p>
           <button className={activeOperation === 'meetingAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('meetingAttendance')}>Meeting Attendance</button>
           <button className={activeOperation === 'kitCollection' ? 'active' : ''} type="button" onClick={() => setActiveOperation('kitCollection')}>Kit Collection</button>
         </article>
         <article className="distribution-group-card">
-          <p>?? Mahotsava Day</p>
+          <p>🌸 Mahotsava Day</p>
           <button className={activeOperation === 'eventAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('eventAttendance')}>Event Attendance</button>
           <button className={activeOperation === 'madalakkiDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('madalakkiDistribution')}>Madalakki Distribution</button>
           <button className={activeOperation === 'photoFrameDistribution' ? 'active' : ''} type="button" onClick={() => setActiveOperation('photoFrameDistribution')}>Photo Frame Distribution</button>
@@ -6382,7 +6558,7 @@ function App({ auth }) {
             <>
               <button className={activeView === 'mangalya-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('mangalya-donors')}>
                 <Gift size={18} />
-                <span>Sponsorship Management</span>
+                <span>Mangalya Donors</span>
               </button>
               <button className={activeView === 'previous-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('previous-donors')}>
                 <MessageCircle size={18} />

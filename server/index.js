@@ -86,6 +86,7 @@ const DONOR_FIELDS = {
   receivedAmount: ['Received Amount'],
   balanceAmount: ['Balance Amount'],
   status: ['Status'],
+  treasurerVerified: ['Treasurer Verified', 'Payment Verified', 'Verified By Treasurer'],
   remarks: ['Remarks'],
   introducedBy: ['Trustee Reference', 'Introduced By / Trustee Reference', 'Introduced By'],
   followUpBy: ['Follow-up By', 'Follow Up By'],
@@ -1321,6 +1322,7 @@ function normalizeDonorRows(values) {
         balanceAmount: numberFrom(getCell(row, headerMap, ['Balance Amount'])) || Math.max(confirmedAmount - receivedAmount, 0),
         amount,
         status: getCell(row, headerMap, ['Status']) || 'Pending',
+        treasurerVerified: boolFrom(getCell(row, headerMap, ['Treasurer Verified', 'Payment Verified', 'Verified By Treasurer'])),
         remarks: getCell(row, headerMap, ['Remarks']),
         introducedBy: getCell(row, headerMap, ['Trustee Reference', 'Introduced By / Trustee Reference', 'Introduced By']),
         followUpBy: getCell(row, headerMap, ['Follow-up By', 'Follow Up By']),
@@ -1532,6 +1534,11 @@ function donorIdentityError() {
   const error = new Error('Donor record identity is missing or duplicated. No changes were saved.');
   error.statusCode = 409;
   return error;
+}
+
+function donorPaymentVerified(donor) {
+  const status = String(donor?.status || donor?.paymentStatus || '').trim().toLowerCase();
+  return Boolean(donor?.treasurerVerified) || status.includes('received');
 }
 
 function mangalyaDonorQuantity(donor) {
@@ -2450,6 +2457,11 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
   }
   const eventYear = donorEventYear(donor);
   if (!donor.donorId) throw donorIdentityError();
+  if (!donorPaymentVerified(donor)) {
+    const error = new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
+    error.statusCode = 403;
+    throw error;
+  }
   const sheetReceipt = donorSheetReceiptNumber(donor);
   const finalReceipt = sheetReceipt;
   if (!finalReceipt) {

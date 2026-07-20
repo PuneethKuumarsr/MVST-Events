@@ -272,7 +272,7 @@ assert.ok(backend.includes("seatNo: ['Seat No']"), 'Backend must allow Seat No w
 assert.ok(backend.includes("receiptNo: ['Receipt No']"), 'Backend must allow Receipt No write-back');
 assert.ok(backend.includes("receiptGenerated: ['Receipt Generated']"), 'Backend must allow Receipt Generated write-back');
 assert.ok(backend.includes("const DEFAULT_RANGE = 'Form Responses 1!A:AZ'"), 'Backend range must include receipt columns beyond Z');
-assert.ok(frontend.includes('Requirement and donor contribution tracking'), 'Dashboard must show Sponsorship Management module');
+assert.ok(frontend.includes('Mangalya sponsorship and donor tracking'), 'Dashboard must show Mangalya Donors module');
 assert.ok(frontend.includes('Requirement Progress Dashboard'), 'Dashboard must show annual requirement progress');
 assert.ok(frontend.includes('Financial Report'), 'Dashboard must show sponsorship financial report');
 assert.ok(frontend.includes('VITE_ACTIVE_EVENT_YEAR'), 'Sponsorship dashboard must be scoped by configurable active event year');
@@ -1061,6 +1061,8 @@ assert.ok(backend.includes('row.donorId !== donorSourceId'), 'Receipt duplicate 
 assert.ok(backend.includes('receiptNumberNormalized'), 'Backend must store normalized Mangalya receipt numbers for duplicate protection');
 assert.ok(backend.includes('donorSheetReceiptNumber'), 'Backend must preserve existing donor receipt numbers from Google Sheets');
 assert.ok(backend.includes('Save the physical receipt number to Google Sheets before generating QR.'), 'Backend must block QR until receipt number is saved in Google Sheets');
+assert.ok(backend.includes('QR generation is enabled only after Treasurer Verified / Payment Received.'), 'Backend must block donor QR until payment is verified');
+assert.ok(frontend.includes('QR enabled only after Treasurer Verified / Payment Received.'), 'Frontend must explain donor QR verification requirement');
 assert.ok(backend.includes('assertMangalyaReceiptUnique'), 'Backend must reject duplicate Mangalya receipt numbers');
 assert.ok(backend.includes('function createMangalyaToken'), 'Backend must generate secure Mangalya donor QR tokens');
 assert.ok(backend.includes("crypto.randomBytes(24).toString('base64url')"), 'Mangalya QR token must be random and unguessable');
