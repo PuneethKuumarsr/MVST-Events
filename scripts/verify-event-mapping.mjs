@@ -953,6 +953,13 @@ assert.ok(frontend.includes('function fixedReceiptQrValue(participant, receiptNo
 assert.ok(frontend.includes('receiptQrPortalUrl(validation.qrToken)'), 'Printed receipt QR must encode an HTTPS portal URL');
 assert.ok(frontend.includes('/qr/receipt?token='), 'Receipt QR URL must open the MVST portal receipt route');
 assert.ok(frontend.includes('MVST|${eventCode}|${formatReceiptNumberForQr'), 'Frontend QR must preserve MVST|EVENT|RECEIPT_NO|SEAT_NO as the embedded safe token');
+assert.ok(frontend.includes('function generateParticipantQrPassJpg'), 'Frontend must generate participant QR pass JPGs');
+assert.ok(frontend.includes('function participantQrEnabled'), 'Participant QR pass must have an explicit enablement rule');
+assert.ok(frontend.includes('participant?.treasurerVerified'), 'Participant QR pass must be enabled only after Treasurer Verified / Payment Received');
+assert.ok(frontend.includes('function participantQrPassFileName'), 'Participant QR pass must use a participant-friendly filename');
+assert.ok(frontend.includes('MVST-QR-${groom}.jpg'), 'Participant QR pass filename must include the groom name');
+assert.ok(frontend.includes('Share QR WhatsApp'), 'Participant cards must expose QR pass WhatsApp sharing');
+assert.ok(frontend.includes('https://wa.me/${normalizeIndianMobileNumber(participant.mobileNumber)}?text=${encodedText}'), 'Participant QR WhatsApp fallback must use wa.me with normalized mobile');
 assert.ok(frontend.includes('function extractReceiptQrToken'), 'Frontend must unwrap receipt QR URLs back to the fixed token for validation');
 assert.ok(backend.includes('function extractFixedReceiptQrToken'), 'Backend scanner must accept HTTPS receipt QR URLs as well as raw tokens');
 assert.ok(frontend.includes('Receipt No. and Seat No. do not match the approved sequence. QR generation stopped.'), 'Frontend must block QR generation when receipt-seat mapping is wrong');

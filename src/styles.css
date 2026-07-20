@@ -986,6 +986,7 @@ main {
 }
 
 .receipt-panel,
+.participant-qr-pass-panel,
 .receipt-bulk-panel {
   margin-top: 12px;
   border: 1px solid var(--line);
@@ -995,6 +996,7 @@ main {
 }
 
 .receipt-panel-head,
+.participant-qr-pass-panel > div:first-child,
 .receipt-actions-row,
 .receipt-bulk-panel {
   display: flex;
@@ -1004,11 +1006,13 @@ main {
 }
 
 .receipt-panel-head,
+.participant-qr-pass-panel > div:first-child,
 .receipt-bulk-panel {
   justify-content: space-between;
 }
 
 .receipt-panel-head span,
+.participant-qr-pass-panel small,
 .receipt-bulk-panel p,
 .receipt-meta-grid span {
   color: var(--gold);
@@ -1018,6 +1022,7 @@ main {
 }
 
 .receipt-panel-head strong,
+.participant-qr-pass-panel strong,
 .receipt-bulk-panel span {
   display: block;
   color: var(--maroon-deep);
@@ -1067,9 +1072,21 @@ main {
 }
 
 .receipt-panel small,
+.participant-qr-pass-panel small,
 .receipt-bulk-panel small {
   color: var(--green);
   font-weight: 850;
+}
+
+.participant-qr-pass-panel {
+  display: grid;
+  gap: 10px;
+  border-left: 4px solid var(--gold);
+}
+
+.participant-qr-pass-panel > small {
+  color: var(--ink-soft);
+  text-transform: none;
 }
 
 .receipt-send-panel {

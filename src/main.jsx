@@ -747,6 +747,11 @@ function receiptFileName(participant, receiptNo) {
   return `MVST-Receipt-${event}-${seat}-${receipt}.jpg`;
 }
 
+function participantQrPassFileName(participant) {
+  const groom = safeFilePart(participant.groomName || participantDisplayName(participant), 'Participant');
+  return `MVST-QR-${groom}.jpg`;
+}
+
 function safeFilePart(value, fallback = 'QR-Pass') {
   return String(value || fallback)
     .trim()
@@ -1106,6 +1111,70 @@ async function qrTokenToPng(token) {
       light: '#fffaf0',
     },
   });
+}
+
+function participantQrEnabled(participant) {
+  return Boolean(participant?.treasurerVerified);
+}
+
+async function generateParticipantQrPassJpg(participant) {
+  if (!participantQrEnabled(participant)) {
+    throw new Error('QR enabled only after Treasurer Verified / Payment Received.');
+  }
+  const receiptNo = normalizeReceiptNumber(participant.receiptNo, participant.eventType);
+  if (!receiptNo) throw new Error('Receipt No is required before QR generation.');
+  if (!String(participant.seatNo || '').trim()) throw new Error('Seat No is required before QR generation.');
+  const qrValue = fixedReceiptQrValue(participant, receiptNo);
+  const qrDataUrl = await QRCode.toDataURL(qrValue, {
+    errorCorrectionLevel: 'H',
+    margin: 3,
+    width: 980,
+    color: {
+      dark: '#000000',
+      light: '#ffffff',
+    },
+  });
+  const qrImage = await loadDataUrlImage(qrDataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1240;
+  canvas.height = 1600;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#fff8e8';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#8f1728';
+  ctx.fillRect(0, 0, canvas.width, 158);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 50px Arial, sans-serif';
+  ctx.fillText('MVST Events QR Pass', canvas.width / 2, 56);
+  ctx.fillStyle = '#ffe8a3';
+  ctx.font = '700 34px Arial, sans-serif';
+  ctx.fillText(EVENTS[participant.eventType]?.label || eventDisplayName(participant.eventType), canvas.width / 2, 114);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(96, 218, 1048, 1048);
+  ctx.drawImage(qrImage, 176, 298, 888, 888);
+
+  const nameBox = { x: 84, y: 1292, width: 1072, height: 62 };
+  fitReceiptText(ctx, participantDisplayName(participant), nameBox, {
+    maxFont: 40,
+    minFont: 24,
+    align: 'center',
+    weight: 700,
+    family: 'Arial, sans-serif',
+  });
+  ctx.fillStyle = '#8f1728';
+  ctx.font = '700 38px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Receipt No.: ${receiptNo}`, canvas.width / 2, 1404);
+  ctx.fillText(`Seat No.: ${parseFixedSeatNumber(participant.seatNo)?.normalized || participant.seatNo}`, canvas.width / 2, 1476);
+  ctx.fillStyle = '#b88a12';
+  ctx.font = '700 24px Arial, sans-serif';
+  ctx.fillText('Please show this QR during MVST event operations', canvas.width / 2, 1542);
+  return canvas.toDataURL('image/jpeg', 0.95);
 }
 
 function donorDonationType(donor) {
@@ -3034,6 +3103,121 @@ function ReceiptPanel({ participant, rows, writeEnabled, onSave, onFreshRows }) 
   );
 }
 
+function ParticipantQrPassPanel({ participant }) {
+  const [qrPassDataUrl, setQrPassDataUrl] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const mobileValidation = mobileValidationStatus(participant.mobileNumber);
+  const qrReady = participantQrEnabled(participant);
+  const receiptNo = normalizeReceiptNumber(participant.receiptNo, participant.eventType);
+
+  useEffect(() => {
+    setQrPassDataUrl('');
+    setPreviewOpen(false);
+    setMessage('');
+  }, [participant.id, participant.receiptNo, participant.seatNo, participant.treasurerVerified]);
+
+  async function ensureQrPass() {
+    setMessage('');
+    setGenerating(true);
+    try {
+      const dataUrl = qrPassDataUrl || await generateParticipantQrPassJpg(participant);
+      setQrPassDataUrl(dataUrl);
+      return dataUrl;
+    } catch (error) {
+      setMessage(error.message || 'Unable to generate QR pass');
+      return '';
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function previewQrPass() {
+    const dataUrl = await ensureQrPass();
+    if (dataUrl) setPreviewOpen(true);
+  }
+
+  async function downloadQrPass() {
+    const dataUrl = await ensureQrPass();
+    if (!dataUrl) return;
+    downloadBlob(dataUrlToBlob(dataUrl), participantQrPassFileName(participant));
+    setMessage('QR pass downloaded.');
+  }
+
+  async function shareQrPass() {
+    if (mobileValidation.status !== 'ok') {
+      setMessage('Valid mobile required');
+      return;
+    }
+    const dataUrl = await ensureQrPass();
+    if (!dataUrl) return;
+    const filename = participantQrPassFileName(participant);
+    const file = dataUrlToFile(dataUrl, filename);
+    const shareText = `MVST QR Pass for ${participantDisplayName(participant)}\nReceipt No.: ${receiptNo}\nSeat No.: ${parseFixedSeatNumber(participant.seatNo)?.normalized || participant.seatNo}`;
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'MVST QR Pass', text: shareText });
+        setMessage('QR pass shared. Please confirm it in WhatsApp.');
+        return;
+      } catch {
+        setMessage('Share cancelled or blocked. Downloading QR pass and opening WhatsApp fallback.');
+      }
+    } else {
+      setMessage('Image auto-attach is not supported here. QR pass downloaded; attach it manually in WhatsApp.');
+    }
+    downloadBlob(dataUrlToBlob(dataUrl), filename);
+    const encodedText = encodeURIComponent(`${shareText}\n\nPlease show this QR during MVST event operations.`);
+    window.open(`https://wa.me/${normalizeIndianMobileNumber(participant.mobileNumber)}?text=${encodedText}`, '_blank', 'noopener,noreferrer');
+  }
+
+  return (
+    <div className="participant-qr-pass-panel">
+      <div>
+        <strong>QR Pass</strong>
+        <small>Enabled after Treasurer Verified / Payment Received.</small>
+      </div>
+      <div className="receipt-actions-row">
+        <button type="button" onClick={previewQrPass} disabled={generating || !qrReady}>
+          <QrCode size={16} /> Preview QR Pass
+        </button>
+        <button type="button" onClick={downloadQrPass} disabled={generating || !qrReady}>
+          <Download size={16} /> Download QR Pass
+        </button>
+        <button type="button" onClick={shareQrPass} disabled={generating || !qrReady || mobileValidation.status !== 'ok'}>
+          <Share2 size={16} /> Share QR WhatsApp
+        </button>
+      </div>
+      {!qrReady ? <small>QR enabled only after Treasurer Verified / Payment Received.</small> : null}
+      {qrReady && !receiptNo ? <small>Receipt No is required before QR generation.</small> : null}
+      {qrReady && !String(participant.seatNo || '').trim() ? <small>Seat No is required before QR generation.</small> : null}
+      {qrReady && mobileValidation.status !== 'ok' ? <small>Valid mobile required for WhatsApp sharing.</small> : null}
+      {message ? <small>{message}</small> : null}
+      {previewOpen ? (
+        <div className="receipt-modal-backdrop" role="dialog" aria-modal="true" aria-label="QR pass preview">
+          <div className="receipt-modal qr-pass-modal">
+            <div className="receipt-modal-head">
+              <div>
+                <span>QR Pass Preview</span>
+                <strong>{participantDisplayName(participant)}</strong>
+              </div>
+              <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close QR pass preview">
+                <X size={18} />
+              </button>
+            </div>
+            {qrPassDataUrl ? <img src={qrPassDataUrl} alt="MVST QR pass preview" /> : null}
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => setPreviewOpen(false)}>Close</button>
+              <button type="button" onClick={downloadQrPass}><Download size={16} /> Download JPG</button>
+              <button type="button" onClick={shareQrPass} disabled={mobileValidation.status !== 'ok'}><Share2 size={16} /> Share WhatsApp</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ParticipantCard({ participant, rows, writeEnabled, onSave, onFreshRows }) {
   const event = EVENTS[participant.eventType];
   const [openedMessageType, setOpenedMessageType] = useState('');
@@ -3132,6 +3316,8 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave, onFreshRows 
       <AdminEditPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} />
 
       <ReceiptPanel participant={participant} rows={rows} writeEnabled={writeEnabled} onSave={onSave} onFreshRows={onFreshRows} />
+
+      <ParticipantQrPassPanel participant={participant} />
 
       <div className="links-row">
         <a className={!participant.paymentScreenshot ? 'disabled' : ''} href={participant.paymentScreenshot || undefined} target="_blank" rel="noreferrer">
