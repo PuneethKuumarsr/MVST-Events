@@ -3061,6 +3061,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     sponsored2025: String(sponsor.sponsored2025 || 0),
     sponsored2026: String(sponsor.sponsored2026 || 0),
     status: sponsor.status || 'Pending',
+    introducedBy: sponsor.introducedBy || '',
     remarks: sponsor.remarks || '',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -3075,6 +3076,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const [openedMessageType, setOpenedMessageType] = useState('appeal');
   const validation = mobileValidationStatus(sponsor.contactNo);
   const canOpenWhatsApp = validation.status === 'ok';
+  const normalizedContact = normalizeIndianMobileNumber(sponsor.contactNo);
   const identityReady = sponsor.identityReady !== false && Boolean(sponsor.donorId || !String(sponsor.id || '').startsWith('missing-donor-id:'));
 
   useEffect(() => {
@@ -3084,6 +3086,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       sponsored2025: String(sponsor.sponsored2025 || 0),
       sponsored2026: String(sponsor.sponsored2026 || 0),
       status: sponsor.status || 'Pending',
+      introducedBy: sponsor.introducedBy || '',
       remarks: sponsor.remarks || '',
     });
     setMessage('');
@@ -3245,6 +3248,11 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         </StatusPill>
       </div>
 
+      <div className="volunteer-call-row donor-call-row">
+        <span>{sponsor.contactNo || 'Mobile missing'}</span>
+        {canOpenWhatsApp ? <a href={`tel:+${normalizedContact}`}><Phone size={16} /> Call</a> : <small>Valid mobile required</small>}
+      </div>
+
       <div className="money-grid sponsorship-money-grid">
         <span><small>Previous Qty</small><b>{sponsor.sponsored2025 || 0}</b></span>
         <span><small>Confirmed Qty</small><b>{sponsor.confirmedQuantity || sponsor.sponsored2026 || 0}</b></span>
@@ -3258,6 +3266,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <p><span>QR Status</span>{sponsor.qrStatus || 'NOT_GENERATED'}</p>
         <p><span>Arrival Status</span>{sponsor.arrivalStatus || 'NOT_ARRIVED'}</p>
         <p><span>Honour Status</span>{sponsor.honourStatus || 'PENDING'}{sponsor.honouredAt ? ` - ${formatRefreshTime(sponsor.honouredAt)}` : ''}</p>
+        <p><span>Trustee Reference</span>{sponsor.introducedBy || 'No reference'}</p>
         <p><span>Remarks</span>{sponsor.remarks || 'No remarks'}</p>
         <p>
           <span>Journey Status</span>
@@ -3276,6 +3285,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
           <label><span>Previous Qty</span><input min="0" type="number" value={form.sponsored2025} onChange={(event) => setForm({ ...form, sponsored2025: event.target.value })} /></label>
           <label><span>Confirmed Qty</span><input min="0" type="number" value={form.sponsored2026} onChange={(event) => setForm({ ...form, sponsored2026: event.target.value })} /></label>
           <label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{['Pending', 'Confirmed', 'Paid', 'Received', 'Cancelled'].map((statusValue) => <option key={statusValue}>{statusValue}</option>)}</select></label>
+          <label><span>Trustee Reference</span><input value={form.introducedBy} onChange={(event) => setForm({ ...form, introducedBy: event.target.value })} /></label>
           <label className="remarks-field"><span>Remarks</span><textarea rows="2" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} /></label>
           <button className="save-button" type="button" onClick={() => saveSponsor(form)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save'}</button>
           <button className="save-button secondary-action" type="button" onClick={() => setEditing(false)}>Cancel</button>
