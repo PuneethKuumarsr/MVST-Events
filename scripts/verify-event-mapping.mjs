@@ -1044,6 +1044,8 @@ assert.ok(backend.includes("import { GeneralDonorAudit }"), 'Backend must import
 assert.ok(backend.includes('/api/previous-donors/:id/qr'), 'Previous donors must have a Mongo-backed QR endpoint');
 assert.ok(backend.includes('/api/previous-donors/:id/campaign-status'), 'Previous donor campaign status must be stored through the backend');
 assert.ok(backend.includes("donorType: 'DONOR'"), 'General previous donors must be identified as Donor records');
+assert.ok(backend.includes('function generalDonorSourceId'), 'Previous donors must have a Mongo source identity separate from Mangalya Donor ID');
+assert.ok(backend.includes('PD-${year}-ROW-${row.rowNumber}'), 'Previous donors without Donor ID must use a backend source key instead of failing QR generation');
 assert.ok(backend.includes("whatsappDestination: maskMobile"), 'Previous donor campaign storage must mask WhatsApp destinations');
 assert.ok(generalDonorOperationModel.includes("collection: 'general_donor_operations'"), 'General donor operations must use a separate Mongo collection');
 assert.ok(generalDonorOperationModel.includes('tokenHash'), 'General donor operation must store QR token hash');

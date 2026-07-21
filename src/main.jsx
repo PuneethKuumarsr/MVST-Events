@@ -4325,8 +4325,8 @@ function PreviousDonorsCampaign({ donorState }) {
 
               <div className="donor-actions">
                 <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Open WhatsApp</button>
-                <button type="button" onClick={() => previewDonorQrPass(donor)} disabled={!donor.donorId || !qrReady}>Preview QR Pass</button>
-                <button type="button" onClick={() => downloadPreviousDonorQrPass(donor)} disabled={!donor.donorId || !qrReady}>Download QR Pass</button>
+                <button type="button" onClick={() => previewDonorQrPass(donor)} disabled={!qrReady}>Preview QR Pass</button>
+                <button type="button" onClick={() => downloadPreviousDonorQrPass(donor)} disabled={!qrReady}>Download QR Pass</button>
                 <button type="button" onClick={() => startEdit(donor)}>Edit Mobile</button>
               </div>
               {!qrReady ? <small className="donor-note">QR enabled only after Treasurer Verified / Payment Received.</small> : null}

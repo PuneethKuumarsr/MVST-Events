@@ -1621,6 +1621,13 @@ function isGeneralPreviousDonor(row) {
   return Number(row.previousDonationAmount || 0) > 0 && !typeText.includes('mangalya donor') && !typeText.includes('mangalya');
 }
 
+function generalDonorSourceId(row) {
+  if (row?.donorId) return row.donorId;
+  const year = donorEventYear(row);
+  if (row?.rowNumber) return `PD-${year}-ROW-${row.rowNumber}`;
+  return '';
+}
+
 async function loadMangalyaOperationsForRows(rows) {
   const identifiedRows = rows.filter((row) => row.donorId);
   if (!isMongoConfigured() || !identifiedRows.length) return new Map();
@@ -1636,12 +1643,12 @@ async function loadMangalyaOperationsForRows(rows) {
 }
 
 async function loadGeneralDonorOperationsForRows(rows) {
-  const identifiedRows = rows.filter((row) => row.donorId && isGeneralPreviousDonor(row));
+  const identifiedRows = rows.filter((row) => generalDonorSourceId(row) && isGeneralPreviousDonor(row));
   if (!isMongoConfigured() || !identifiedRows.length) return new Map();
   await connectMongo();
   const keys = identifiedRows.map((row) => ({
     eventYear: donorEventYear(row),
-    donorSourceId: row.donorId,
+    donorSourceId: generalDonorSourceId(row),
   }));
   const operations = await GeneralDonorOperation.find({
     $or: keys,
@@ -1680,10 +1687,12 @@ function mergeMangalyaOperations(rows, operationsMap) {
 function mergeGeneralDonorOperations(rows, operationsMap) {
   return rows.map((row) => {
     if (!isGeneralPreviousDonor(row)) return row;
-    const operation = row.donorId ? operationsMap.get(`${donorEventYear(row)}:${row.donorId}`) || {} : {};
+    const sourceId = generalDonorSourceId(row);
+    const operation = sourceId ? operationsMap.get(`${donorEventYear(row)}:${sourceId}`) || {} : {};
     return {
       ...row,
       donorType: 'DONOR',
+      generalDonorSourceId: sourceId,
       eventYear: donorEventYear(row),
       qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
       previousDonorCampaignName: operation.campaignName || '',
@@ -2570,7 +2579,10 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
 
 async function findGeneralDonorById(donorId) {
   await loadMangalyaDonors();
-  const matches = donorCache.rows.filter((row) => row.donorId === donorId && isGeneralPreviousDonor(row));
+  const matches = donorCache.rows.filter((row) =>
+    isGeneralPreviousDonor(row) &&
+    (row.donorId === donorId || row.id === donorId || generalDonorSourceId(row) === donorId)
+  );
   if (matches.length !== 1) throw donorIdentityError();
   return matches[0];
 }
@@ -2582,7 +2594,8 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
     throw error;
   }
   const donor = await findGeneralDonorById(donorId);
-  if (!donor.donorId) throw donorIdentityError();
+  const donorSourceId = generalDonorSourceId(donor);
+  if (!donorSourceId) throw donorIdentityError();
   if (!donorPaymentVerified(donor)) {
     const error = new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
     error.statusCode = 403;
@@ -2591,7 +2604,7 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
 
   await connectMongo();
   const eventYear = donorEventYear(donor);
-  const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId: donor.donorId });
+  const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId });
   const clearToken = operation?.tokenRef && !regenerate ? operation.tokenRef : createMangalyaToken();
   const update = {
     qrStatus: 'ACTIVE',
@@ -2599,15 +2612,15 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
     tokenHash: tokenHash(clearToken),
   };
   const next = await GeneralDonorOperation.findOneAndUpdate(
-    { eventYear, donorSourceId: donor.donorId },
+    { eventYear, donorSourceId },
     {
-      $setOnInsert: { eventYear, donorSourceId: donor.donorId },
+      $setOnInsert: { eventYear, donorSourceId },
       $set: update,
     },
     { new: true, upsert: true },
   ).lean();
   await recordGeneralDonorAudit({
-    donorSourceId: donor.donorId,
+    donorSourceId,
     eventYear,
     eventType: regenerate ? 'GENERAL_DONOR_QR_REGENERATED' : 'GENERAL_DONOR_QR_GENERATED',
     user,
@@ -2616,6 +2629,7 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
     donor: {
       id: donor.id,
       donorId: donor.donorId,
+      generalDonorSourceId: donorSourceId,
       donorType: 'DONOR',
       qrStatus: next.qrStatus,
       qrUrl: `${publicOrigin(req)}/qr/donor/${clearToken}`,
@@ -2637,12 +2651,14 @@ async function updateGeneralDonorCampaignStatus({ donorId, status, campaignName,
     throw error;
   }
   const donor = await findGeneralDonorById(donorId);
+  const donorSourceId = generalDonorSourceId(donor);
+  if (!donorSourceId) throw donorIdentityError();
   await connectMongo();
   const eventYear = donorEventYear(donor);
   const next = await GeneralDonorOperation.findOneAndUpdate(
-    { eventYear, donorSourceId: donor.donorId },
+    { eventYear, donorSourceId },
     {
-      $setOnInsert: { eventYear, donorSourceId: donor.donorId },
+      $setOnInsert: { eventYear, donorSourceId },
       $set: {
         campaignName: String(campaignName || 'Previous Donors Campaign 2026').trim(),
         campaignStatus: status,
@@ -2655,7 +2671,7 @@ async function updateGeneralDonorCampaignStatus({ donorId, status, campaignName,
     { new: true, upsert: true },
   ).lean();
   await recordGeneralDonorAudit({
-    donorSourceId: donor.donorId,
+    donorSourceId,
     eventYear,
     eventType: 'GENERAL_DONOR_CAMPAIGN_STATUS',
     user,
