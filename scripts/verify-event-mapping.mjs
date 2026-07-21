@@ -1036,6 +1036,10 @@ assert.ok(frontend.includes("recordPreviousDonorStatus(donor, 'Sent'"), 'Previou
 assert.ok(frontend.includes("recordPreviousDonorStatus(currentQueueDonor, 'Skipped'"), 'Previous donor queue must save Skipped status');
 assert.ok(frontend.includes('prepareGeneralDonorQr'), 'Previous donor QR pass must use the Mongo-backed donor QR endpoint');
 assert.ok(frontend.includes('recordPreviousDonorCampaignStatus'), 'Previous donor queue must call the Mongo-backed campaign status endpoint');
+assert.ok(frontend.includes('Edit Confirmation'), 'Previous donor dashboard must allow confirmation edits');
+assert.ok(frontend.includes('Save Confirmation'), 'Previous donor edit form must save confirmation details');
+assert.ok(frontend.includes('Donor confirmation saved to private Google Sheet'), 'Previous donor confirmation edits must save to the private Sheet');
+assert.ok(frontend.includes('confirmedAmount') && frontend.includes('receivedAmount'), 'Previous donor edit form must include amount fields');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
 assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');
@@ -1046,6 +1050,8 @@ assert.ok(backend.includes('/api/previous-donors/:id/campaign-status'), 'Previou
 assert.ok(backend.includes("donorType: 'DONOR'"), 'General previous donors must be identified as Donor records');
 assert.ok(backend.includes('function generalDonorSourceId'), 'Previous donors must have a Mongo source identity separate from Mangalya Donor ID');
 assert.ok(backend.includes('PD-${year}-ROW-${row.rowNumber}'), 'Previous donors without Donor ID must use a backend source key instead of failing QR generation');
+assert.ok(backend.includes('function donorMatchesPatchId'), 'Donor write-back must match previous donor source IDs');
+assert.ok(backend.includes('isGeneralPreviousDonor(row) &&'), 'Previous donor write-back must be limited to previous donor rows when Donor ID is missing');
 assert.ok(backend.includes("whatsappDestination: maskMobile"), 'Previous donor campaign storage must mask WhatsApp destinations');
 assert.ok(generalDonorOperationModel.includes("collection: 'general_donor_operations'"), 'General donor operations must use a separate Mongo collection');
 assert.ok(generalDonorOperationModel.includes('tokenHash'), 'General donor operation must store QR token hash');

@@ -3986,7 +3986,13 @@ function PreviousDonorsCampaign({ donorState }) {
   const [filterId, setFilterId] = useState('all');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState('');
-  const [mobileDraft, setMobileDraft] = useState('');
+  const [editDraft, setEditDraft] = useState({
+    contactNo: '',
+    confirmedAmount: '',
+    receivedAmount: '',
+    status: 'Pending',
+    remarks: '',
+  });
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [queue, setQueue] = useState([]);
@@ -4035,21 +4041,46 @@ function PreviousDonorsCampaign({ donorState }) {
 
   function startEdit(donor) {
     setEditingId(donor.id);
-    setMobileDraft(donor.contactNo || '');
+    setEditDraft({
+      contactNo: donor.contactNo || '',
+      confirmedAmount: donor.confirmedAmount ? String(donor.confirmedAmount) : '',
+      receivedAmount: donor.receivedAmount ? String(donor.receivedAmount) : '',
+      status: donor.status || 'Pending',
+      remarks: donor.remarks || '',
+    });
     setMessage('');
   }
 
-  async function saveMobile(donor) {
+  function updateEditDraft(field, value) {
+    setEditDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function savePreviousDonorConfirmation(donor) {
     if (!writeEnabled || !donor?.id) return;
     setSaving(true);
     setMessage('');
     try {
-      await saveDonor(donor.id, { contactNo: mobileDraft });
-      setMessage('Mobile number saved to private Google Sheet');
+      const confirmedAmount = numberFrom(editDraft.confirmedAmount);
+      const receivedAmount = numberFrom(editDraft.receivedAmount);
+      await saveDonor(donor.id, {
+        contactNo: editDraft.contactNo,
+        confirmedAmount,
+        receivedAmount,
+        balanceAmount: Math.max(confirmedAmount - receivedAmount, 0),
+        status: editDraft.status,
+        remarks: editDraft.remarks,
+      });
+      setMessage('Donor confirmation saved to private Google Sheet');
       setEditingId('');
-      setMobileDraft('');
+      setEditDraft({
+        contactNo: '',
+        confirmedAmount: '',
+        receivedAmount: '',
+        status: 'Pending',
+        remarks: '',
+      });
     } catch (saveError) {
-      setMessage(saveError.message || 'Unable to save mobile number');
+      setMessage(saveError.message || 'Unable to save donor confirmation');
     } finally {
       setSaving(false);
     }
@@ -4312,12 +4343,29 @@ function PreviousDonorsCampaign({ donorState }) {
                 <span><small>Previous Donation</small><b>{formatCurrency(previousDonationAmount(donor))}</b></span>
                 <span><small>Year</small><b>{previousDonationYear(donor) || 'History'}</b></span>
                 <span><small>Mobile</small><b>{validation.status === 'ok' ? 'Ready' : 'Update Needed'}</b></span>
+                <span><small>2026 Confirmed</small><b>{formatCurrency(Number(donor.confirmedAmount || 0))}</b></span>
+                <span><small>Received</small><b>{formatCurrency(Number(donor.receivedAmount || 0))}</b></span>
+                <span><small>Status</small><b>{donor.status || 'Pending'}</b></span>
               </div>
 
               {isEditing ? (
                 <div className="donor-mobile-edit">
-                  <label><span>Contact Number</span><input value={mobileDraft} onChange={(event) => setMobileDraft(event.target.value)} /></label>
-                  <button type="button" onClick={() => saveMobile(donor)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save Mobile'}</button>
+                  <label><span>Contact Number</span><input value={editDraft.contactNo} onChange={(event) => updateEditDraft('contactNo', event.target.value)} /></label>
+                  <label><span>Confirmed Amount</span><input inputMode="numeric" value={editDraft.confirmedAmount} onChange={(event) => updateEditDraft('confirmedAmount', event.target.value)} /></label>
+                  <label><span>Received Amount</span><input inputMode="numeric" value={editDraft.receivedAmount} onChange={(event) => updateEditDraft('receivedAmount', event.target.value)} /></label>
+                  <label>
+                    <span>Status</span>
+                    <select value={editDraft.status} onChange={(event) => updateEditDraft('status', event.target.value)}>
+                      <option>Pending</option>
+                      <option>Confirmed</option>
+                      <option>Paid</option>
+                      <option>Received</option>
+                      <option>Cancelled</option>
+                    </select>
+                  </label>
+                  <label><span>Remarks</span><textarea rows="3" value={editDraft.remarks} onChange={(event) => updateEditDraft('remarks', event.target.value)} /></label>
+                  <button type="button" onClick={() => savePreviousDonorConfirmation(donor)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save Confirmation'}</button>
+                  <button className="secondary-action" type="button" onClick={() => setEditingId('')} disabled={saving}>Cancel</button>
                 </div>
               ) : null}
 
@@ -4327,7 +4375,7 @@ function PreviousDonorsCampaign({ donorState }) {
                 <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Open WhatsApp</button>
                 <button type="button" onClick={() => previewDonorQrPass(donor)} disabled={!qrReady}>Preview QR Pass</button>
                 <button type="button" onClick={() => downloadPreviousDonorQrPass(donor)} disabled={!qrReady}>Download QR Pass</button>
-                <button type="button" onClick={() => startEdit(donor)}>Edit Mobile</button>
+                <button type="button" onClick={() => startEdit(donor)}>Edit Confirmation</button>
               </div>
               {!qrReady ? <small className="donor-note">QR enabled only after Treasurer Verified / Payment Received.</small> : null}
             </article>

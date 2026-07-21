@@ -1628,6 +1628,11 @@ function generalDonorSourceId(row) {
   return '';
 }
 
+function donorMatchesPatchId(row, donorId) {
+  if (row?.donorId === donorId) return true;
+  return isGeneralPreviousDonor(row) && (row?.id === donorId || generalDonorSourceId(row) === donorId);
+}
+
 async function loadMangalyaOperationsForRows(rows) {
   const identifiedRows = rows.filter((row) => row.donorId);
   if (!isMongoConfigured() || !identifiedRows.length) return new Map();
@@ -2405,17 +2410,18 @@ async function updateMangalyaDonor(donorId, updates) {
 
   await loadMangalyaDonors();
 
-  let matches = donorCache.rows.filter((row) => row.donorId === donorId);
+  let matches = donorCache.rows.filter((row) => donorMatchesPatchId(row, donorId));
   if (matches.length !== 1) throw donorIdentityError();
   let currentRow = matches[0];
+  const donorSourceId = currentRow.donorId || generalDonorSourceId(currentRow);
 
   if (Object.prototype.hasOwnProperty.call(updates || {}, 'receiptNumber')) {
     await assertMangalyaReceiptUnique({
       eventYear: donorEventYear(currentRow),
-      donorSourceId: donorId,
+      donorSourceId,
       receiptNumber: updates.receiptNumber,
     });
-    matches = donorCache.rows.filter((row) => row.donorId === donorId);
+    matches = donorCache.rows.filter((row) => donorMatchesPatchId(row, donorId));
     if (matches.length !== 1) throw donorIdentityError();
     currentRow = matches[0];
   }
@@ -2450,7 +2456,7 @@ async function updateMangalyaDonor(donorId, updates) {
   });
 
   const verified = await loadMangalyaDonors();
-  const verifiedMatches = verified.rows.filter((row) => row.donorId === donorId);
+  const verifiedMatches = verified.rows.filter((row) => donorMatchesPatchId(row, donorId));
   if (verifiedMatches.length !== 1) throw donorIdentityError();
   return verified;
 }
