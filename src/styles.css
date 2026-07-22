@@ -2908,12 +2908,23 @@ main {
   padding: 12px;
 }
 
-.sponsorship-stat-panel div {
+.sponsorship-stat-panel div,
+.sponsorship-stat-panel button {
   display: grid;
   gap: 5px;
+  width: 100%;
+  border: 0;
   border-radius: 8px;
   background: rgba(240, 220, 168, 0.25);
   padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sponsorship-stat-panel button:hover,
+.sponsorship-stat-panel button:focus-visible {
+  background: rgba(240, 220, 168, 0.45);
+  outline: 2px solid rgba(120, 31, 42, 0.18);
 }
 
 .sponsorship-stat-panel span {
@@ -2929,6 +2940,63 @@ main {
 
 .sponsorship-stat-panel .top-sponsors {
   grid-column: span 2;
+}
+
+.mangalya-drilldown-modal {
+  max-width: 900px;
+}
+
+.mangalya-drilldown-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mangalya-drilldown-summary span {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(240, 220, 168, 0.22);
+  padding: 10px;
+}
+
+.mangalya-drilldown-summary small {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.mangalya-drilldown-summary b {
+  color: var(--maroon-deep);
+}
+
+.mangalya-drilldown-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mangalya-drilldown-list article {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.84);
+  padding: 12px;
+}
+
+.mangalya-drilldown-list article > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.mangalya-drilldown-list strong {
+  color: var(--maroon-deep);
+}
+
+.mangalya-drilldown-list span {
+  color: var(--ink-soft);
 }
 
 .sponsorship-controls {
@@ -3227,6 +3295,10 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .mangalya-drilldown-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sponsorship-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3235,6 +3307,7 @@ main {
 @media (max-width: 620px) {
   .sponsorship-stat-panel,
   .requirement-total-grid,
+  .mangalya-drilldown-summary,
   .sponsorship-controls,
   .sponsorship-money-grid {
     grid-template-columns: 1fr;

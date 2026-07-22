@@ -4580,6 +4580,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const [sponsorFilter, setSponsorFilter] = useState('all');
   const [sponsorQuery, setSponsorQuery] = useState('');
   const [quantityFilter, setQuantityFilter] = useState('All');
+  const [drilldownKey, setDrilldownKey] = useState('');
   const activeDonors = useMemo(() => donors.filter((sponsor) => isActiveEventYear(sponsor.eventYear)), [donors]);
   const activeRequirements = useMemo(() => requirements.filter((row) => isActiveEventYear(row.eventYear)), [requirements]);
 
@@ -4672,6 +4673,133 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
   const currentBulkDonor = bulkQueue[bulkIndex];
   const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
+  const sponsorQuantity = (sponsor) => Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
+  const sponsorReceived = (sponsor) => Number(sponsor.receivedAmount || 0);
+  const sponsorBalance = (sponsor) => Math.max(Number(sponsor.balanceAmount || 0) || (sponsorAmount(sponsor) - sponsorReceived(sponsor)), 0);
+  const drilldown = useMemo(() => {
+    const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
+    const receivedSponsors = activeDonors.filter(isReceivedSponsor);
+    const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
+    const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
+    const drilldowns = {
+      totalSponsors: {
+        title: 'Total Sponsors',
+        value: summary.totalSponsors,
+        rows: activeDonors,
+        note: 'All active sponsor records for the current event year.',
+      },
+      sponsorsConfirmed: {
+        title: 'Sponsors Confirmed',
+        value: summary.sponsorsConfirmed,
+        rows: confirmedSponsors,
+        note: 'Rows with confirmed, paid, received, or fully received status.',
+      },
+      cashSponsors: {
+        title: 'Cash Sponsors',
+        value: summary.cashSponsors,
+        rows: cashSponsors,
+        note: 'Confirmed sponsors excluding direct Bottu / in-kind sponsors.',
+      },
+      directBottuSponsors: {
+        title: 'Direct Bottu Sponsors',
+        value: summary.directBottuSponsors,
+        rows: directBottuSponsors,
+        note: 'Confirmed in-kind Mangalya Bottu sponsors. These do not add to cash collection.',
+      },
+      sponsorsPending: {
+        title: 'Sponsors Pending',
+        value: summary.sponsorsPending,
+        rows: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending'),
+        note: 'Rows still marked Pending.',
+      },
+      newSponsors: {
+        title: 'New Sponsors',
+        value: summary.newSponsors,
+        rows: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0),
+        note: 'Rows with no previous-year sponsored quantity.',
+      },
+      previousQty: {
+        title: 'Previous Qty',
+        value: summary.sponsored2025,
+        rows: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) > 0),
+        note: 'Donors with previous-year quantity history.',
+      },
+      confirmedQty: {
+        title: 'Confirmed Qty',
+        value: summary.confirmed2026,
+        rows: confirmedSponsors.filter((sponsor) => sponsorQuantity(sponsor) > 0),
+        note: 'Confirmed quantity from current event year sponsor rows.',
+      },
+      directBottuQty: {
+        title: 'Direct Bottu Qty',
+        value: summary.directBottus,
+        rows: directBottuSponsors.filter((sponsor) => sponsorQuantity(sponsor) > 0),
+        note: 'Direct Bottu quantity only. Cash amount is intentionally excluded.',
+      },
+      remainingRequirement: {
+        title: 'Remaining Requirement',
+        value: summary.remainingRequirement,
+        rows: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending'),
+        note: 'Calculated from requirement quantity minus confirmed quantity. Pending sponsor rows are shown for follow-up.',
+      },
+      expectedCollection: {
+        title: 'Expected Collection',
+        value: formatCurrency(summary.expectedCollection),
+        rows: activeDonors.filter((sponsor) => !isDirectBottuSponsor(sponsor) && sponsorAmount(sponsor) > 0),
+        note: 'All non-direct-Bottu rows carrying a cash amount.',
+      },
+      confirmedCollection: {
+        title: 'Confirmed Collection',
+        value: formatCurrency(summary.confirmedCollection),
+        rows: cashSponsors.filter((sponsor) => sponsorAmount(sponsor) > 0),
+        note: 'Confirmed cash sponsors only.',
+      },
+      receivedCollection: {
+        title: 'Received Collection',
+        value: formatCurrency(summary.receivedCollection),
+        rows: receivedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor) && sponsorReceived(sponsor) > 0),
+        note: 'Rows with received cash amount.',
+      },
+      balanceCollection: {
+        title: 'Balance Collection',
+        value: formatCurrency(summary.balanceCollection),
+        rows: cashSponsors.filter((sponsor) => sponsorBalance(sponsor) > 0),
+        note: 'Confirmed cash rows where received amount is less than confirmed amount.',
+      },
+      totalQuantityConfirmed: {
+        title: 'Total Quantity Confirmed',
+        value: summary.confirmed2026,
+        rows: confirmedSponsors.filter((sponsor) => sponsorQuantity(sponsor) > 0),
+        note: 'Same source rows as Confirmed Qty.',
+      },
+      totalCashConfirmed: {
+        title: 'Total Cash Confirmed',
+        value: formatCurrency(summary.confirmedCollection),
+        rows: cashSponsors.filter((sponsor) => sponsorAmount(sponsor) > 0),
+        note: 'Same source rows as Confirmed Collection.',
+      },
+      totalDirectBottus: {
+        title: 'Total Direct Bottus',
+        value: summary.directBottus,
+        rows: directBottuSponsors.filter((sponsor) => sponsorQuantity(sponsor) > 0),
+        note: 'Direct Bottu quantity only.',
+      },
+      averageQuantity: {
+        title: 'Average Quantity per Sponsor',
+        value: summary.averageBottus.toFixed(1),
+        rows: confirmedSponsors,
+        note: 'Confirmed quantity divided by confirmed sponsor count.',
+      },
+      topSponsors: {
+        title: 'Top Sponsors',
+        value: summary.topSponsors.length,
+        rows: summary.topSponsors,
+        note: 'Top confirmed sponsors by quantity.',
+      },
+    };
+    return drilldowns[drilldownKey] || null;
+  }, [activeDonors, drilldownKey, summary]);
+
   const visibleDonors = useMemo(() => {
     const search = sponsorQuery.trim().toLowerCase();
     return activeDonors
@@ -4849,40 +4977,92 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         <div>
           <p className="event-label">Sponsors</p>
           <div className="stats-grid donor-stats-grid">
-            <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setSponsorFilter('all')} />
-            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
-            <StatCard icon={IndianRupee} label="Cash Sponsors" value={summary.cashSponsors} tone="success" />
-            <StatCard icon={Gift} label="Direct Bottu Sponsors" value={summary.directBottuSponsors} tone="warning" />
-            <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setSponsorFilter('pending')} />
-            <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setSponsorFilter('new-sponsors')} />
+            <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setDrilldownKey('totalSponsors')} />
+            <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setDrilldownKey('sponsorsConfirmed')} />
+            <StatCard icon={IndianRupee} label="Cash Sponsors" value={summary.cashSponsors} tone="success" onClick={() => setDrilldownKey('cashSponsors')} />
+            <StatCard icon={Gift} label="Direct Bottu Sponsors" value={summary.directBottuSponsors} tone="warning" onClick={() => setDrilldownKey('directBottuSponsors')} />
+            <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setDrilldownKey('sponsorsPending')} />
+            <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setDrilldownKey('newSponsors')} />
           </div>
         </div>
         <div>
           <p className="event-label">Requirement Quantity</p>
           <div className="stats-grid donor-stats-grid">
-            <StatCard icon={Gift} label="Previous Qty" value={summary.sponsored2025} />
-            <StatCard icon={Gift} label="Confirmed Qty" value={summary.confirmed2026} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
-            <StatCard icon={Gift} label="Direct Bottu Qty" value={summary.directBottus} tone="warning" />
-            <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" />
+            <StatCard icon={Gift} label="Previous Qty" value={summary.sponsored2025} onClick={() => setDrilldownKey('previousQty')} />
+            <StatCard icon={Gift} label="Confirmed Qty" value={summary.confirmed2026} tone="success" onClick={() => { setSponsorFilter('confirmed-quantity'); setDrilldownKey('confirmedQty'); }} />
+            <StatCard icon={Gift} label="Direct Bottu Qty" value={summary.directBottus} tone="warning" onClick={() => setDrilldownKey('directBottuQty')} />
+            <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" onClick={() => setDrilldownKey('remainingRequirement')} />
           </div>
         </div>
         <div>
           <p className="event-label">Collection</p>
           <div className="stats-grid donor-stats-grid">
-            <StatCard icon={IndianRupee} label="Expected Collection" value={formatCurrency(summary.expectedCollection)} />
-            <StatCard icon={IndianRupee} label="Confirmed Collection" value={formatCurrency(summary.confirmedCollection)} tone="success" />
-            <StatCard icon={IndianRupee} label="Received Collection" value={formatCurrency(summary.receivedCollection)} tone="success" />
-            <StatCard icon={IndianRupee} label="Balance Collection" value={formatCurrency(summary.balanceCollection)} tone="warning" />
+            <StatCard icon={IndianRupee} label="Expected Collection" value={formatCurrency(summary.expectedCollection)} onClick={() => setDrilldownKey('expectedCollection')} />
+            <StatCard icon={IndianRupee} label="Confirmed Collection" value={formatCurrency(summary.confirmedCollection)} tone="success" onClick={() => setDrilldownKey('confirmedCollection')} />
+            <StatCard icon={IndianRupee} label="Received Collection" value={formatCurrency(summary.receivedCollection)} tone="success" onClick={() => setDrilldownKey('receivedCollection')} />
+            <StatCard icon={IndianRupee} label="Balance Collection" value={formatCurrency(summary.balanceCollection)} tone="warning" onClick={() => setDrilldownKey('balanceCollection')} />
           </div>
         </div>
         <div className="sponsorship-stat-panel">
-          <div><span>Total Quantity Confirmed</span><strong>{summary.confirmed2026}</strong></div>
-          <div><span>Total Cash Confirmed</span><strong>{formatCurrency(summary.confirmedCollection)}</strong></div>
-          <div><span>Total Direct Bottus</span><strong>{summary.directBottus}</strong></div>
-          <div><span>Average Quantity per Sponsor</span><strong>{summary.averageBottus.toFixed(1)}</strong></div>
-          <div className="top-sponsors"><span>Top Sponsors</span><strong>{summary.topSponsors.map((sponsor) => `${sponsorDisplayName(sponsor)} (${sponsor.confirmedQuantity || sponsor.sponsored2026 || 0})`).join(', ') || 'None'}</strong></div>
+          <button type="button" onClick={() => setDrilldownKey('totalQuantityConfirmed')}><span>Total Quantity Confirmed</span><strong>{summary.confirmed2026}</strong></button>
+          <button type="button" onClick={() => setDrilldownKey('totalCashConfirmed')}><span>Total Cash Confirmed</span><strong>{formatCurrency(summary.confirmedCollection)}</strong></button>
+          <button type="button" onClick={() => setDrilldownKey('totalDirectBottus')}><span>Total Direct Bottus</span><strong>{summary.directBottus}</strong></button>
+          <button type="button" onClick={() => setDrilldownKey('averageQuantity')}><span>Average Quantity per Sponsor</span><strong>{summary.averageBottus.toFixed(1)}</strong></button>
+          <button type="button" className="top-sponsors" onClick={() => setDrilldownKey('topSponsors')}><span>Top Sponsors</span><strong>{summary.topSponsors.map((sponsor) => `${sponsorDisplayName(sponsor)} (${sponsor.confirmedQuantity || sponsor.sponsored2026 || 0})`).join(', ') || 'None'}</strong></button>
         </div>
       </div>
+
+      {drilldown ? (
+        <div className="receipt-modal-backdrop">
+          <div className="receipt-modal mangalya-drilldown-modal">
+            <div className="receipt-modal-head">
+              <div>
+                <span>Mangalya Sponsorship Details</span>
+                <strong>{drilldown.title}: {drilldown.value}</strong>
+              </div>
+              <button type="button" onClick={() => setDrilldownKey('')}><X size={16} /></button>
+            </div>
+            <p className="donor-note">{drilldown.note}</p>
+            <div className="mangalya-drilldown-summary">
+              <span><small>Rows</small><b>{drilldown.rows.length}</b></span>
+              <span><small>Quantity</small><b>{drilldown.rows.reduce((sum, sponsor) => sum + sponsorQuantity(sponsor), 0)}</b></span>
+              <span><small>Cash Amount</small><b>{formatCurrency(drilldown.rows.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0))}</b></span>
+              <span><small>Received</small><b>{formatCurrency(drilldown.rows.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + sponsorReceived(sponsor), 0))}</b></span>
+            </div>
+            {drilldown.rows.length ? (
+              <div className="mangalya-drilldown-list">
+                {drilldown.rows.map((sponsor) => (
+                  <article key={`${drilldownKey}-${sponsor.id}`}>
+                    <div>
+                      <strong>{sponsorDisplayName(sponsor)}</strong>
+                      <span>{sponsor.contactNo || 'Mobile missing'} · {sponsor.status || 'Pending'}</span>
+                    </div>
+                    <div className="receipt-meta-grid">
+                      <p><span>Category</span>{sponsorCategory(sponsor)}</p>
+                      <p><span>Qty</span>{sponsorQuantity(sponsor)}</p>
+                      <p><span>Cash Amount</span>{isDirectBottuSponsor(sponsor) ? 'Direct Bottu' : formatCurrency(sponsorAmount(sponsor))}</p>
+                      <p><span>Received</span>{formatCurrency(sponsorReceived(sponsor))}</p>
+                      <p><span>Reference</span>{sponsor.introducedBy || sponsor.trusteeReference || 'Not entered'}</p>
+                      <p><span>Remarks</span>{sponsor.remarks || 'No remarks'}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state compact-empty"><Gift size={24} /><p>No matching donor rows for this card.</p></div>
+            )}
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => {
+                setSponsorFilter('all');
+                setSponsorQuery('');
+                setQuantityFilter('All');
+                setDrilldownKey('');
+              }}>Show All Donors</button>
+              <button type="button" onClick={() => setDrilldownKey('')}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="controls sponsorship-controls">
         <label className="search-field">
