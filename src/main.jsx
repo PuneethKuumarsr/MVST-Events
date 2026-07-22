@@ -2262,9 +2262,111 @@ Thank you for your continued trust and support.
 🙏 Manemanege Vasavi Seva Trust & Team`;
 }
 
-function makePreviousDonorWhatsAppUrl(donor) {
+function donorContributionAmount(donor) {
+  return Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || previousDonationAmount(donor) || 0);
+}
+
+function donorContributionLabel(donor) {
+  const category = sponsorCategory(donor);
+  const amount = donorContributionAmount(donor);
+  if (category && amount) return `${category} - ${formatCurrency(amount)}`;
+  if (category) return category;
+  if (amount) return formatCurrency(amount);
+  return 'your generous contribution';
+}
+
+function buildDonorConfirmationMessage(donor) {
+  return `🙏 Jai Vasavi 🙏
+
+Dear ${sponsorDisplayName(donor)},
+
+Thank you so much for your kind confirmation to support the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bheemaratha Shanthi.
+
+Confirmed support - ${donorContributionLabel(donor)}
+
+Your valuable support will help us serve our community and conduct this noble event successfully.
+
+Our Trust representative will get in touch with you shortly regarding the contribution.
+
+May Vasavi Matha bless you and your family with good health, happiness and prosperity.
+
+With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildDonorPaymentReceiptMessage(donor) {
+  const amount = donorContributionAmount(donor);
+  return `🙏 Jai Vasavi 🙏
+
+Dear ${sponsorDisplayName(donor)},
+
+We are pleased to confirm receipt of your generous contribution towards the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bheemaratha Shanthi.
+
+Support received - ${donorContributionLabel(donor)}
+Amount Received: ${amount ? formatCurrency(Number(donor.receivedAmount || amount)) : 'As confirmed'}
+
+Your support is deeply appreciated and will help us conduct this sacred event successfully.
+
+Your official receipt has been generated and is shared herewith.
+
+We cordially invite you and your family to grace this auspicious occasion with your esteemed presence and receive the blessings of Vasavi Matha.
+
+With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildDonorPostEventThankYouMessage(donor) {
+  return `🙏 Jai Vasavi 🙏
+
+Dear ${sponsorDisplayName(donor)},
+
+On behalf of Manemanege Vasavi Seva Trust (R), we express our heartfelt gratitude for your generous support.
+
+With the blessings of Vasavi Matha and the support of donors like you, the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bheemaratha Shanthi were conducted successfully.
+
+Your contribution played a valuable role in making this sacred event a grand success.
+
+May Vasavi Matha bless you and your family with good health, happiness, prosperity and success.
+
+With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildDonorThankCollectionMessage(donor) {
+  return `🙏 Jai Vasavi 🙏
+
+Dear ${sponsorDisplayName(donor)},
+
+Thank you so much for confirming your kind contribution towards the 4th Samoohika Shashtipoorthi Shanthi and 2nd Samoohika Bheemaratha Shanthi.
+
+Confirmed support - ${donorContributionLabel(donor)}
+
+Kindly let us know a convenient time for our Trust representative to reach you and collect the contribution.
+
+Your generosity will help us continue this noble seva for our community.
+
+With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
+function buildGeneralDonorMessage(donor, messageType = 'appeal') {
+  const messageMap = {
+    appeal: buildPreviousDonorAppealMessage,
+    confirmation: buildDonorConfirmationMessage,
+    'payment-receipt': buildDonorPaymentReceiptMessage,
+    'post-event-thanks': buildDonorPostEventThankYouMessage,
+    'thank-collection': buildDonorThankCollectionMessage,
+  };
+  return (messageMap[messageType] || buildPreviousDonorAppealMessage)(donor);
+}
+
+function makePreviousDonorWhatsAppUrl(donor, messageType = 'appeal') {
   const normalizedMobile = normalizeIndianMobileNumber(donor.contactNo);
-  const encodedText = encodeURIComponent(buildPreviousDonorAppealMessage(donor));
+  const encodedText = encodeURIComponent(buildGeneralDonorMessage(donor, messageType));
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
 
@@ -4142,6 +4244,12 @@ function PreviousDonorsCampaign({ donorState }) {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  function openDonorJourneyWhatsApp(donor, messageType) {
+    if (!donorMobileIsValid(donor)) return;
+    const url = makePreviousDonorWhatsAppUrl(donor, messageType);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   async function previewDonorQrPass(donor) {
     setQrPreview({ open: true, donor, dataUrl: '', message: 'Generating donor QR pass...' });
     try {
@@ -4422,7 +4530,11 @@ function PreviousDonorsCampaign({ donorState }) {
               <pre className="donor-message-preview">{buildPreviousDonorAppealMessage(donor)}</pre>
 
               <div className="donor-actions">
-                <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Open WhatsApp</button>
+                <button type="button" onClick={() => openDonorWhatsApp(donor)} disabled={validation.status !== 'ok'}>Appeal WhatsApp</button>
+                <button type="button" onClick={() => openDonorJourneyWhatsApp(donor, 'confirmation')} disabled={validation.status !== 'ok'}>Confirmation</button>
+                <button type="button" onClick={() => openDonorJourneyWhatsApp(donor, 'payment-receipt')} disabled={validation.status !== 'ok'}>Payment + Receipt</button>
+                <button type="button" onClick={() => openDonorJourneyWhatsApp(donor, 'post-event-thanks')} disabled={validation.status !== 'ok'}>Post-Event Thanks</button>
+                <button type="button" onClick={() => openDonorJourneyWhatsApp(donor, 'thank-collection')} disabled={validation.status !== 'ok'}>Thank & Collection</button>
                 <button type="button" onClick={() => previewDonorQrPass(donor)} disabled={!qrReady}>Preview QR Pass</button>
                 <button type="button" onClick={() => downloadPreviousDonorQrPass(donor)} disabled={!qrReady}>Download QR Pass</button>
                 <button type="button" onClick={() => startEdit(donor)}>Edit Confirmation</button>
