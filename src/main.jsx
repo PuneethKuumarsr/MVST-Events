@@ -2218,6 +2218,9 @@ function previousDonationAmount(donor) {
   if (typeText.includes('mangalya donor')) return 0;
   const explicitAmount = Number(donor.previousDonationAmount || 0);
   if (explicitAmount > 0) return explicitAmount;
+  const currentDonorAmount = Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
+  const isGeneralDonor = ['general donation', 'donor', 'breakfast sponsorship', 'sponsorship'].some((term) => typeText.includes(term));
+  if (isGeneralDonor && currentDonorAmount > 0) return currentDonorAmount;
   const year = String(donor.eventYear || '').trim();
   if (year && year !== ACTIVE_EVENT_YEAR && typeText.includes('general donation')) {
     return Number(donor.receivedAmount || donor.confirmedAmount || donor.amount || 0);
@@ -3775,7 +3778,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
 }
 
 const PREVIOUS_DONOR_FILTERS = [
-  { id: 'all', label: 'All Previous Donors', test: () => true },
+  { id: 'all', label: 'All Donors', test: () => true },
   { id: '10000', label: '₹10,000 Donors', test: (amount) => amount === 10000 },
   { id: '25000', label: '₹25,000 Donors', test: (amount) => amount === 25000 },
   { id: '50000', label: '₹50,000 Donors', test: (amount) => amount === 50000 },
@@ -4029,7 +4032,7 @@ function MandaliDetailsSection({ mandaliState, user }) {
 
 function PreviousDonorsCampaign({ donorState }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor, prepareGeneralDonorQr, recordPreviousDonorCampaignStatus } = donorState;
-  const campaignName = 'Previous Donors Campaign 2026';
+  const campaignName = 'Donors Campaign 2026';
   const [filterId, setFilterId] = useState('all');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState('');
@@ -4172,7 +4175,7 @@ function PreviousDonorsCampaign({ donorState }) {
     setQueueStarted(false);
     setQueueIndex(firstPendingQueueIndex(readyDonors, latestStatus));
     setQueueOpened(false);
-    setMessage(readyDonors.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready previous donors for this filter.');
+    setMessage(readyDonors.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready donors for this filter.');
   }
 
   function clearQueue() {
@@ -4213,7 +4216,7 @@ function PreviousDonorsCampaign({ donorState }) {
       setQueueIndex(nextIndex);
       setQueueOpened(false);
     } else {
-      setMessage('Previous Donors WhatsApp queue completed.');
+      setMessage('Donors WhatsApp queue completed.');
       setQueueOpened(false);
     }
   }
@@ -4272,7 +4275,7 @@ function PreviousDonorsCampaign({ donorState }) {
     <section className="management-section mangalya-donors-section previous-donors-section">
       <div className="section-heading">
         <div>
-          <p>Previous Donors</p>
+          <p>Donors</p>
           <h2>WhatsApp campaign for donor outreach</h2>
         </div>
         <button className="refresh-button compact" type="button" onClick={refresh} disabled={isRefreshing}>
@@ -4283,12 +4286,12 @@ function PreviousDonorsCampaign({ donorState }) {
 
       <div className="event-note">
         <b>{status}</b>
-        <span>Previous-year history is used only for communication and is not included in 2026 financial reports.</span>
+        <span>Donor history and current donor confirmations are used for communication.</span>
       </div>
       {error ? <div className="donor-warning">{error}</div> : null}
 
       <div className="stats-grid donor-stats-grid">
-        <StatCard icon={UsersRound} label="Previous Donors" value={previousDonors.length} />
+        <StatCard icon={UsersRound} label="Donors" value={previousDonors.length} />
         <StatCard icon={MessageCircle} label="WhatsApp Ready" value={readyDonors.length} tone="success" />
         <StatCard icon={AlertTriangle} label="Missing Mobile" value={missingMobileDonors.length} tone="warning" />
         <StatCard icon={IndianRupee} label="Visible Amount" value={formatCurrency(visibleDonors.reduce((sum, donor) => sum + previousDonationAmount(donor), 0))} />
@@ -4334,7 +4337,7 @@ function PreviousDonorsCampaign({ donorState }) {
           <div className="bulk-preview">
             <div className="bulk-preview-head">
               <div>
-                <p>Previous Donors WhatsApp Queue</p>
+                <p>Donors WhatsApp Queue</p>
                 <h3>{previousDonorProgress.total} Total · {previousDonorProgress.sent} Sent · {previousDonorProgress.skipped} Skipped · {previousDonorProgress.failed} Failed · {previousDonorProgress.remaining} Remaining</h3>
               </div>
               <button type="button" onClick={clearQueue}>Close</button>
@@ -4363,7 +4366,7 @@ function PreviousDonorsCampaign({ donorState }) {
                   <button type="button" onClick={skipQueueDonor}>Skip</button>
                 </div>
               </>
-            ) : <p className="bulk-empty">No eligible previous donors found for this filter.</p>}
+            ) : <p className="bulk-empty">No eligible donors found for this filter.</p>}
           </div>
         </div>
       ) : null}
@@ -4377,7 +4380,7 @@ function PreviousDonorsCampaign({ donorState }) {
             <article className="donor-card sponsorship-card previous-donor-card" key={donor.id}>
               <div className="participant-top">
                 <div>
-                  <p className="event-label">Previous Donor Campaign</p>
+                  <p className="event-label">Donor Campaign</p>
                   <h3>{sponsorDisplayName(donor)}</h3>
                   <p className="muted">{donor.contactNo || 'Mobile number missing'} - {validation.issue}</p>
                 </div>
@@ -4428,7 +4431,7 @@ function PreviousDonorsCampaign({ donorState }) {
             </article>
           );
         }) : (
-          <div className="empty-state"><Gift size={28} /><p>No previous donors found for this filter.</p></div>
+          <div className="empty-state"><Gift size={28} /><p>No donors found for this filter.</p></div>
         )}
       </div>
 
@@ -6940,7 +6943,7 @@ function App({ auth }) {
               </button>
               <button className={activeView === 'previous-donors' ? 'active' : ''} type="button" onClick={() => setActiveView('previous-donors')}>
                 <MessageCircle size={18} />
-                <span>Previous Donors</span>
+                <span>Donors</span>
               </button>
               <button className={activeView === 'mandali-details' ? 'active' : ''} type="button" onClick={() => setActiveView('mandali-details')}>
                 <UsersRound size={18} />
