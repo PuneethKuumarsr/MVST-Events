@@ -2237,6 +2237,22 @@ function isPreviousDonor(donor) {
   return previousDonationAmount(donor) > 0;
 }
 
+function isConfirmedCurrentGeneralDonor(donor) {
+  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
+  if (typeText.includes('mangalya')) return false;
+  const status = String(donor.status || '').toLowerCase();
+  const currentYear = String(donor.eventYear || '').trim() === ACTIVE_EVENT_YEAR;
+  const amount = Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
+  return currentYear && amount > 0 && status !== 'cancelled' && ['confirmed', 'paid', 'received', 'fully received'].includes(status);
+}
+
+function isVisibleCurrentMangalyaSponsor(sponsor) {
+  if (!isActiveEventYear(sponsor.eventYear)) return false;
+  const status = String(sponsor.status || '').toLowerCase();
+  if (status === 'cancelled') return false;
+  return isConfirmedSponsor(sponsor) || Number(sponsor.confirmedAmount || sponsor.receivedAmount || 0) > 0;
+}
+
 function buildPreviousDonorAppealMessage(donor) {
   return `🙏 Jai Vasavi 🙏
 
@@ -4154,7 +4170,7 @@ function PreviousDonorsCampaign({ donorState }) {
   const [queueOpened, setQueueOpened] = useState(false);
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const [qrPreview, setQrPreview] = useState({ open: false, donor: null, dataUrl: '', message: '' });
-  const previousDonors = useMemo(() => donors.filter(isPreviousDonor), [donors]);
+  const previousDonors = useMemo(() => donors.filter(isConfirmedCurrentGeneralDonor), [donors]);
   const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
 
   const visibleDonors = useMemo(() => {
@@ -4395,7 +4411,7 @@ function PreviousDonorsCampaign({ donorState }) {
 
       <div className="event-note">
         <b>{status}</b>
-        <span>Donor history and current donor confirmations are used for communication.</span>
+        <span>Showing only donors who have confirmed for Event Year {ACTIVE_EVENT_YEAR}.</span>
       </div>
       {error ? <div className="donor-warning">{error}</div> : null}
 
@@ -4499,8 +4515,8 @@ function PreviousDonorsCampaign({ donorState }) {
               </div>
 
               <div className="money-grid sponsorship-money-grid">
-                <span><small>Previous Donation</small><b>{formatCurrency(previousDonationAmount(donor))}</b></span>
-                <span><small>Year</small><b>{previousDonationYear(donor) || 'History'}</b></span>
+                <span><small>Donor Amount</small><b>{formatCurrency(previousDonationAmount(donor))}</b></span>
+                <span><small>Event Year</small><b>{donor.eventYear || ACTIVE_EVENT_YEAR}</b></span>
                 <span><small>Mobile</small><b>{validation.status === 'ok' ? 'Ready' : 'Update Needed'}</b></span>
                 <span><small>2026 Confirmed</small><b>{formatCurrency(Number(donor.confirmedAmount || 0))}</b></span>
                 <span><small>Received</small><b>{formatCurrency(Number(donor.receivedAmount || 0))}</b></span>
@@ -4582,7 +4598,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const [sponsorQuery, setSponsorQuery] = useState('');
   const [quantityFilter, setQuantityFilter] = useState('All');
   const [drilldownKey, setDrilldownKey] = useState('');
-  const activeDonors = useMemo(() => donors.filter((sponsor) => isActiveEventYear(sponsor.eventYear)), [donors]);
+  const activeDonors = useMemo(() => donors.filter(isVisibleCurrentMangalyaSponsor), [donors]);
   const activeRequirements = useMemo(() => requirements.filter((row) => isActiveEventYear(row.eventYear)), [requirements]);
 
   const summary = useMemo(() => {
