@@ -979,9 +979,21 @@ function mangalyaTotal(donor) {
   return mangalyaQuantity(donor) * MANGALYA_RATE;
 }
 
+function isDirectBottuSponsor(sponsor) {
+  const nature = String(sponsor?.contributionNature || '').toLowerCase();
+  return nature.includes('material') || nature.includes('kind');
+}
+
+function mangalyaCashAmount(sponsor) {
+  return isDirectBottuSponsor(sponsor) ? 0 : Number(sponsor?.confirmedAmount || sponsor?.amount || sponsor?.actualValue || 0);
+}
+
+function mangalyaValueLabel(sponsor) {
+  return isDirectBottuSponsor(sponsor) ? 'Direct Bottu' : formatCurrency(mangalyaCashAmount(sponsor));
+}
+
 function buildMangalyaInvitationMessage(donor) {
   const quantity = mangalyaQuantity(donor);
-  const total = donor.totalAmount || mangalyaTotal(donor);
   return [
     `🙏 Namaskara ${sponsorDisplayName(donor)},`,
     '',
@@ -991,7 +1003,8 @@ function buildMangalyaInvitationMessage(donor) {
     '',
     `Mangalyas Sponsored: ${quantity}`,
     `Receipt Number: ${donor.receiptNumber || 'Not assigned'}`,
-    `Total Amount: ${formatCurrency(total)}`,
+    `Contribution Type: ${isDirectBottuSponsor(donor) ? 'Direct Mangalya Bottu' : 'Cash Contribution'}`,
+    ...(isDirectBottuSponsor(donor) ? [] : [`Total Amount: ${formatCurrency(mangalyaCashAmount(donor) || mangalyaTotal(donor))}`]),
     '',
     'Please show the attached QR code on your mobile at the registration counter on the event day.',
     '',
@@ -1987,6 +2000,7 @@ function sponsorEventName(sponsor) {
 }
 
 function sponsorAmount(sponsor) {
+  if (isDirectBottuSponsor(sponsor)) return 0;
   return Number(sponsor.confirmedAmount || sponsor.amount || sponsor.actualValue || 0);
 }
 
@@ -3628,7 +3642,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <span><small>Previous Qty</small><b>{sponsor.sponsored2025 || 0}</b></span>
         <span><small>Confirmed Qty</small><b>{sponsor.confirmedQuantity || sponsor.sponsored2026 || 0}</b></span>
         <span><small>Rate</small><b>{formatCurrency(MANGALYA_RATE)}</b></span>
-        <span><small>Total</small><b>{formatCurrency(sponsor.totalAmount || mangalyaTotal(sponsor))}</b></span>
+        <span><small>Contribution</small><b>{mangalyaValueLabel(sponsor)}</b></span>
       </div>
 
       <div className="detail-grid donor-detail-grid">
@@ -4457,20 +4471,26 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const summary = useMemo(() => {
     const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
+    const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
+    const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
     const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
     const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
-    const confirmedAmount = confirmedSponsors.reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0);
-    const receivedAmount = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedAmount || sponsorAmount(sponsor) || 0), 0);
+    const directBottus = directBottuSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
+    const confirmedAmount = cashSponsors.reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0);
+    const receivedAmount = receivedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + Number(sponsor.receivedAmount || sponsorAmount(sponsor) || 0), 0);
     const requirementQuantity = activeRequirements.reduce((sum, row) => sum + Number(row.requiredQuantity || 0), 0);
     return {
       totalSponsors: activeDonors.length,
       sponsorsConfirmed: confirmedSponsors.length,
+      cashSponsors: cashSponsors.length,
+      directBottuSponsors: directBottuSponsors.length,
       sponsorsPending: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending').length,
       newSponsors: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0).length,
       sponsored2025: activeDonors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2025 || 0), 0),
       confirmed2026: confirmedBottus,
+      directBottus,
       remainingRequirement: Math.max(Number(requirementQuantity || requiredBottus || 0) - confirmedBottus, 0),
-      expectedCollection: activeDonors.reduce((sum, sponsor) => sum + Number(sponsor.estimatedValue || 0), 0),
+      expectedCollection: activeDonors.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0),
       confirmedCollection: confirmedAmount,
       receivedCollection: receivedAmount,
       balanceCollection: Math.max(confirmedAmount - receivedAmount, 0),
@@ -4504,16 +4524,23 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const financialTotals = useMemo(() => activeDonors.reduce((totals, sponsor) => {
     const received = Number(sponsor.receivedAmount || 0);
     const estimated = Number(sponsor.estimatedValue || 0);
+    const directBottu = isDirectBottuSponsor(sponsor);
     const nature = String(sponsor.contributionNature || '').toLowerCase();
     const mode = String(sponsor.paymentMode || sponsor.bankOrCash || '').toLowerCase();
-    if (nature.includes('material') || nature.includes('kind')) totals.inKindEstimatedValue += estimated;
+    if (directBottu) {
+      totals.directBottuDonors += 1;
+      totals.directBottuQuantity += Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
+      totals.inKindEstimatedValue += estimated;
+    }
     if (nature.includes('service')) totals.serviceEstimatedValue += estimated;
-    if (mode.includes('cash')) totals.cashReceived += received;
-    else if (mode.includes('upi')) totals.upiReceived += received;
-    else if (mode.includes('cheque') || mode.includes('check')) totals.chequeReceived += received;
-    else if (mode.includes('bank')) totals.bankReceived += received;
-    totals.totalMonetaryReceived += received;
-    totals.totalSponsorshipValue += received + (nature.includes('material') || nature.includes('service') ? estimated : 0);
+    if (!directBottu) {
+      if (mode.includes('cash')) totals.cashReceived += received;
+      else if (mode.includes('upi')) totals.upiReceived += received;
+      else if (mode.includes('cheque') || mode.includes('check')) totals.chequeReceived += received;
+      else if (mode.includes('bank')) totals.bankReceived += received;
+      totals.totalMonetaryReceived += received;
+    }
+    totals.totalSponsorshipValue += directBottu || nature.includes('service') ? estimated : received;
     return totals;
   }, {
     cashReceived: 0,
@@ -4524,6 +4551,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     serviceEstimatedValue: 0,
     totalMonetaryReceived: 0,
     totalSponsorshipValue: 0,
+    directBottuDonors: 0,
+    directBottuQuantity: 0,
   }), [activeDonors]);
 
   const currentBulkDonor = bulkQueue[bulkIndex];
@@ -4692,7 +4721,9 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         <div><span>Bank Received</span><strong>{formatCurrency(financialTotals.bankReceived)}</strong></div>
         <div><span>UPI Received</span><strong>{formatCurrency(financialTotals.upiReceived)}</strong></div>
         <div><span>Cheque Received</span><strong>{formatCurrency(financialTotals.chequeReceived)}</strong></div>
-        <div><span>In-Kind Estimated Value</span><strong>{formatCurrency(financialTotals.inKindEstimatedValue)}</strong></div>
+        <div><span>Direct Bottu Donors</span><strong>{financialTotals.directBottuDonors}</strong></div>
+        <div><span>Direct Bottus</span><strong>{financialTotals.directBottuQuantity}</strong></div>
+        <div><span>Direct Bottu Estimated Value</span><strong>{formatCurrency(financialTotals.inKindEstimatedValue)}</strong></div>
         <div><span>Service Estimated Value</span><strong>{formatCurrency(financialTotals.serviceEstimatedValue)}</strong></div>
         <div><span>Total Monetary Received</span><strong>{formatCurrency(financialTotals.totalMonetaryReceived)}</strong></div>
         <div><span>Total Sponsorship Value</span><strong>{formatCurrency(financialTotals.totalSponsorshipValue)}</strong></div>
@@ -4704,6 +4735,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setSponsorFilter('all')} />
             <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
+            <StatCard icon={IndianRupee} label="Cash Sponsors" value={summary.cashSponsors} tone="success" />
+            <StatCard icon={Gift} label="Direct Bottu Sponsors" value={summary.directBottuSponsors} tone="warning" />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setSponsorFilter('pending')} />
             <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setSponsorFilter('new-sponsors')} />
           </div>
@@ -4713,6 +4746,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={Gift} label="Previous Qty" value={summary.sponsored2025} />
             <StatCard icon={Gift} label="Confirmed Qty" value={summary.confirmed2026} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
+            <StatCard icon={Gift} label="Direct Bottu Qty" value={summary.directBottus} tone="warning" />
             <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" />
           </div>
         </div>
@@ -4727,7 +4761,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         </div>
         <div className="sponsorship-stat-panel">
           <div><span>Total Quantity Confirmed</span><strong>{summary.confirmed2026}</strong></div>
-          <div><span>Total Amount Confirmed</span><strong>{formatCurrency(summary.confirmedCollection)}</strong></div>
+          <div><span>Total Cash Confirmed</span><strong>{formatCurrency(summary.confirmedCollection)}</strong></div>
+          <div><span>Total Direct Bottus</span><strong>{summary.directBottus}</strong></div>
           <div><span>Average Quantity per Sponsor</span><strong>{summary.averageBottus.toFixed(1)}</strong></div>
           <div className="top-sponsors"><span>Top Sponsors</span><strong>{summary.topSponsors.map((sponsor) => `${sponsorDisplayName(sponsor)} (${sponsor.confirmedQuantity || sponsor.sponsored2026 || 0})`).join(', ') || 'None'}</strong></div>
         </div>

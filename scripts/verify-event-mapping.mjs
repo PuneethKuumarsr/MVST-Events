@@ -202,6 +202,11 @@ assert.ok(frontend.includes('buildMangalyaNewDonorCollectionMessage'), 'Mangalya
 assert.ok(frontend.includes("sponsorFilter === 'new-sponsors'"), 'Mangalya module must support New Sponsors drill-down filtering');
 assert.ok(frontend.includes('Thank & Collection WhatsApp'), 'New Mangalya sponsors must have a thank-and-collection WhatsApp action');
 assert.ok(frontend.includes('Thanking WhatsApp opened. Review and send manually.'), 'New donor thank WhatsApp must not auto-mark journey status');
+assert.ok(frontend.includes('function isDirectBottuSponsor'), 'Mangalya module must identify direct Bottu material donors');
+assert.ok(frontend.includes('function mangalyaCashAmount'), 'Mangalya module must calculate Mangalya cash separately from direct Bottu');
+assert.ok(frontend.includes('Direct Bottu Sponsors'), 'Mangalya summary must show direct Bottu sponsors separately');
+assert.ok(frontend.includes('Total Cash Confirmed'), 'Mangalya summary must label cash confirmed separately from direct Bottu');
+assert.ok(frontend.includes('mangalyaValueLabel(sponsor)'), 'Mangalya donor cards must not show direct Bottu as cash amount');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');
