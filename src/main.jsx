@@ -1202,6 +1202,7 @@ function donorDonationType(donor) {
 
 function donorPaymentVerified(donor) {
   const status = String(donor?.status || donor?.paymentStatus || '').trim().toLowerCase();
+  if (isDirectBottuSponsor(donor) && isConfirmedSponsor(donor)) return true;
   return Boolean(donor?.treasurerVerified) || status.includes('received');
 }
 
@@ -4589,6 +4590,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
     const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
     const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
+    const returningSponsors = confirmedSponsors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) > 0);
     const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
     const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
     const directBottus = directBottuSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
@@ -4602,6 +4604,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       directBottuSponsors: directBottuSponsors.length,
       sponsorsPending: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending').length,
       newSponsors: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0).length,
+      returningSponsors: returningSponsors.length,
       sponsored2025: activeDonors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2025 || 0), 0),
       confirmed2026: confirmedBottus,
       directBottus,
@@ -4718,6 +4721,12 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         rows: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0),
         note: 'Rows with no previous-year sponsored quantity.',
       },
+      returningSponsors: {
+        title: 'Old Sponsors Donating This Year',
+        value: summary.returningSponsors,
+        rows: returningSponsors,
+        note: 'Previous-year sponsors who are confirmed again for the current event year.',
+      },
       previousQty: {
         title: 'Previous Qty',
         value: summary.sponsored2025,
@@ -4809,6 +4818,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         if (sponsorFilter === 'whatsapp-sent') return donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'confirmed-quantity') return isConfirmedSponsor(sponsor);
         if (sponsorFilter === 'new-sponsors') return Number(sponsor.sponsored2025 || 0) === 0;
+        if (sponsorFilter === 'returning-sponsors') return isConfirmedSponsor(sponsor) && Number(sponsor.sponsored2025 || 0) > 0;
         if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
         return true;
       })
@@ -4828,7 +4838,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   }, [activeDonors, sponsorFilter, sponsorQuery, quantityFilter]);
 
   function prepareBulkQueue() {
-    setBulkQueue(activeDonors.filter((donor) => donorMobileIsValid(donor) && !donorJourneySent(donor, 'appeal')));
+    setBulkQueue(visibleDonors.filter((donor) => donorMobileIsValid(donor) && !donorJourneySent(donor, 'appeal')));
     setBulkStarted(false);
     setBulkIndex(0);
     setBulkMessage('');
@@ -4983,6 +4993,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
             <StatCard icon={Gift} label="Direct Bottu Sponsors" value={summary.directBottuSponsors} tone="warning" onClick={() => setDrilldownKey('directBottuSponsors')} />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setDrilldownKey('sponsorsPending')} />
             <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setDrilldownKey('newSponsors')} />
+            <StatCard icon={BadgeCheck} label="Old Sponsors Donating This Year" value={summary.returningSponsors} tone="success" onClick={() => { setSponsorFilter('returning-sponsors'); setDrilldownKey('returningSponsors'); }} />
           </div>
         </div>
         <div>
@@ -5075,6 +5086,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <option value="confirmed">Confirmed</option>
           <option value="confirmed-quantity">Confirmed Quantity</option>
           <option value="new-sponsors">New Sponsors</option>
+          <option value="returning-sponsors">Old Sponsors Donating This Year</option>
           <option value="paid">Paid</option>
           <option value="received">Received</option>
           <option value="cancelled">Cancelled</option>
@@ -5100,6 +5112,20 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <div className="confirmed-sponsors-list">
             {visibleDonors.map((sponsor) => (
               <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {sponsorFilter === 'returning-sponsors' ? (
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>Old Sponsors Donating This Year</p>
+            <strong>{visibleDonors.length} returning sponsors with WhatsApp and QR actions below</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {visibleDonors.map((sponsor) => (
+              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'} - {isDirectBottuSponsor(sponsor) ? 'Direct Bottu' : formatCurrency(sponsorAmount(sponsor))}</span>
             ))}
           </div>
         </div>
