@@ -207,6 +207,7 @@ assert.ok(frontend.includes('function mangalyaCashAmount'), 'Mangalya module mus
 assert.ok(frontend.includes('Direct Bottu Sponsors'), 'Mangalya summary must show direct Bottu sponsors separately');
 assert.ok(frontend.includes('Total Cash Confirmed'), 'Mangalya summary must label cash confirmed separately from direct Bottu');
 assert.ok(frontend.includes('mangalyaValueLabel(sponsor)'), 'Mangalya donor cards must not show direct Bottu as cash amount');
+assert.ok(frontend.includes('Number(b.rowNumber || 0) - Number(a.rowNumber || 0)'), 'Mangalya donor list must show newest sheet rows first');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');

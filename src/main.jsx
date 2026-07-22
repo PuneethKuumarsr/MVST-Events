@@ -4580,7 +4580,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           .join(' ')
           .toLowerCase()
           .includes(search);
-      });
+      })
+      .sort((a, b) => Number(b.rowNumber || 0) - Number(a.rowNumber || 0));
   }, [activeDonors, sponsorFilter, sponsorQuery, quantityFilter]);
 
   function prepareBulkQueue() {
