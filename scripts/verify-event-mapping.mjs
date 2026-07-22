@@ -198,6 +198,10 @@ assert.ok(frontend.includes('app-sidebar'), 'Dashboard must include sidebar navi
 assert.ok(frontend.includes('Shashtipoorthi Shanthi'), 'Sidebar must include Shashtipoorthi Shanthi view');
 assert.ok(frontend.includes('Bhimaratha Shanthi'), 'Sidebar must include Bhimaratha Shanthi view');
 assert.ok(frontend.includes('Sponsorship Management'), 'Sidebar must include Sponsorship Management view');
+assert.ok(frontend.includes('buildMangalyaNewDonorCollectionMessage'), 'Mangalya module must include a new-donor thank and collection message');
+assert.ok(frontend.includes("sponsorFilter === 'new-sponsors'"), 'Mangalya module must support New Sponsors drill-down filtering');
+assert.ok(frontend.includes('Thank & Collection WhatsApp'), 'New Mangalya sponsors must have a thank-and-collection WhatsApp action');
+assert.ok(frontend.includes('Thanking WhatsApp opened. Review and send manually.'), 'New donor thank WhatsApp must not auto-mark journey status');
 assert.ok(frontend.includes('Seat No'), 'Dashboard must show Seat No fields');
 assert.ok(frontend.includes('Receipt No'), 'Dashboard must show Receipt No fields');
 assert.ok(frontend.includes('Receipt Generated'), 'Dashboard must show Receipt Generated status');

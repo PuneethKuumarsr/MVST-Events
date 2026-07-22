@@ -2113,6 +2113,27 @@ May Vasavi Matha bless you and your family with good health, happiness and prosp
 Manemanege Vasavi Seva Trust (R) & Team`;
 }
 
+function buildMangalyaNewDonorCollectionMessage(donor) {
+  const contribution = sponsorContributionText(donor);
+  const isMaterial = String(donor.contributionNature || '').toLowerCase().includes('material') || String(donor.contributionNature || '').toLowerCase().includes('kind');
+  const collectionLine = isMaterial
+    ? 'Kindly let us know a convenient time for our Trust representative to reach you and collect the Mangalya Bottu.'
+    : 'Kindly let us know a convenient time for our Trust representative to reach you and collect the contribution.';
+  return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
+
+Thank you so much for confirming your kind sponsorship of ${contribution} for our 4th Samoohika Shashtipoorthi Shanthi.
+
+Your generous support will help us continue this noble seva and bless senior couples through this sacred ceremony.
+
+${collectionLine}
+
+May Vasavi Matha bless you and your family with good health, happiness and prosperity.
+
+🙏 With heartfelt gratitude,
+
+Manemanege Vasavi Seva Trust (R) & Team`;
+}
+
 function buildMangalyaDonorPaymentReceivedMessage(donor) {
   const eventName = sponsorEventName(donor);
   const amount = sponsorAmount(donor);
@@ -2164,6 +2185,7 @@ function makeMangalyaDonorWhatsAppUrl(donor, messageType = 'appeal') {
   const messageMap = {
     appeal: buildMangalyaDonorAppealMessage,
     'thank-you': buildMangalyaDonorThankYouMessage,
+    'new-donor-collection': buildMangalyaNewDonorCollectionMessage,
     'payment-received': buildMangalyaDonorPaymentReceivedMessage,
     'post-event-thank-you': buildMangalyaDonorPostEventThankYouMessage,
   };
@@ -3455,6 +3477,10 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     const decodedMessage = decodeURIComponent(url.split('text=')[1] || '');
     console.debug('[MVST Mangalya sponsorship WhatsApp decoded message]', decodedMessage);
     window.open(url, '_blank', 'noopener,noreferrer');
+    if (messageType === 'new-donor-collection') {
+      setMessage('Thanking WhatsApp opened. Review and send manually.');
+      return;
+    }
     setOpened(true);
     setOpenedMessageType(messageType);
     setMessage('');
@@ -3675,6 +3701,11 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
             {step.label}
           </button>
         ))}
+        {Number(sponsor.sponsored2025 || 0) === 0 ? (
+          <button type="button" onClick={() => openWhatsApp('new-donor-collection')} disabled={!canOpenWhatsApp}>
+            Thank & Collection WhatsApp
+          </button>
+        ) : null}
         <button type="button" onClick={() => setEditing(!editing)} disabled={!identityReady}>Edit</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving || !identityReady}>Mark Paid</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving || !identityReady}>Mark Received</button>
@@ -3699,6 +3730,8 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <pre className="donor-message-preview">
           {previewType === 'thank-you'
             ? buildMangalyaDonorThankYouMessage(sponsor)
+            : previewType === 'new-donor-collection'
+              ? buildMangalyaNewDonorCollectionMessage(sponsor)
             : previewType === 'payment-received'
               ? buildMangalyaDonorPaymentReceivedMessage(sponsor)
               : previewType === 'post-event-thank-you'
@@ -4503,6 +4536,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         if (sponsorFilter === 'whatsapp-pending') return !donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'whatsapp-sent') return donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'confirmed-quantity') return isConfirmedSponsor(sponsor);
+        if (sponsorFilter === 'new-sponsors') return Number(sponsor.sponsored2025 || 0) === 0;
         if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
         return true;
       })
@@ -4671,7 +4705,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
             <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setSponsorFilter('all')} />
             <StatCard icon={CheckCircle2} label="Sponsors Confirmed" value={summary.sponsorsConfirmed} tone="success" onClick={() => setSponsorFilter('confirmed-quantity')} />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setSponsorFilter('pending')} />
-            <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} />
+            <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setSponsorFilter('new-sponsors')} />
           </div>
         </div>
         <div>
@@ -4709,6 +4743,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
           <option value="confirmed-quantity">Confirmed Quantity</option>
+          <option value="new-sponsors">New Sponsors</option>
           <option value="paid">Paid</option>
           <option value="received">Received</option>
           <option value="cancelled">Cancelled</option>
@@ -5007,6 +5042,20 @@ function ChangePasswordSection({ auth, forced = false }) {
         <div className="event-note">
           <b>Password change required</b>
           <span>Your account was created or reset with a temporary password. Please change it before continuing.</span>
+        </div>
+      ) : null}
+
+      {sponsorFilter === 'new-sponsors' ? (
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>New Sponsors</p>
+            <strong>{visibleDonors.length} new sponsors for Event Year {ACTIVE_EVENT_YEAR}</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {visibleDonors.map((sponsor) => (
+              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'} - {mobileValidationStatus(sponsor.contactNo).issue}</span>
+            ))}
+          </div>
         </div>
       ) : null}
       <form className="admin-panel change-password-card" onSubmit={submit}>
