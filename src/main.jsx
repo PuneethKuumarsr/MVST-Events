@@ -2119,7 +2119,7 @@ Your valuable support means a lot to us and will help us continue this noble sev
 
 💛 Confirmed Sponsorship: ${sponsorContributionText(donor)}
 
-Our Trust representative will get in touch with you shortly regarding the contribution.
+We will contact you at your convenience to coordinate the sponsorship details.
 
 May Vasavi Matha bless you and your family with good health, happiness and prosperity.
 
@@ -2130,17 +2130,13 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 
 function buildMangalyaNewDonorCollectionMessage(donor) {
   const contribution = sponsorContributionText(donor);
-  const isMaterial = String(donor.contributionNature || '').toLowerCase().includes('material') || String(donor.contributionNature || '').toLowerCase().includes('kind');
-  const collectionLine = isMaterial
-    ? 'Kindly let us know a convenient time for our Trust representative to reach you and collect the Mangalya Bottu.'
-    : 'Kindly let us know a convenient time for our Trust representative to reach you and collect the contribution.';
   return `🙏 Namaskara ${donor.sponsorName || donor.donorName || 'Respected Sponsor'} Avare,
 
 Thank you so much for confirming your kind sponsorship of ${contribution} for our 4th Samoohika Shashtipoorthi Shanthi.
 
 Your generous support will help us continue this noble seva and bless senior couples through this sacred ceremony.
 
-${collectionLine}
+We will contact you at your convenience to coordinate the sponsorship details.
 
 May Vasavi Matha bless you and your family with good health, happiness and prosperity.
 
@@ -2303,7 +2299,7 @@ Confirmed support - ${donorContributionLabel(donor)}
 
 Your valuable support will help us serve our community and conduct this noble event successfully.
 
-Our Trust representative will get in touch with you shortly regarding the contribution.
+We will contact you at your convenience to coordinate the sponsorship details.
 
 May Vasavi Matha bless you and your family with good health, happiness and prosperity.
 
@@ -2361,7 +2357,7 @@ Thank you so much for confirming your kind contribution towards the 4th Samoohik
 
 Confirmed support - ${donorContributionLabel(donor)}
 
-Kindly let us know a convenient time for our Trust representative to reach you and collect the contribution.
+We will contact you at your convenience to coordinate the sponsorship details.
 
 Your generosity will help us continue this noble seva for our community.
 
