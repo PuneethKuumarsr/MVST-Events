@@ -2384,7 +2384,8 @@ function normalizeDonorPatchValue(field, value) {
     field === 'appealSent' ||
     field === 'confirmationSent' ||
     field === 'paymentMessageSent' ||
-    field === 'postEventSent'
+    field === 'postEventSent' ||
+    field === 'treasurerVerified'
   ) return value ? 'Yes' : 'No';
   if (
     field === 'sponsored2025' ||

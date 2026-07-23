@@ -3538,8 +3538,13 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     contactNo: sponsor.contactNo || '',
     sponsored2025: String(sponsor.sponsored2025 || 0),
     sponsored2026: String(sponsor.sponsored2026 || 0),
+    receivedAmount: sponsor.receivedAmount ? String(sponsor.receivedAmount) : '',
     status: sponsor.status || 'Pending',
     introducedBy: sponsor.introducedBy || '',
+    paymentMode: sponsor.paymentMode || '',
+    paymentDate: sponsor.paymentDate || '',
+    collectedBy: sponsor.collectedBy || '',
+    treasurerVerified: Boolean(sponsor.treasurerVerified),
     remarks: sponsor.remarks || '',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -3564,8 +3569,13 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       contactNo: sponsor.contactNo || '',
       sponsored2025: String(sponsor.sponsored2025 || 0),
       sponsored2026: String(sponsor.sponsored2026 || 0),
+      receivedAmount: sponsor.receivedAmount ? String(sponsor.receivedAmount) : '',
       status: sponsor.status || 'Pending',
       introducedBy: sponsor.introducedBy || '',
+      paymentMode: sponsor.paymentMode || '',
+      paymentDate: sponsor.paymentDate || '',
+      collectedBy: sponsor.collectedBy || '',
+      treasurerVerified: Boolean(sponsor.treasurerVerified),
       remarks: sponsor.remarks || '',
     });
     setMessage('');
@@ -3770,6 +3780,11 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <p><span>Arrival Status</span>{sponsor.arrivalStatus || 'NOT_ARRIVED'}</p>
         <p><span>Honour Status</span>{sponsor.honourStatus || 'PENDING'}{sponsor.honouredAt ? ` - ${formatRefreshTime(sponsor.honouredAt)}` : ''}</p>
         <p><span>Trustee Reference</span>{sponsor.introducedBy || 'No reference'}</p>
+        <p><span>Received Amount</span>{formatCurrency(Number(sponsor.receivedAmount || 0))}</p>
+        <p><span>Payment Mode</span>{sponsor.paymentMode || 'Not entered'}</p>
+        <p><span>Payment Date</span>{sponsor.paymentDate || 'Not entered'}</p>
+        <p><span>Collected By</span>{sponsor.collectedBy || 'Not entered'}</p>
+        <p><span>Treasurer Verified</span>{sponsor.treasurerVerified ? 'Yes' : 'No'}</p>
         <p><span>Remarks</span>{sponsor.remarks || 'No remarks'}</p>
         <p>
           <span>Journey Status</span>
@@ -3787,8 +3802,13 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
           <label><span>Contact Number</span><input value={form.contactNo} onChange={(event) => setForm({ ...form, contactNo: event.target.value })} /></label>
           <label><span>Previous Qty</span><input min="0" type="number" value={form.sponsored2025} onChange={(event) => setForm({ ...form, sponsored2025: event.target.value })} /></label>
           <label><span>Confirmed Qty</span><input min="0" type="number" value={form.sponsored2026} onChange={(event) => setForm({ ...form, sponsored2026: event.target.value })} /></label>
+          <label><span>Received Amount</span><input inputMode="numeric" value={form.receivedAmount} onChange={(event) => setForm({ ...form, receivedAmount: event.target.value })} /></label>
           <label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{['Pending', 'Confirmed', 'Paid', 'Received', 'Cancelled'].map((statusValue) => <option key={statusValue}>{statusValue}</option>)}</select></label>
           <label><span>Trustee Reference</span><input value={form.introducedBy} onChange={(event) => setForm({ ...form, introducedBy: event.target.value })} /></label>
+          <label><span>Payment Mode</span><input value={form.paymentMode} onChange={(event) => setForm({ ...form, paymentMode: event.target.value })} placeholder="Cash / UPI / Bank" /></label>
+          <label><span>Payment Date</span><input value={form.paymentDate} onChange={(event) => setForm({ ...form, paymentDate: event.target.value })} placeholder="DD/MM/YYYY" /></label>
+          <label><span>Collected By</span><input value={form.collectedBy} onChange={(event) => setForm({ ...form, collectedBy: event.target.value })} /></label>
+          <label className="checkbox-field"><input type="checkbox" checked={form.treasurerVerified} onChange={(event) => setForm({ ...form, treasurerVerified: event.target.checked })} /> Treasurer Verified</label>
           <label className="remarks-field"><span>Remarks</span><textarea rows="2" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} /></label>
           <button className="save-button" type="button" onClick={() => saveSponsor(form)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save'}</button>
           <button className="save-button secondary-action" type="button" onClick={() => setEditing(false)}>Cancel</button>
@@ -4156,6 +4176,10 @@ function PreviousDonorsCampaign({ donorState }) {
     confirmedAmount: '',
     receivedAmount: '',
     status: 'Pending',
+    paymentMode: '',
+    paymentDate: '',
+    collectedBy: '',
+    treasurerVerified: false,
     remarks: '',
   });
   const [message, setMessage] = useState('');
@@ -4211,6 +4235,10 @@ function PreviousDonorsCampaign({ donorState }) {
       confirmedAmount: donor.confirmedAmount ? String(donor.confirmedAmount) : '',
       receivedAmount: donor.receivedAmount ? String(donor.receivedAmount) : '',
       status: donor.status || 'Pending',
+      paymentMode: donor.paymentMode || '',
+      paymentDate: donor.paymentDate || '',
+      collectedBy: donor.collectedBy || '',
+      treasurerVerified: Boolean(donor.treasurerVerified),
       remarks: donor.remarks || '',
     });
     setMessage('');
@@ -4233,6 +4261,10 @@ function PreviousDonorsCampaign({ donorState }) {
         receivedAmount,
         balanceAmount: Math.max(confirmedAmount - receivedAmount, 0),
         status: editDraft.status,
+        paymentMode: editDraft.paymentMode,
+        paymentDate: editDraft.paymentDate,
+        collectedBy: editDraft.collectedBy,
+        treasurerVerified: editDraft.treasurerVerified,
         remarks: editDraft.remarks,
       });
       setMessage('Donor confirmation saved to private Google Sheet');
@@ -4242,6 +4274,10 @@ function PreviousDonorsCampaign({ donorState }) {
         confirmedAmount: '',
         receivedAmount: '',
         status: 'Pending',
+        paymentMode: '',
+        paymentDate: '',
+        collectedBy: '',
+        treasurerVerified: false,
         remarks: '',
       });
     } catch (saveError) {
@@ -4517,6 +4553,8 @@ function PreviousDonorsCampaign({ donorState }) {
                 <span><small>2026 Confirmed</small><b>{formatCurrency(Number(donor.confirmedAmount || 0))}</b></span>
                 <span><small>Received</small><b>{formatCurrency(Number(donor.receivedAmount || 0))}</b></span>
                 <span><small>Status</small><b>{donor.status || 'Pending'}</b></span>
+                <span><small>Payment Mode</small><b>{donor.paymentMode || '-'}</b></span>
+                <span><small>Collected By</small><b>{donor.collectedBy || '-'}</b></span>
               </div>
 
               {isEditing ? (
@@ -4534,6 +4572,10 @@ function PreviousDonorsCampaign({ donorState }) {
                       <option>Cancelled</option>
                     </select>
                   </label>
+                  <label><span>Payment Mode</span><input value={editDraft.paymentMode} onChange={(event) => updateEditDraft('paymentMode', event.target.value)} placeholder="Cash / UPI / Bank" /></label>
+                  <label><span>Payment Date</span><input value={editDraft.paymentDate} onChange={(event) => updateEditDraft('paymentDate', event.target.value)} placeholder="DD/MM/YYYY" /></label>
+                  <label><span>Collected By</span><input value={editDraft.collectedBy} onChange={(event) => updateEditDraft('collectedBy', event.target.value)} /></label>
+                  <label className="checkbox-field"><input type="checkbox" checked={editDraft.treasurerVerified} onChange={(event) => updateEditDraft('treasurerVerified', event.target.checked)} /> Treasurer Verified</label>
                   <label><span>Remarks</span><textarea rows="3" value={editDraft.remarks} onChange={(event) => updateEditDraft('remarks', event.target.value)} /></label>
                   <button type="button" onClick={() => savePreviousDonorConfirmation(donor)} disabled={!writeEnabled || saving}>{saving ? 'Saving' : 'Save Confirmation'}</button>
                   <button className="secondary-action" type="button" onClick={() => setEditingId('')} disabled={saving}>Cancel</button>
