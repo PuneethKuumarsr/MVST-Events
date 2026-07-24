@@ -111,7 +111,8 @@ const DONOR_FIELDS = {
   sentDate: ['Sent Date'],
   receiptNumber: ['Receipt Number', 'Receipt No', 'Mangalya Receipt No'],
 };
-const DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE || "'Sponsorship Contributions'!A:AZ");
+const MANGALYA_DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE || process.env.MANGALYA_DONORS_RANGE || "'Sponsorship Contributions'!A:AZ");
+const GENERAL_DONOR_RANGE = sponsorshipRange(process.env.GENERAL_DONORS_RANGE || process.env.PREVIOUS_DONORS_RANGE || "'Donors'!A:AZ");
 const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponsorship Requirements'!A:O";
 const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'WhatsApp PST Admins'!A:B";
 const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
@@ -202,6 +203,20 @@ let cache = {
 };
 
 let donorCache = {
+  rows: [],
+  refreshedAt: null,
+  source: null,
+  writeEnabled: false,
+};
+
+let mangalyaDonorCache = {
+  rows: [],
+  refreshedAt: null,
+  source: null,
+  writeEnabled: false,
+};
+
+let generalDonorCache = {
   rows: [],
   refreshedAt: null,
   source: null,
@@ -586,6 +601,24 @@ function hasDonorConfig() {
     hasGoogleCredentials() &&
       (process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID),
   );
+}
+
+function mangalyaDonorSpreadsheetId() {
+  return process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID;
+}
+
+function generalDonorSpreadsheetId() {
+  return process.env.GENERAL_DONORS_SHEET_ID || process.env.PREVIOUS_DONORS_SHEET_ID || mangalyaDonorSpreadsheetId();
+}
+
+function donorSheetConfig(kind = 'MANGALYA') {
+  return kind === 'DONOR'
+    ? { spreadsheetId: generalDonorSpreadsheetId(), range: GENERAL_DONOR_RANGE, kind: 'DONOR' }
+    : { spreadsheetId: mangalyaDonorSpreadsheetId(), range: MANGALYA_DONOR_RANGE, kind: 'MANGALYA' };
+}
+
+function donorRowSheetConfig(row) {
+  return donorSheetConfig(row?.donorType === 'DONOR' || row?.sourceKind === 'DONOR' ? 'DONOR' : 'MANGALYA');
 }
 
 function getSheetName(range = process.env.GOOGLE_SHEETS_RANGE || DEFAULT_RANGE) {
@@ -1264,7 +1297,7 @@ function parseSheetCsv(csv, source) {
   return normalizeRows(parseCsv(csv), source).map(({ adminColumns, ...row }) => row);
 }
 
-function normalizeDonorRows(values) {
+function normalizeDonorRows(values, sourceKind = 'MANGALYA') {
   if (!values || values.length < 2) return [];
   const headers = values[0];
   const headerMap = headers.reduce((map, header, index) => {
@@ -1294,16 +1327,20 @@ function normalizeDonorRows(values) {
       ]));
       const appealSent = boolFrom(getCell(row, headerMap, ['Appeal Sent', 'WhatsApp Sent']));
       const appealSentDate = getCell(row, headerMap, ['Appeal Sent Date', 'Sent Date']);
-      const donorId = normalizeMangalyaDonorId(getCell(row, headerMap, ['Donor ID']));
+      const donorId = sourceKind === 'MANGALYA' ? normalizeMangalyaDonorId(getCell(row, headerMap, ['Donor ID'])) : '';
+      const rowEventYear = getCell(row, headerMap, ['Event Year']) || MANGALYA_EVENT_YEAR;
+      const generalDonorId = sourceKind === 'DONOR' ? `GD-${rowEventYear}-ROW-${rowNumber}` : '';
       return {
-        id: donorId || `missing-donor-id:${rowNumber}`,
+        id: donorId || generalDonorId || `missing-donor-id:${rowNumber}`,
         donorId,
+        sourceKind,
+        generalDonorSourceId: generalDonorId,
         rowNumber,
         slNo: getCell(row, headerMap, ['Sl No', 'Sl. No.']),
         sponsorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
         donorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
         contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No']),
-        eventYear: getCell(row, headerMap, ['Event Year']),
+        eventYear: rowEventYear,
         eventName: getCell(row, headerMap, ['Event Name']),
         contributionType,
         category,
@@ -1617,19 +1654,23 @@ async function recordGeneralDonorAudit({ donorSourceId, eventYear, eventType, us
 }
 
 function isGeneralPreviousDonor(row) {
+  if (row?.sourceKind === 'DONOR' || row?.donorType === 'DONOR') return true;
   const typeText = [row.contributionType, row.category, row.canonicalCategory].join(' ').toLowerCase();
-  return Number(row.previousDonationAmount || 0) > 0 && !typeText.includes('mangalya donor') && !typeText.includes('mangalya');
+  const amount = Number(row.previousDonationAmount || row.confirmedAmount || row.receivedAmount || row.amount || 0);
+  const quantity = Number(row.confirmedQuantity || row.sponsored2026 || 0);
+  const isGeneralDonation = typeText.includes('general donation') || typeText.includes('donor');
+  return amount > 0 && !typeText.includes('mangalya donor') && !typeText.includes('mangalya') && (isGeneralDonation || quantity === 0);
 }
 
 function generalDonorSourceId(row) {
-  if (row?.donorId) return row.donorId;
+  if (row?.generalDonorSourceId) return row.generalDonorSourceId;
   const year = donorEventYear(row);
-  if (row?.rowNumber) return `PD-${year}-ROW-${row.rowNumber}`;
+  if (row?.rowNumber) return `GD-${year}-ROW-${row.rowNumber}`;
   return '';
 }
 
 function donorMatchesPatchId(row, donorId) {
-  if (row?.donorId === donorId) return true;
+  if (!isGeneralPreviousDonor(row) && row?.donorId === donorId) return true;
   return isGeneralPreviousDonor(row) && (row?.id === donorId || generalDonorSourceId(row) === donorId);
 }
 
@@ -1696,8 +1737,11 @@ function mergeGeneralDonorOperations(rows, operationsMap) {
     const operation = sourceId ? operationsMap.get(`${donorEventYear(row)}:${sourceId}`) || {} : {};
     return {
       ...row,
+      id: sourceId || row.id,
+      donorId: '',
       donorType: 'DONOR',
       generalDonorSourceId: sourceId,
+      identityReady: Boolean(sourceId),
       eventYear: donorEventYear(row),
       qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
       previousDonorCampaignName: operation.campaignName || '',
@@ -1712,7 +1756,7 @@ function mergeGeneralDonorOperations(rows, operationsMap) {
 async function nextMangalyaReceiptNumber(eventYear) {
   const rows = (await loadMangalyaDonors()).rows;
   const sheetNumbers = rows
-    .filter((row) => donorEventYear(row) === eventYear)
+    .filter((row) => row.donorType !== 'DONOR' && donorEventYear(row) === eventYear)
     .map((row) => normalizeMangalyaReceiptNumber(row.receiptNumber))
     .filter(Boolean)
     .map((receipt) => Number(receipt.slice(1)));
@@ -1736,6 +1780,7 @@ async function assertMangalyaReceiptUnique({ eventYear, donorSourceId, receiptNu
   }
   const rows = (await loadMangalyaDonors()).rows;
   const sheetConflict = rows.find((row) =>
+    row.donorType !== 'DONOR' &&
     row.donorId !== donorSourceId &&
     donorEventYear(row) === eventYear &&
     normalizeMangalyaReceiptNumber(row.receiptNumber) === normalized,
@@ -1958,6 +2003,16 @@ async function loadRegistrations() {
   return cache;
 }
 
+async function loadDonorSheetRows(kind) {
+  const config = donorSheetConfig(kind);
+  const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: config.range,
+  });
+  return normalizeDonorRows(response.data.values, kind);
+}
+
 async function loadMangalyaDonors() {
   if (!hasDonorConfig()) {
     donorCache = {
@@ -1970,21 +2025,39 @@ async function loadMangalyaDonors() {
     return donorCache;
   }
 
-  const sheets = createSheetsClient({ requireRegistrationSheets: false });
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
-    range: DONOR_RANGE,
-  });
-  const normalizedRows = normalizeDonorRows(response.data.values);
-  const operations = await loadMangalyaOperationsForRows(normalizedRows);
-  const generalOperations = await loadGeneralDonorOperationsForRows(normalizedRows);
+  const mangalyaRows = await loadDonorSheetRows('MANGALYA');
+  let generalRows = [];
+  let generalNotice = '';
+  try {
+    generalRows = await loadDonorSheetRows('DONOR');
+  } catch (error) {
+    generalNotice = `Donors sheet is not available yet: ${error.message}`;
+  }
+  const operations = await loadMangalyaOperationsForRows(mangalyaRows);
+  const generalOperations = await loadGeneralDonorOperationsForRows(generalRows);
+  const mergedMangalyaRows = mergeMangalyaOperations(mangalyaRows, operations);
+  const mergedGeneralRows = mergeGeneralDonorOperations(generalRows, generalOperations);
 
-  donorCache = {
-    rows: mergeGeneralDonorOperations(mergeMangalyaOperations(normalizedRows, operations), generalOperations),
+  mangalyaDonorCache = {
+    rows: mergedMangalyaRows,
     refreshedAt: new Date().toISOString(),
     source: 'google-api',
     writeEnabled: true,
     notice: null,
+  };
+  generalDonorCache = {
+    rows: mergedGeneralRows,
+    refreshedAt: mangalyaDonorCache.refreshedAt,
+    source: generalRows.length || !generalNotice ? 'google-api' : 'not-configured',
+    writeEnabled: !generalNotice,
+    notice: generalNotice || null,
+  };
+  donorCache = {
+    rows: [...mergedMangalyaRows, ...mergedGeneralRows],
+    refreshedAt: mangalyaDonorCache.refreshedAt,
+    source: 'google-api',
+    writeEnabled: true,
+    notice: generalNotice || null,
   };
 
   return donorCache;
@@ -2416,7 +2489,7 @@ async function updateMangalyaDonor(donorId, updates) {
   let currentRow = matches[0];
   const donorSourceId = currentRow.donorId || generalDonorSourceId(currentRow);
 
-  if (Object.prototype.hasOwnProperty.call(updates || {}, 'receiptNumber')) {
+  if (!isGeneralPreviousDonor(currentRow) && Object.prototype.hasOwnProperty.call(updates || {}, 'receiptNumber')) {
     await assertMangalyaReceiptUnique({
       eventYear: donorEventYear(currentRow),
       donorSourceId,
@@ -2433,7 +2506,8 @@ async function updateMangalyaDonor(donorId, updates) {
       const columnIndex = currentRow.adminColumns?.[field];
       if (columnIndex === null || columnIndex === undefined) return null;
       const column = columnLetter(columnIndex);
-      const sheetName = getSheetName(DONOR_RANGE);
+      const sheetConfig = donorRowSheetConfig(currentRow);
+      const sheetName = getSheetName(sheetConfig.range);
       return {
         range: `'${sheetName}'!${column}${currentRow.rowNumber}`,
         values: [[normalizeDonorPatchValue(field, value)]],
@@ -2448,8 +2522,9 @@ async function updateMangalyaDonor(donorId, updates) {
   }
 
   const sheets = createSheetsClient({ requireRegistrationSheets: false });
+  const sheetConfig = donorRowSheetConfig(currentRow);
   await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: process.env.MANGALYA_SPONSORSHIP_SHEET_ID || process.env.MANGALYA_DONORS_SHEET_ID,
+    spreadsheetId: sheetConfig.spreadsheetId,
     requestBody: {
       valueInputOption: 'USER_ENTERED',
       data,
@@ -2588,7 +2663,7 @@ async function findGeneralDonorById(donorId) {
   await loadMangalyaDonors();
   const matches = donorCache.rows.filter((row) =>
     isGeneralPreviousDonor(row) &&
-    (row.donorId === donorId || row.id === donorId || generalDonorSourceId(row) === donorId)
+    (row.id === donorId || generalDonorSourceId(row) === donorId)
   );
   if (matches.length !== 1) throw donorIdentityError();
   return matches[0];
@@ -2634,8 +2709,8 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
   });
   return {
     donor: {
-      id: donor.id,
-      donorId: donor.donorId,
+      id: donorSourceId,
+      donorId: '',
       generalDonorSourceId: donorSourceId,
       donorType: 'DONOR',
       qrStatus: next.qrStatus,
@@ -3180,8 +3255,9 @@ app.post('/api/previous-donors/:id/campaign-status', requirePst, async (req, res
     res.json({
       ok: true,
       donor: {
-        id: result.donor.id,
-        donorId: result.donor.donorId,
+        id: generalDonorSourceId(result.donor),
+        donorId: '',
+        generalDonorSourceId: generalDonorSourceId(result.donor),
         donorType: 'DONOR',
         previousDonorCampaignName: result.operation.campaignName,
         previousDonorCampaignStatus: result.operation.campaignStatus,

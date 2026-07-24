@@ -13,5 +13,6 @@ yarn-error.log*
 *.key
 service-account.json
 output/
+assets/ID_Cards/
 memory/2026-06-23-render-styling.md
 server/data/

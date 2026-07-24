@@ -1191,6 +1191,8 @@ async function generateParticipantQrPassJpg(participant) {
 }
 
 function donorDonationType(donor) {
+  if (donor.donorType === 'DONOR') return 'Donor';
+  if (donor.donorType === 'MANGALYA') return 'Mangalya Donor';
   const text = [donor.donorType, donor.contributionType, donor.category, donor.canonicalCategory]
     .join(' ')
     .toLowerCase();
@@ -1209,8 +1211,11 @@ function donorPaymentVerified(donor) {
 function donorQrPayload(donor, donationType) {
   if (!donorPaymentVerified(donor)) throw new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
   if (donor.qrUrl) return donor.qrUrl;
-  if (!donor.donorId) throw new Error('Donor ID migration is required before generating QR pass.');
-  return `MVST|${donationType === 'Mangalya Donor' ? 'MANGALYA_DONOR' : 'DONOR'}|${donor.donorId}`;
+  const identity = donationType === 'Mangalya Donor'
+    ? donor.donorId
+    : donor.generalDonorSourceId || donor.id;
+  if (!identity) throw new Error(`${donationType} identity is required before generating QR pass.`);
+  return `MVST|${donationType === 'Mangalya Donor' ? 'MANGALYA_DONOR' : 'DONOR'}|${identity}`;
 }
 
 function splitTextLines(ctx, text, maxWidth, maxLines = 2) {
@@ -2234,6 +2239,7 @@ function isPreviousDonor(donor) {
 }
 
 function isConfirmedCurrentGeneralDonor(donor) {
+  if (donor.donorType === 'MANGALYA') return false;
   const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
   if (typeText.includes('mangalya')) return false;
   const status = String(donor.status || '').toLowerCase();
@@ -2243,6 +2249,9 @@ function isConfirmedCurrentGeneralDonor(donor) {
 }
 
 function isVisibleCurrentMangalyaSponsor(sponsor) {
+  if (sponsor.donorType === 'DONOR') return false;
+  const typeText = [sponsor.contributionType, sponsor.category, sponsor.canonicalCategory].join(' ').toLowerCase();
+  if (typeText.includes('general donation') || typeText.includes('major donor') || typeText.includes('breakfast sponsorship')) return false;
   if (!isActiveEventYear(sponsor.eventYear)) return false;
   const status = String(sponsor.status || '').toLowerCase();
   if (status === 'cancelled') return false;

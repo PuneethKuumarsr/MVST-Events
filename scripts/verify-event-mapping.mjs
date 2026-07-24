@@ -1059,7 +1059,7 @@ assert.ok(backend.includes('/api/previous-donors/:id/qr'), 'Previous donors must
 assert.ok(backend.includes('/api/previous-donors/:id/campaign-status'), 'Previous donor campaign status must be stored through the backend');
 assert.ok(backend.includes("donorType: 'DONOR'"), 'General previous donors must be identified as Donor records');
 assert.ok(backend.includes('function generalDonorSourceId'), 'Previous donors must have a Mongo source identity separate from Mangalya Donor ID');
-assert.ok(backend.includes('PD-${year}-ROW-${row.rowNumber}'), 'Previous donors without Donor ID must use a backend source key instead of failing QR generation');
+assert.ok(backend.includes('GD-${year}-ROW-${row.rowNumber}'), 'Donors without Mangalya Donor ID must use a GD backend source key instead of failing QR generation');
 assert.ok(backend.includes('function donorMatchesPatchId'), 'Donor write-back must match previous donor source IDs');
 assert.ok(backend.includes('isGeneralPreviousDonor(row) &&'), 'Previous donor write-back must be limited to previous donor rows when Donor ID is missing');
 assert.ok(backend.includes("whatsappDestination: maskMobile"), 'Previous donor campaign storage must mask WhatsApp destinations');
@@ -1097,7 +1097,7 @@ assert.ok(backend.includes('function normalizeMangalyaReceiptNumber'), 'Backend 
 assert.ok(backend.includes('function normalizeMangalyaDonorId'), 'Backend must normalize stable MD26 donor IDs');
 assert.ok(backend.includes('Donor record identity is missing or duplicated. No changes were saved.'), 'Missing or duplicate donor IDs must fail safely');
 assert.ok(backend.includes("donorId: ['Donor ID']"), 'Backend must map the Donor ID sheet column');
-assert.ok(backend.includes("id: donorId || `missing-donor-id:${rowNumber}`"), 'Rows without Donor ID may display but must be marked unsafe');
+assert.ok(backend.includes("id: donorId || generalDonorId || `missing-donor-id:${rowNumber}`"), 'Mangalya rows without Donor ID remain unsafe, while General Donors use a GD identity');
 assert.ok(backend.includes('donorSourceId: donor.donorId'), 'Operational records must use stable Donor ID as donorSourceId');
 assert.ok(!backend.includes('donorSourceId: donor.id'), 'Operational records must not use row-based donor IDs');
 assert.ok(backend.includes('row.donorId !== donorSourceId'), 'Receipt duplicate checks must compare stable donor IDs');
