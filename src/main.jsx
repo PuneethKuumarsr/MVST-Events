@@ -4199,8 +4199,13 @@ function PreviousDonorsCampaign({ donorState }) {
   const [queueOpened, setQueueOpened] = useState(false);
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const [qrPreview, setQrPreview] = useState({ open: false, donor: null, dataUrl: '', message: '' });
+  const [drilldownKey, setDrilldownKey] = useState('');
   const previousDonors = useMemo(() => donors.filter(isConfirmedCurrentGeneralDonor), [donors]);
   const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
+  const promisedDonors = useMemo(() => previousDonors.filter((donor) => {
+    const statusText = String(donor.status || '').toLowerCase();
+    return ['confirmed', 'paid', 'received', 'fully received'].includes(statusText) || Number(donor.confirmedAmount || 0) > 0;
+  }), [previousDonors]);
 
   const visibleDonors = useMemo(() => {
     const selected = PREVIOUS_DONOR_FILTERS.find((filter) => filter.id === filterId) || PREVIOUS_DONOR_FILTERS[0];
@@ -4219,6 +4224,57 @@ function PreviousDonorsCampaign({ donorState }) {
   const readyDonors = useMemo(() => visibleDonors.filter(donorMobileIsValid), [visibleDonors]);
   const currentQueueDonor = queue[queueIndex];
   const previousDonorProgress = queueCounts(queue, statusMap);
+  const donorSummary = useMemo(() => ({
+    total: previousDonors.length,
+    ready: previousDonors.filter(donorMobileIsValid).length,
+    missingMobile: missingMobileDonors.length,
+    promised: promisedDonors.length,
+    promisedAmount: promisedDonors.reduce((sum, donor) => sum + Number(donor.confirmedAmount || previousDonationAmount(donor) || 0), 0),
+    visibleAmount: visibleDonors.reduce((sum, donor) => sum + previousDonationAmount(donor), 0),
+    receivedAmount: promisedDonors.reduce((sum, donor) => sum + Number(donor.receivedAmount || 0), 0),
+  }), [missingMobileDonors.length, previousDonors, promisedDonors, visibleDonors]);
+  const donorDrilldown = useMemo(() => {
+    const amountRows = visibleDonors;
+    const options = {
+      all: {
+        title: 'All Donors',
+        value: previousDonors.length,
+        rows: previousDonors,
+        note: 'All 2026 confirmed donor records currently loaded from the Donors sheet.',
+      },
+      ready: {
+        title: 'WhatsApp Ready',
+        value: donorSummary.ready,
+        rows: previousDonors.filter(donorMobileIsValid),
+        note: 'Donors with valid mobile numbers for WhatsApp/call actions.',
+      },
+      missingMobile: {
+        title: 'Missing Mobile',
+        value: donorSummary.missingMobile,
+        rows: missingMobileDonors,
+        note: 'Donors that need contact number correction before WhatsApp actions.',
+      },
+      promised: {
+        title: 'Promised / Confirmed Donors',
+        value: promisedDonors.length,
+        rows: promisedDonors,
+        note: 'Donors who have promised or confirmed support for 2026.',
+      },
+      visibleAmount: {
+        title: 'Visible Amount',
+        value: formatCurrency(donorSummary.visibleAmount),
+        rows: amountRows,
+        note: 'Rows currently matching the amount filter and search.',
+      },
+      received: {
+        title: 'Received Donors',
+        value: formatCurrency(donorSummary.receivedAmount),
+        rows: promisedDonors.filter((donor) => Number(donor.receivedAmount || 0) > 0),
+        note: 'Donor rows where received amount is recorded.',
+      },
+    };
+    return options[drilldownKey] || null;
+  }, [donorSummary, drilldownKey, missingMobileDonors, previousDonors, promisedDonors, visibleDonors]);
 
   useEffect(() => {
     const mongoStatus = {};
@@ -4457,10 +4513,26 @@ function PreviousDonorsCampaign({ donorState }) {
       {error ? <div className="donor-warning">{error}</div> : null}
 
       <div className="stats-grid donor-stats-grid">
-        <StatCard icon={UsersRound} label="Donors" value={previousDonors.length} />
-        <StatCard icon={MessageCircle} label="WhatsApp Ready" value={readyDonors.length} tone="success" />
-        <StatCard icon={AlertTriangle} label="Missing Mobile" value={missingMobileDonors.length} tone="warning" />
-        <StatCard icon={IndianRupee} label="Visible Amount" value={formatCurrency(visibleDonors.reduce((sum, donor) => sum + previousDonationAmount(donor), 0))} />
+        <StatCard icon={UsersRound} label="Donors" value={donorSummary.total} onClick={() => setDrilldownKey('all')} />
+        <StatCard icon={CheckCircle2} label="Promised / Confirmed" value={donorSummary.promised} tone="success" onClick={() => setDrilldownKey('promised')} />
+        <StatCard icon={MessageCircle} label="WhatsApp Ready" value={readyDonors.length} tone="success" onClick={() => setDrilldownKey('ready')} />
+        <StatCard icon={AlertTriangle} label="Missing Mobile" value={donorSummary.missingMobile} tone="warning" onClick={() => setDrilldownKey('missingMobile')} />
+        <StatCard icon={IndianRupee} label="Visible Amount" value={formatCurrency(donorSummary.visibleAmount)} onClick={() => setDrilldownKey('visibleAmount')} />
+        <StatCard icon={IndianRupee} label="Received Amount" value={formatCurrency(donorSummary.receivedAmount)} tone="success" onClick={() => setDrilldownKey('received')} />
+      </div>
+
+      <div className="confirmed-sponsors-panel">
+        <div>
+          <p>Promised / Confirmed Donors</p>
+          <strong>{promisedDonors.length} donors / {formatCurrency(donorSummary.promisedAmount)} promised</strong>
+        </div>
+        <div className="confirmed-sponsors-list">
+          {promisedDonors.length ? promisedDonors.map((donor) => (
+            <button type="button" key={`promised-${donor.id}`} onClick={() => { setQuery(sponsorDisplayName(donor)); setDrilldownKey('promised'); }}>
+              {sponsorDisplayName(donor)} - {formatCurrency(Number(donor.confirmedAmount || previousDonationAmount(donor) || 0))}
+            </button>
+          )) : <span>No promised donors found.</span>}
+        </div>
       </div>
 
       <div className="donor-filter-strip previous-donor-filter-strip">
@@ -4613,6 +4685,49 @@ function PreviousDonorsCampaign({ donorState }) {
 
       {message ? <small className="donor-note">{message}</small> : null}
       {!writeEnabled ? <small className="donor-note">Read-only mode</small> : null}
+      {donorDrilldown ? (
+        <div className="receipt-modal-backdrop">
+          <div className="receipt-modal mangalya-drilldown-modal">
+            <div className="receipt-modal-head">
+              <div>
+                <span>Donors Drill-Down</span>
+                <strong>{donorDrilldown.title}: {donorDrilldown.value}</strong>
+              </div>
+              <button type="button" onClick={() => setDrilldownKey('')}><X size={16} /></button>
+            </div>
+            <p className="donor-note">{donorDrilldown.note}</p>
+            <div className="mangalya-drilldown-summary">
+              <span><small>Rows</small><b>{donorDrilldown.rows.length}</b></span>
+              <span><small>Promised</small><b>{formatCurrency(donorDrilldown.rows.reduce((sum, donor) => sum + Number(donor.confirmedAmount || previousDonationAmount(donor) || 0), 0))}</b></span>
+              <span><small>Received</small><b>{formatCurrency(donorDrilldown.rows.reduce((sum, donor) => sum + Number(donor.receivedAmount || 0), 0))}</b></span>
+              <span><small>WhatsApp Ready</small><b>{donorDrilldown.rows.filter(donorMobileIsValid).length}</b></span>
+            </div>
+            {donorDrilldown.rows.length ? (
+              <div className="mangalya-drilldown-list">
+                {donorDrilldown.rows.map((donor) => (
+                  <article key={`donor-drilldown-${donor.id}`}>
+                    <div>
+                      <strong>{sponsorDisplayName(donor)}</strong>
+                      <span>{donor.status || 'Pending'} · {donorMobileIsValid(donor) ? 'WhatsApp Ready' : 'Valid mobile required'}</span>
+                    </div>
+                    <span>Promised: {formatCurrency(Number(donor.confirmedAmount || previousDonationAmount(donor) || 0))}</span>
+                    <span>Received: {formatCurrency(Number(donor.receivedAmount || 0))}</span>
+                    <span>Payment: {donor.paymentMode || '-'} · Collected by: {donor.collectedBy || '-'}</span>
+                    <div className="receipt-modal-actions">
+                      <button type="button" onClick={() => { setQuery(sponsorDisplayName(donor)); setDrilldownKey(''); }}>Open Donor</button>
+                      <button type="button" onClick={() => openDonorJourneyWhatsApp(donor, 'thank-collection')} disabled={!donorMobileIsValid(donor)}>Thank & Collection</button>
+                      <button type="button" onClick={() => startEdit(donor)}>Edit</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : <div className="empty-state"><Gift size={28} /><p>No donors found for this grid.</p></div>}
+            <div className="receipt-modal-actions">
+              <button type="button" onClick={() => setDrilldownKey('')}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {qrPreview.open ? (
         <div className="receipt-modal-backdrop">
           <div className="receipt-modal">
