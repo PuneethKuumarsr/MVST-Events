@@ -5295,6 +5295,20 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         </div>
       ) : null}
 
+      {sponsorFilter === 'new-sponsors' ? (
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>New Sponsors</p>
+            <strong>{visibleDonors.length} new sponsors for Event Year {ACTIVE_EVENT_YEAR}</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {visibleDonors.map((sponsor) => (
+              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'} - {mobileValidationStatus(sponsor.contactNo).issue}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {sponsorFilter === 'returning-sponsors' ? (
         <div className="confirmed-sponsors-panel">
           <div>
@@ -5580,19 +5594,6 @@ function ChangePasswordSection({ auth, forced = false }) {
         </div>
       ) : null}
 
-      {sponsorFilter === 'new-sponsors' ? (
-        <div className="confirmed-sponsors-panel">
-          <div>
-            <p>New Sponsors</p>
-            <strong>{visibleDonors.length} new sponsors for Event Year {ACTIVE_EVENT_YEAR}</strong>
-          </div>
-          <div className="confirmed-sponsors-list">
-            {visibleDonors.map((sponsor) => (
-              <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'} - {mobileValidationStatus(sponsor.contactNo).issue}</span>
-            ))}
-          </div>
-        </div>
-      ) : null}
       <form className="admin-panel change-password-card" onSubmit={submit}>
         <label>
           <span>Current Password</span>
