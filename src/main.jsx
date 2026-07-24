@@ -2934,6 +2934,48 @@ function StatusPill({ children, tone }) {
   return <span className={`pill ${tone || ''}`}>{children}</span>;
 }
 
+class SectionErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error('[MVST section render error]', this.props.title, error?.message || error);
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <section className="management-section section-error-fallback">
+        <div className="section-heading">
+          <div>
+            <p>{this.props.title || 'Section'}</p>
+            <h2>{this.props.title || 'This section'} could not open</h2>
+          </div>
+        </div>
+        <div className="donor-warning">
+          A live data row caused this section to stop rendering. Please refresh this section and try again.
+        </div>
+        <div className="receipt-modal-actions">
+          {this.props.onRefresh ? <button type="button" onClick={this.props.onRefresh}>Refresh Section</button> : null}
+          {this.props.onHome ? <button type="button" onClick={this.props.onHome}>Back Home</button> : null}
+        </div>
+      </section>
+    );
+  }
+}
+
 function AdminEditPanel({ participant, rows, writeEnabled, onSave }) {
   const [form, setForm] = useState({
     paidAmount: String(participant.paidAmount || 0),
@@ -7611,7 +7653,16 @@ function App({ auth }) {
 
           {activeView === 'qr-distribution' && !mustChangePassword ? <QRDistributionModule rows={rows} writeEnabled={writeEnabled} scanDistribution={scanDistribution} user={user} isPst={isPst} initialScanToken={linkedReceiptQrToken} /> : null}
 
-          {activeView === 'mangalya-donors' && isPst && !mustChangePassword ? <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} /> : null}
+          {activeView === 'mangalya-donors' && isPst && !mustChangePassword ? (
+            <SectionErrorBoundary
+              title="Mangalya Donors"
+              resetKey={`${donorState.lastRefreshedAt || ''}-${donorState.donors.length}`}
+              onRefresh={donorState.refresh}
+              onHome={() => setActiveView('home')}
+            >
+              <MangalyaDonorsSection donorState={donorState} requirementState={requirementState} requiredBottus={summary.shashtipoorthi} />
+            </SectionErrorBoundary>
+          ) : null}
 
           {activeView === 'previous-donors' && isPst && !mustChangePassword ? <PreviousDonorsCampaign donorState={donorState} /> : null}
 

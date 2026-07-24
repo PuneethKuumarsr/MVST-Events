@@ -2732,6 +2732,15 @@ main {
   font-weight: 850;
 }
 
+.section-error-fallback {
+  display: grid;
+  gap: 14px;
+}
+
+.section-error-fallback .receipt-modal-actions {
+  justify-content: flex-start;
+}
+
 .donor-filter-strip {
   display: flex;
   align-items: center;
