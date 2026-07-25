@@ -1054,6 +1054,7 @@ assert.ok(frontend.includes('const currentYear = !eventYear || eventYear === ACT
 assert.ok(frontend.includes("if (donor.donorType === 'DONOR') return amount > 0 && status !== 'cancelled';"), 'Curated Donors sheet rows must remain visible even when old history year is retained');
 assert.ok(backend.includes("'Promised Amount'") && backend.includes("'Donation (₹)'"), 'Donor amount parsing must support promised amount and rupee donation headers');
 assert.ok(frontend.includes('const sponsorResetKey =') && frontend.includes('}, [sponsorResetKey]);'), 'Mangalya sponsor cards must not reset form state from unstable sponsor object identity');
+assert.ok((frontend.match(/const returningSponsors = confirmedSponsors\.filter/g) || []).length >= 2, 'Mangalya donor summary and drilldown must each define returning sponsors in scope');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
 assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');

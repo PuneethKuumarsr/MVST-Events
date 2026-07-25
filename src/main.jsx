@@ -5101,6 +5101,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
     const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
     const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
+    const returningSponsors = confirmedSponsors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0);
     const drilldowns = {
       totalSponsors: {
         title: 'Total Sponsors',
