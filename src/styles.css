@@ -2741,6 +2741,13 @@ main {
   justify-content: flex-start;
 }
 
+.section-error-fallback .donor-warning small {
+  display: block;
+  margin-top: 8px;
+  color: rgba(75, 17, 24, 0.78);
+  font-weight: 750;
+}
+
 .donor-filter-strip {
   display: flex;
   align-items: center;

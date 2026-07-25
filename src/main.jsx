@@ -475,7 +475,27 @@ function formatCurrency(value) {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(value || 0);
+  }).format(numberValue(value, 0));
+}
+
+function textValue(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if (value.value !== undefined) return textValue(value.value, fallback);
+    if (value.text !== undefined) return textValue(value.text, fallback);
+    if (value.name !== undefined) return textValue(value.name, fallback);
+    if (value.label !== undefined) return textValue(value.label, fallback);
+  }
+  return fallback;
+}
+
+function numberValue(value, fallback = 0) {
+  const text = textValue(value, '');
+  const normalized = text.replace(/[₹,\s]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function normalizeIndianMobileNumber(rawMobile) {
@@ -1986,28 +2006,28 @@ function firstPendingQueueIndex(queue, statusMap) {
 }
 
 function sponsorCategory(sponsor) {
-  return sponsor.category || sponsor.canonicalCategory || 'Sponsorship';
+  return textValue(sponsor.category, '') || textValue(sponsor.canonicalCategory, '') || 'Sponsorship';
 }
 
 function sponsorUnit(sponsor) {
-  return sponsor.unit || sponsorCategory(sponsor);
+  return textValue(sponsor.unit, '') || sponsorCategory(sponsor);
 }
 
 function sponsorQuantity(sponsor) {
-  return Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
+  return numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
 }
 
 function sponsorPreviousQuantity(sponsor) {
-  return Number(sponsor.sponsored2025 || sponsor.quantitySponsored || 0);
+  return numberValue(sponsor.sponsored2025 || sponsor.quantitySponsored || 0);
 }
 
 function sponsorEventName(sponsor) {
-  return sponsor.eventName || 'the upcoming trust event';
+  return textValue(sponsor.eventName, 'the upcoming trust event');
 }
 
 function sponsorAmount(sponsor) {
   if (isDirectBottuSponsor(sponsor)) return 0;
-  return Number(sponsor.confirmedAmount || sponsor.amount || sponsor.actualValue || 0);
+  return numberValue(sponsor.confirmedAmount || sponsor.amount || sponsor.actualValue || 0);
 }
 
 function sponsorQuantityText(quantity, unit) {
@@ -2242,9 +2262,9 @@ function isConfirmedCurrentGeneralDonor(donor) {
   if (donor.donorType === 'MANGALYA') return false;
   const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
   if (typeText.includes('mangalya')) return false;
-  const status = String(donor.status || '').toLowerCase();
-  const currentYear = String(donor.eventYear || '').trim() === ACTIVE_EVENT_YEAR;
-  const amount = Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
+  const status = textValue(donor.status, '').toLowerCase();
+  const currentYear = textValue(donor.eventYear, '').trim() === ACTIVE_EVENT_YEAR;
+  const amount = numberValue(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
   const currentStatus = ['promised', 'promise', 'confirmed', 'paid', 'received', 'fully received'].includes(status);
   return currentYear && amount > 0 && status !== 'cancelled' && currentStatus;
 }
@@ -2254,9 +2274,9 @@ function isVisibleCurrentMangalyaSponsor(sponsor) {
   const typeText = [sponsor.contributionType, sponsor.category, sponsor.canonicalCategory].join(' ').toLowerCase();
   if (typeText.includes('general donation') || typeText.includes('major donor') || typeText.includes('breakfast sponsorship')) return false;
   if (!isActiveEventYear(sponsor.eventYear)) return false;
-  const status = String(sponsor.status || '').toLowerCase();
+  const status = textValue(sponsor.status, '').toLowerCase();
   if (status === 'cancelled') return false;
-  return isConfirmedSponsor(sponsor) || Number(sponsor.confirmedAmount || sponsor.receivedAmount || 0) > 0;
+  return isConfirmedSponsor(sponsor) || numberValue(sponsor.confirmedAmount || sponsor.receivedAmount || 0) > 0;
 }
 
 function buildPreviousDonorAppealMessage(donor) {
@@ -2967,6 +2987,7 @@ class SectionErrorBoundary extends React.Component {
         </div>
         <div className="donor-warning">
           A live data row caused this section to stop rendering. Please refresh this section and try again.
+          {this.state.error?.message ? <small>{this.state.error.message}</small> : null}
         </div>
         <div className="receipt-modal-actions">
           {this.props.onRefresh ? <button type="button" onClick={this.props.onRefresh}>Refresh Section</button> : null}
@@ -3568,19 +3589,20 @@ function ParticipantCard({ participant, rows, writeEnabled, onSave, onFreshRows 
 }
 
 function isConfirmedSponsor(sponsor) {
-  const status = String(sponsor.status || '').toLowerCase();
+  const status = textValue(sponsor.status, '').toLowerCase();
   return status !== 'cancelled' && (
     ['confirmed', 'paid', 'received', 'fully received'].includes(status) ||
-    Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0
+    ['promised', 'promise'].includes(status) ||
+    numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0) > 0
   );
 }
 
 function isReceivedSponsor(sponsor) {
-  return ['received', 'fully received'].includes(String(sponsor.status || '').toLowerCase());
+  return ['received', 'fully received'].includes(textValue(sponsor.status, '').toLowerCase());
 }
 
 function sponsorDisplayName(sponsor) {
-  return sponsor.sponsorName || sponsor.donorName || 'Unnamed sponsor';
+  return textValue(sponsor.sponsorName, '') || textValue(sponsor.donorName, '') || 'Unnamed sponsor';
 }
 
 function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
@@ -4794,6 +4816,8 @@ function PreviousDonorsCampaign({ donorState }) {
 function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 0 }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor, prepareQr, regenerateQr, revokeQr, markInvitationPrepared } = donorState;
   const requirements = requirementState?.requirements || [];
+  const donorRows = Array.isArray(donors) ? donors : [];
+  const requirementRows = Array.isArray(requirements) ? requirements : [];
   const [bulkQueue, setBulkQueue] = useState([]);
   const [bulkStarted, setBulkStarted] = useState(false);
   const [bulkIndex, setBulkIndex] = useState(0);
@@ -4804,8 +4828,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const [sponsorQuery, setSponsorQuery] = useState('');
   const [quantityFilter, setQuantityFilter] = useState('All');
   const [drilldownKey, setDrilldownKey] = useState('');
-  const activeDonors = useMemo(() => donors.filter(isVisibleCurrentMangalyaSponsor), [donors]);
-  const activeRequirements = useMemo(() => requirements.filter((row) => isActiveEventYear(row.eventYear)), [requirements]);
+  const activeDonors = useMemo(() => donorRows.filter(isVisibleCurrentMangalyaSponsor), [donorRows]);
+  const activeRequirements = useMemo(() => requirementRows.filter((row) => isActiveEventYear(row.eventYear)), [requirementRows]);
 
   const summary = useMemo(() => {
     const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
