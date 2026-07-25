@@ -2275,10 +2275,11 @@ function isConfirmedCurrentGeneralDonor(donor) {
     .toLowerCase();
   if (typeText.includes('mangalya')) return false;
   const status = textValue(donor.status, '').toLowerCase();
-  const currentYear = textValue(donor.eventYear, '').trim() === ACTIVE_EVENT_YEAR;
+  const eventYear = textValue(donor.eventYear, '').trim();
+  const currentYear = !eventYear || eventYear === ACTIVE_EVENT_YEAR;
   const amount = numberValue(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
   const currentStatus = ['promised', 'promise', 'confirmed', 'paid', 'received', 'fully received'].includes(status);
-  return currentYear && amount > 0 && status !== 'cancelled' && currentStatus;
+  return currentYear && amount > 0 && status !== 'cancelled' && (currentStatus || amount > 0);
 }
 
 function isVisibleCurrentMangalyaSponsor(sponsor) {
