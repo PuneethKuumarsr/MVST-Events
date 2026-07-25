@@ -67,14 +67,14 @@ const ADMIN_FIELDS = {
 };
 const DONOR_FIELDS = {
   donorId: ['Donor ID'],
-  sponsorName: ['Sponsor Name'],
-  contactNo: ['Contact Number', 'Contact No'],
+  sponsorName: ['Sponsor Name', 'Donor Name', 'Name', 'Donor / Contact', 'Donor'],
+  contactNo: ['Contact Number', 'Contact No', 'Mobile', 'Mobile Number', 'Phone', 'Phone Number'],
   eventYear: ['Event Year'],
   eventName: ['Event Name'],
   contributionType: ['Contribution Type'],
   category: ['Category', 'Sponsorship Category'],
   contributionNature: ['Contribution Nature'],
-  previousDonationAmount: ['Previous Donation Amount', 'Previous Donation', 'Last Donation Amount', 'Donation Amount'],
+  previousDonationAmount: ['Previous Donation Amount', 'Previous Donation', 'Last Donation Amount', 'Donation Amount', 'Previous Amount'],
   previousDonationYear: ['Previous Donation Year', 'Last Donation Year', 'Last Donated Year'],
   sponsored2025: ['Sponsored 2025'],
   sponsored2026: ['Sponsored 2026'],
@@ -84,8 +84,8 @@ const DONOR_FIELDS = {
   unit: ['Unit'],
   estimatedValue: ['Estimated Value'],
   actualValue: ['Actual Value'],
-  confirmedAmount: ['Confirmed Amount', 'Amount (Auto)'],
-  receivedAmount: ['Received Amount'],
+  confirmedAmount: ['Confirmed Amount', 'Amount (Auto)', 'Amount', 'Donation', 'Donation (₹)', 'Donation ₹', 'Current Donation', 'Confirmed Donation', '2026 Amount'],
+  receivedAmount: ['Received Amount', 'Amount Received', 'Paid Amount'],
   balanceAmount: ['Balance Amount'],
   status: ['Status'],
   treasurerVerified: ['Treasurer Verified', 'Payment Verified', 'Verified By Treasurer'],
@@ -1314,8 +1314,18 @@ function normalizeDonorRows(values, sourceKind = 'MANGALYA') {
       const sponsored2026 = numberFrom(getCell(row, headerMap, ['Sponsored 2026']));
       const confirmedQuantity = numberFrom(getCell(row, headerMap, ['Confirmed Quantity', 'Sponsored 2026'])) || sponsored2026;
       const receivedQuantity = numberFrom(getCell(row, headerMap, ['Received Quantity']));
-      const confirmedAmount = numberFrom(getCell(row, headerMap, ['Confirmed Amount', 'Amount (Auto)']));
-      const receivedAmount = numberFrom(getCell(row, headerMap, ['Received Amount']));
+      const confirmedAmount = numberFrom(getCell(row, headerMap, [
+        'Confirmed Amount',
+        'Amount (Auto)',
+        'Amount',
+        'Donation',
+        'Donation (₹)',
+        'Donation ₹',
+        'Current Donation',
+        'Confirmed Donation',
+        '2026 Amount',
+      ]));
+      const receivedAmount = numberFrom(getCell(row, headerMap, ['Received Amount', 'Amount Received', 'Paid Amount']));
       const amount = confirmedAmount;
       const category = getCell(row, headerMap, ['Category', 'Sponsorship Category']) || process.env.DEFAULT_SPONSORSHIP_CATEGORY || '';
       const contributionType = getCell(row, headerMap, ['Contribution Type']);
@@ -1324,6 +1334,7 @@ function normalizeDonorRows(values, sourceKind = 'MANGALYA') {
         'Previous Donation',
         'Last Donation Amount',
         'Donation Amount',
+        'Previous Amount',
       ]));
       const appealSent = boolFrom(getCell(row, headerMap, ['Appeal Sent', 'WhatsApp Sent']));
       const appealSentDate = getCell(row, headerMap, ['Appeal Sent Date', 'Sent Date']);
@@ -1337,9 +1348,9 @@ function normalizeDonorRows(values, sourceKind = 'MANGALYA') {
         generalDonorSourceId: generalDonorId,
         rowNumber,
         slNo: getCell(row, headerMap, ['Sl No', 'Sl. No.']),
-        sponsorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
-        donorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor']),
-        contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No']),
+        sponsorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor', 'Donor Name', 'Name', 'Donor / Contact', 'Donor']),
+        donorName: getCell(row, headerMap, ['Sponsor Name', 'Mangalya Donor', 'Donor Name', 'Name', 'Donor / Contact', 'Donor']),
+        contactNo: getCell(row, headerMap, ['Contact Number', 'Contact No', 'Mobile', 'Mobile Number', 'Phone', 'Phone Number']),
         eventYear: rowEventYear,
         eventName: getCell(row, headerMap, ['Event Name']),
         contributionType,

@@ -2245,7 +2245,8 @@ function isConfirmedCurrentGeneralDonor(donor) {
   const status = String(donor.status || '').toLowerCase();
   const currentYear = String(donor.eventYear || '').trim() === ACTIVE_EVENT_YEAR;
   const amount = Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
-  return currentYear && amount > 0 && status !== 'cancelled' && ['confirmed', 'paid', 'received', 'fully received'].includes(status);
+  const currentStatus = ['promised', 'promise', 'confirmed', 'paid', 'received', 'fully received'].includes(status);
+  return currentYear && amount > 0 && status !== 'cancelled' && currentStatus;
 }
 
 function isVisibleCurrentMangalyaSponsor(sponsor) {
@@ -4246,7 +4247,7 @@ function PreviousDonorsCampaign({ donorState }) {
   const missingMobileDonors = useMemo(() => previousDonors.filter((donor) => !donorMobileIsValid(donor)), [previousDonors]);
   const promisedDonors = useMemo(() => previousDonors.filter((donor) => {
     const statusText = String(donor.status || '').toLowerCase();
-    return ['confirmed', 'paid', 'received', 'fully received'].includes(statusText) || Number(donor.confirmedAmount || 0) > 0;
+    return ['promised', 'promise', 'confirmed', 'paid', 'received', 'fully received'].includes(statusText) || Number(donor.confirmedAmount || 0) > 0;
   }), [previousDonors]);
 
   const visibleDonors = useMemo(() => {
@@ -4689,6 +4690,7 @@ function PreviousDonorsCampaign({ donorState }) {
                     <span>Status</span>
                     <select value={editDraft.status} onChange={(event) => updateEditDraft('status', event.target.value)}>
                       <option>Pending</option>
+                      <option>Promised</option>
                       <option>Confirmed</option>
                       <option>Paid</option>
                       <option>Received</option>
