@@ -1051,6 +1051,7 @@ assert.ok(frontend.includes('Save Confirmation'), 'Previous donor edit form must
 assert.ok(frontend.includes('Donor confirmation saved to private Google Sheet'), 'Previous donor confirmation edits must save to the private Sheet');
 assert.ok(frontend.includes('confirmedAmount') && frontend.includes('receivedAmount'), 'Previous donor edit form must include amount fields');
 assert.ok(frontend.includes('const currentYear = !eventYear || eventYear === ACTIVE_EVENT_YEAR'), 'Current donor visibility must allow blank event year when current amount is present');
+assert.ok(frontend.includes("if (donor.donorType === 'DONOR') return amount > 0 && status !== 'cancelled';"), 'Curated Donors sheet rows must remain visible even when old history year is retained');
 assert.ok(backend.includes("'Promised Amount'") && backend.includes("'Donation (₹)'"), 'Donor amount parsing must support promised amount and rupee donation headers');
 assert.ok(frontend.includes('const sponsorResetKey =') && frontend.includes('}, [sponsorResetKey]);'), 'Mangalya sponsor cards must not reset form state from unstable sponsor object identity');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');

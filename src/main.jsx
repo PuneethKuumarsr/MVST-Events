@@ -2279,6 +2279,7 @@ function isConfirmedCurrentGeneralDonor(donor) {
   const currentYear = !eventYear || eventYear === ACTIVE_EVENT_YEAR;
   const amount = numberValue(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
   const currentStatus = ['promised', 'promise', 'confirmed', 'paid', 'received', 'fully received'].includes(status);
+  if (donor.donorType === 'DONOR') return amount > 0 && status !== 'cancelled';
   return currentYear && amount > 0 && status !== 'cancelled' && (currentStatus || amount > 0);
 }
 
