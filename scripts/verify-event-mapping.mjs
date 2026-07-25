@@ -75,10 +75,10 @@ for (const [input, expected] of phoneExamples) {
 
 assert.ok(frontend.includes('WhatsApp Check / Mobile Issues'), 'Dashboard must show WhatsApp Check / Mobile Issues section');
 assert.ok(frontend.includes('Export Mobile Issues'), 'Dashboard must show Export Mobile Issues button');
-assert.ok(frontend.includes('Welcome Sent'), 'Dashboard must show Welcome Sent summary/status');
-assert.ok(frontend.includes('Welcome Pending'), 'Dashboard must show Welcome Pending summary');
-assert.ok(frontend.includes('Payment Sent'), 'Dashboard must show Payment Sent summary/status');
-assert.ok(frontend.includes('Payment Pending'), 'Dashboard must show Payment Pending summary');
+assert.ok(frontend.includes('label="Donors Collection"'), 'Home dashboard must show Donors Collection summary');
+assert.ok(frontend.includes('label="Mangalya Donors Collection"'), 'Home dashboard must show Mangalya Donors Collection summary');
+assert.ok(frontend.includes('function CollectionDrilldownModal'), 'Collection summaries must open a cash/bank drill-down modal');
+assert.ok(frontend.includes('Cash Holding Details'), 'Collection drill-down must show cash holder details');
 assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome Sent Date');
 assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
 assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');

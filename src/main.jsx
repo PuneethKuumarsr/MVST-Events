@@ -2242,16 +2242,19 @@ function donorMobileIsValid(donor) {
 }
 
 function previousDonationAmount(donor) {
-  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
+  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory]
+    .map((value) => textValue(value, ''))
+    .join(' ')
+    .toLowerCase();
   if (typeText.includes('mangalya donor')) return 0;
-  const explicitAmount = Number(donor.previousDonationAmount || 0);
+  const explicitAmount = numberValue(donor.previousDonationAmount || 0);
   if (explicitAmount > 0) return explicitAmount;
-  const currentDonorAmount = Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
+  const currentDonorAmount = numberValue(donor.confirmedAmount || donor.receivedAmount || donor.amount || 0);
   const isGeneralDonor = ['general donation', 'donor', 'breakfast sponsorship', 'sponsorship'].some((term) => typeText.includes(term));
   if (isGeneralDonor && currentDonorAmount > 0) return currentDonorAmount;
   const year = String(donor.eventYear || '').trim();
   if (year && year !== ACTIVE_EVENT_YEAR && typeText.includes('general donation')) {
-    return Number(donor.receivedAmount || donor.confirmedAmount || donor.amount || 0);
+    return numberValue(donor.receivedAmount || donor.confirmedAmount || donor.amount || 0);
   }
   return 0;
 }
@@ -2266,7 +2269,10 @@ function isPreviousDonor(donor) {
 
 function isConfirmedCurrentGeneralDonor(donor) {
   if (donor.donorType === 'MANGALYA') return false;
-  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory].join(' ').toLowerCase();
+  const typeText = [donor.contributionType, donor.category, donor.canonicalCategory]
+    .map((value) => textValue(value, ''))
+    .join(' ')
+    .toLowerCase();
   if (typeText.includes('mangalya')) return false;
   const status = textValue(donor.status, '').toLowerCase();
   const currentYear = textValue(donor.eventYear, '').trim() === ACTIVE_EVENT_YEAR;
@@ -2277,7 +2283,10 @@ function isConfirmedCurrentGeneralDonor(donor) {
 
 function isVisibleCurrentMangalyaSponsor(sponsor) {
   if (sponsor.donorType === 'DONOR') return false;
-  const typeText = [sponsor.contributionType, sponsor.category, sponsor.canonicalCategory].join(' ').toLowerCase();
+  const typeText = [sponsor.contributionType, sponsor.category, sponsor.canonicalCategory]
+    .map((value) => textValue(value, ''))
+    .join(' ')
+    .toLowerCase();
   if (typeText.includes('general donation') || typeText.includes('major donor') || typeText.includes('breakfast sponsorship')) return false;
   if (!isActiveEventYear(sponsor.eventYear)) return false;
   const status = textValue(sponsor.status, '').toLowerCase();
@@ -3691,6 +3700,54 @@ function safeRequirementForRender(row = {}) {
     confirmedAmount: numberValue(row.confirmedAmount, 0),
     receivedAmount: numberValue(row.receivedAmount, 0),
     remainingAmount: numberValue(row.remainingAmount, 0),
+  };
+}
+
+function collectionModeBucket(modeValue) {
+  const mode = textValue(modeValue, '').toLowerCase();
+  if (mode.includes('cash')) return 'cash';
+  if (
+    mode.includes('bank') ||
+    mode.includes('upi') ||
+    mode.includes('transfer') ||
+    mode.includes('account') ||
+    mode.includes('neft') ||
+    mode.includes('rtgs') ||
+    mode.includes('imps') ||
+    mode.includes('cheque') ||
+    mode.includes('check')
+  ) {
+    return 'bank';
+  }
+  return 'unknown';
+}
+
+function buildCollectionBreakdown(rows, amountGetter) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const receivedRows = safeRows
+    .map((row) => ({ ...row, collectionAmount: numberValue(amountGetter(row), 0) }))
+    .filter((row) => row.collectionAmount > 0);
+  const cashRows = receivedRows.filter((row) => collectionModeBucket(row.paymentMode || row.bankOrCash) === 'cash');
+  const bankRows = receivedRows.filter((row) => collectionModeBucket(row.paymentMode || row.bankOrCash) === 'bank');
+  const unknownRows = receivedRows.filter((row) => collectionModeBucket(row.paymentMode || row.bankOrCash) === 'unknown');
+  const cashHolderMap = cashRows.reduce((map, row) => {
+    const holder = textValue(row.collectedBy, 'Not entered') || 'Not entered';
+    const current = map.get(holder) || { name: holder, amount: 0, rows: [] };
+    current.amount += row.collectionAmount;
+    current.rows.push(row);
+    map.set(holder, current);
+    return map;
+  }, new Map());
+  return {
+    total: receivedRows.reduce((sum, row) => sum + row.collectionAmount, 0),
+    cash: cashRows.reduce((sum, row) => sum + row.collectionAmount, 0),
+    bank: bankRows.reduce((sum, row) => sum + row.collectionAmount, 0),
+    unknown: unknownRows.reduce((sum, row) => sum + row.collectionAmount, 0),
+    rows: receivedRows,
+    cashRows,
+    bankRows,
+    unknownRows,
+    cashHolders: [...cashHolderMap.values()].sort((a, b) => b.amount - a.amount),
   };
 }
 
@@ -7036,6 +7093,70 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   );
 }
 
+function CollectionDrilldownModal({ title, breakdown, onClose, donorTypeLabel }) {
+  const rows = breakdown?.rows || [];
+  return (
+    <div className="receipt-modal-backdrop">
+      <div className="receipt-modal mangalya-drilldown-modal">
+        <div className="receipt-modal-head">
+          <div>
+            <span>{donorTypeLabel} Collection</span>
+            <strong>{title}: {formatCurrency(breakdown.total)}</strong>
+          </div>
+          <button type="button" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="mangalya-drilldown-summary">
+          <span><small>Total Collection</small><b>{formatCurrency(breakdown.total)}</b></span>
+          <span><small>Cash</small><b>{formatCurrency(breakdown.cash)}</b></span>
+          <span><small>Bank / UPI</small><b>{formatCurrency(breakdown.bank)}</b></span>
+          <span><small>Mode Not Entered</small><b>{formatCurrency(breakdown.unknown)}</b></span>
+        </div>
+
+        <div className="confirmed-sponsors-panel">
+          <div>
+            <p>Cash Holding Details</p>
+            <strong>{breakdown.cashHolders.length ? `${breakdown.cashHolders.length} holder${breakdown.cashHolders.length === 1 ? '' : 's'}` : 'No cash collection recorded'}</strong>
+          </div>
+          <div className="confirmed-sponsors-list">
+            {breakdown.cashHolders.length ? breakdown.cashHolders.map((holder) => (
+              <span key={`cash-holder-${holder.name}`}>{holder.name} - {formatCurrency(holder.amount)}</span>
+            )) : <span>No cash holders found.</span>}
+          </div>
+        </div>
+
+        {rows.length ? (
+          <div className="mangalya-drilldown-list">
+            {rows.map((donor) => (
+              <article key={`collection-${donorTypeLabel}-${donor.id || sponsorDisplayName(donor)}`}>
+                <div>
+                  <strong>{sponsorDisplayName(donor)}</strong>
+                  <span>{textValue(donor.status, 'Pending')} · {textValue(donor.paymentMode || donor.bankOrCash, 'Mode not entered')}</span>
+                </div>
+                <div className="receipt-meta-grid">
+                  <p><span>Amount Received</span>{formatCurrency(donor.collectionAmount)}</p>
+                  <p><span>Collected By</span>{textValue(donor.collectedBy, 'Not entered')}</p>
+                  <p><span>Payment Date</span>{textValue(donor.paymentDate, 'Not entered')}</p>
+                  <p><span>Reference</span>{textValue(donor.introducedBy || donor.trusteeReference, 'Not entered')}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact-empty">
+            <IndianRupee size={24} />
+            <p>No received collection entries found for this section.</p>
+          </div>
+        )}
+
+        <div className="receipt-modal-actions">
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App({ auth }) {
   const user = auth.user;
   const isPst = user?.role === ROLE_PST;
@@ -7076,6 +7197,7 @@ function App({ auth }) {
   const [receiptQueueSkippedIds, setReceiptQueueSkippedIds] = useState(() => new Set());
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalFilter, setBalanceModalFilter] = useState('All');
+  const [collectionDrilldownType, setCollectionDrilldownType] = useState('');
 
   useEffect(() => {
     const token = receiptQrTokenFromCurrentUrl();
@@ -7151,6 +7273,23 @@ function App({ auth }) {
     () => balanceReceivableRows.reduce((sum, row) => sum + Number(row.balance || 0), 0),
     [balanceReceivableRows],
   );
+
+  const donorCollectionBreakdown = useMemo(() => {
+    const donorRows = Array.isArray(donorState.donors) ? donorState.donors : [];
+    const generalDonors = donorRows
+      .filter(isConfirmedCurrentGeneralDonor)
+      .map(safeSponsorForRender);
+    return buildCollectionBreakdown(generalDonors, (donor) => donor.receivedAmount);
+  }, [donorState.donors]);
+
+  const mangalyaCollectionBreakdown = useMemo(() => {
+    const donorRows = Array.isArray(donorState.donors) ? donorState.donors : [];
+    const mangalyaDonors = donorRows
+      .filter(isVisibleCurrentMangalyaSponsor)
+      .map(safeSponsorForRender)
+      .filter((donor) => !isDirectBottuSponsor(donor));
+    return buildCollectionBreakdown(mangalyaDonors, (donor) => donor.receivedAmount);
+  }, [donorState.donors]);
 
   const newRegistrationRows = useMemo(
     () => sortParticipants(rows.filter((row) => !row.treasurerVerified), 'latest'),
@@ -7663,21 +7802,12 @@ function App({ auth }) {
                   <StatCard icon={HeartHandshake} label="Free Sponsorship" value={summary.freeSponsorship} tone="success" onClick={goToFreeSponsorship} />
                   <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
                   <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
-                  <StatCard icon={ClipboardList} label="New Registrations" value={summary.newRegistrations} tone="warning" onClick={goToNewRegistrations} />
-                  <StatCard icon={HeartHandshake} label="New Shashtipoorthi" value={summary.newShashtipoorthi} tone="warning" onClick={goToNewRegistrations} />
-                  <StatCard icon={HeartHandshake} label="New Bhimaratha" value={summary.newBhimaratha} tone="warning" onClick={goToNewRegistrations} />
                   <StatCard icon={Gift} label="KIT Issued" value={summary.kitIssued} />
-                  <StatCard icon={MessageCircle} label="Welcome Sent" value={summary.welcomeSent} tone="success" />
-                  <StatCard icon={MessageCircle} label="Welcome Pending" value={summary.welcomePending} tone="warning" onClick={goToParticipantManagement} />
-                  <StatCard icon={BadgeCheck} label="Payment Sent" value={summary.paymentSent} tone="success" onClick={goToParticipantManagement} />
-                  <StatCard icon={BadgeCheck} label="Payment Pending" value={summary.paymentPending} tone="warning" onClick={goToPaymentPending} />
-                  <StatCard icon={FileText} label="Shashtipoorthi Receipts Generated" value={summary.shashtipoorthiReceiptsGenerated} tone="success" />
-                  <StatCard icon={FileText} label="Shashtipoorthi Receipts Pending" value={summary.shashtipoorthiReceiptsPending} tone="warning" onClick={() => openEventView('shashtipoorthi')} />
-                  <StatCard icon={FileText} label="Bhimaratha Receipts Generated" value={summary.bhimarathaReceiptsGenerated} tone="success" onClick={() => openEventView('bhimaratha')} />
-                  <StatCard icon={FileText} label="Bhimaratha Receipts Pending" value={summary.bhimarathaReceiptsPending} tone="warning" onClick={() => openEventView('bhimaratha')} />
                   <StatCard icon={IndianRupee} label="Expected collection" value={formatCurrency(summary.expected)} />
                   <StatCard icon={IndianRupee} label="Received collection" value={formatCurrency(summary.received)} tone="success" />
                   <StatCard icon={IndianRupee} label="Balance receivable" value={formatCurrency(summary.balance)} tone="warning" onClick={() => setBalanceModalOpen(true)} />
+                  <StatCard icon={IndianRupee} label="Donors Collection" value={formatCurrency(donorCollectionBreakdown.total)} tone="success" onClick={() => setCollectionDrilldownType('donors')} />
+                  <StatCard icon={Gift} label="Mangalya Donors Collection" value={formatCurrency(mangalyaCollectionBreakdown.total)} tone="success" onClick={() => setCollectionDrilldownType('mangalya')} />
                 </div>
               </section>
 
@@ -7797,6 +7927,24 @@ function App({ auth }) {
               onClose={() => setBalanceModalOpen(false)}
               onOpenParticipant={openParticipantFromBalance}
               onEditPayment={editPaymentFromBalance}
+            />
+          ) : null}
+
+          {collectionDrilldownType === 'donors' && isPst ? (
+            <CollectionDrilldownModal
+              title="Donors Collection"
+              donorTypeLabel="Donors"
+              breakdown={donorCollectionBreakdown}
+              onClose={() => setCollectionDrilldownType('')}
+            />
+          ) : null}
+
+          {collectionDrilldownType === 'mangalya' && isPst ? (
+            <CollectionDrilldownModal
+              title="Mangalya Donors Collection"
+              donorTypeLabel="Mangalya Donors"
+              breakdown={mangalyaCollectionBreakdown}
+              onClose={() => setCollectionDrilldownType('')}
             />
           ) : null}
 
