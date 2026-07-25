@@ -1052,6 +1052,7 @@ assert.ok(frontend.includes('Donor confirmation saved to private Google Sheet'),
 assert.ok(frontend.includes('confirmedAmount') && frontend.includes('receivedAmount'), 'Previous donor edit form must include amount fields');
 assert.ok(frontend.includes('const currentYear = !eventYear || eventYear === ACTIVE_EVENT_YEAR'), 'Current donor visibility must allow blank event year when current amount is present');
 assert.ok(backend.includes("'Promised Amount'") && backend.includes("'Donation (₹)'"), 'Donor amount parsing must support promised amount and rupee donation headers');
+assert.ok(frontend.includes('const sponsorResetKey =') && frontend.includes('}, [sponsorResetKey]);'), 'Mangalya sponsor cards must not reset form state from unstable sponsor object identity');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
 assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');

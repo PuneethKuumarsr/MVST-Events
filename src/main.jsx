@@ -3783,6 +3783,29 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const normalizedContact = normalizeIndianMobileNumber(sponsor.contactNo);
   const identityReady = sponsor.identityReady !== false && Boolean(sponsor.donorId || !String(sponsor.id || '').startsWith('missing-donor-id:'));
   const qrPaymentReady = donorPaymentVerified(sponsor);
+  const sponsorResetKey = [
+    sponsor.id,
+    sponsor.sponsorName,
+    sponsor.donorName,
+    sponsor.contactNo,
+    sponsor.sponsored2025,
+    sponsor.sponsored2026,
+    sponsor.confirmedQuantity,
+    sponsor.receivedAmount,
+    sponsor.status,
+    sponsor.introducedBy,
+    sponsor.trusteeReference,
+    sponsor.paymentMode,
+    sponsor.paymentDate,
+    sponsor.collectedBy,
+    sponsor.treasurerVerified,
+    sponsor.remarks,
+    sponsor.receiptNumber,
+    sponsor.qrStatus,
+    sponsor.arrivalStatus,
+    sponsor.honourStatus,
+    sponsor.honouredAt,
+  ].map((value) => textValue(value, '')).join('|');
 
   useEffect(() => {
     setForm({
@@ -3806,7 +3829,7 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
     setReceiptNumberInput(sponsor.receiptNumber || '');
     setLastQrUrl('');
     setReceiptPreview('');
-  }, [sponsor]);
+  }, [sponsorResetKey]);
 
   async function saveSponsor(updates) {
     if (!writeEnabled || !sponsor.id || !identityReady) {
