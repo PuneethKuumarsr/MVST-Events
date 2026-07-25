@@ -498,6 +498,11 @@ function numberValue(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function boolValue(value) {
+  if (typeof value === 'boolean') return value;
+  return ['yes', 'true', '1', 'verified', 'received'].includes(textValue(value, '').trim().toLowerCase());
+}
+
 function normalizeIndianMobileNumber(rawMobile) {
   const digits = String(rawMobile || '').replace(/\D/g, '');
   const normalizedDigits = digits.startsWith('0') ? digits.replace(/^0+/, '') : digits;
@@ -991,7 +996,7 @@ function normalizeMangalyaReceiptNumber(value) {
 }
 
 function mangalyaQuantity(donor) {
-  const quantity = Number(donor?.quantity || donor?.confirmedQuantity || donor?.sponsored2026 || donor?.receivedQuantity || 0);
+  const quantity = numberValue(donor?.quantity || donor?.confirmedQuantity || donor?.sponsored2026 || donor?.receivedQuantity || 0);
   return Number.isInteger(quantity) && quantity >= 1 ? quantity : 0;
 }
 
@@ -1000,12 +1005,12 @@ function mangalyaTotal(donor) {
 }
 
 function isDirectBottuSponsor(sponsor) {
-  const nature = String(sponsor?.contributionNature || '').toLowerCase();
+  const nature = textValue(sponsor?.contributionNature, '').toLowerCase();
   return nature.includes('material') || nature.includes('kind');
 }
 
 function mangalyaCashAmount(sponsor) {
-  return isDirectBottuSponsor(sponsor) ? 0 : Number(sponsor?.confirmedAmount || sponsor?.amount || sponsor?.actualValue || 0);
+  return isDirectBottuSponsor(sponsor) ? 0 : numberValue(sponsor?.confirmedAmount || sponsor?.amount || sponsor?.actualValue || 0);
 }
 
 function mangalyaValueLabel(sponsor) {
@@ -1214,18 +1219,19 @@ function donorDonationType(donor) {
   if (donor.donorType === 'DONOR') return 'Donor';
   if (donor.donorType === 'MANGALYA') return 'Mangalya Donor';
   const text = [donor.donorType, donor.contributionType, donor.category, donor.canonicalCategory]
+    .map((value) => textValue(value, ''))
     .join(' ')
     .toLowerCase();
-  if (text.includes('mangalya') || Number(donor.confirmedQuantity || donor.sponsored2026 || donor.sponsored2025 || 0) > 0) {
+  if (text.includes('mangalya') || numberValue(donor.confirmedQuantity || donor.sponsored2026 || donor.sponsored2025 || 0) > 0) {
     return 'Mangalya Donor';
   }
   return 'Donor';
 }
 
 function donorPaymentVerified(donor) {
-  const status = String(donor?.status || donor?.paymentStatus || '').trim().toLowerCase();
+  const status = textValue(donor?.status || donor?.paymentStatus, '').trim().toLowerCase();
   if (isDirectBottuSponsor(donor) && isConfirmedSponsor(donor)) return true;
-  return Boolean(donor?.treasurerVerified) || status.includes('received');
+  return boolValue(donor?.treasurerVerified) || status.includes('received');
 }
 
 function donorQrPayload(donor, donationType) {
@@ -2975,6 +2981,11 @@ class SectionErrorBoundary extends React.Component {
     }
   }
 
+  resetAndRefresh = () => {
+    this.setState({ error: null });
+    if (this.props.onRefresh) this.props.onRefresh();
+  };
+
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -2990,7 +3001,7 @@ class SectionErrorBoundary extends React.Component {
           {this.state.error?.message ? <small>{this.state.error.message}</small> : null}
         </div>
         <div className="receipt-modal-actions">
-          {this.props.onRefresh ? <button type="button" onClick={this.props.onRefresh}>Refresh Section</button> : null}
+          {this.props.onRefresh ? <button type="button" onClick={this.resetAndRefresh}>Refresh Section</button> : null}
           {this.props.onHome ? <button type="button" onClick={this.props.onHome}>Back Home</button> : null}
         </div>
       </section>
@@ -3603,6 +3614,84 @@ function isReceivedSponsor(sponsor) {
 
 function sponsorDisplayName(sponsor) {
   return textValue(sponsor.sponsorName, '') || textValue(sponsor.donorName, '') || 'Unnamed sponsor';
+}
+
+function safeSponsorForRender(sponsor = {}) {
+  return {
+    ...sponsor,
+    id: textValue(sponsor.id, ''),
+    rowNumber: numberValue(sponsor.rowNumber, 0),
+    donorId: textValue(sponsor.donorId, ''),
+    donorType: textValue(sponsor.donorType, ''),
+    generalDonorSourceId: textValue(sponsor.generalDonorSourceId, ''),
+    sponsorName: textValue(sponsor.sponsorName, ''),
+    donorName: textValue(sponsor.donorName, ''),
+    contactNo: textValue(sponsor.contactNo, ''),
+    eventYear: textValue(sponsor.eventYear, ''),
+    eventName: textValue(sponsor.eventName, ''),
+    contributionType: textValue(sponsor.contributionType, ''),
+    category: textValue(sponsor.category, ''),
+    canonicalCategory: textValue(sponsor.canonicalCategory, ''),
+    contributionNature: textValue(sponsor.contributionNature, ''),
+    sponsored2025: numberValue(sponsor.sponsored2025 || sponsor.quantitySponsored || 0),
+    quantitySponsored: numberValue(sponsor.quantitySponsored || sponsor.sponsored2025 || 0),
+    sponsored2026: numberValue(sponsor.sponsored2026 || 0),
+    confirmedQuantity: numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0),
+    receivedQuantity: numberValue(sponsor.receivedQuantity || 0),
+    pendingQuantity: numberValue(sponsor.pendingQuantity || 0),
+    confirmedAmount: numberValue(sponsor.confirmedAmount || sponsor.amount || 0),
+    receivedAmount: numberValue(sponsor.receivedAmount || 0),
+    amount: numberValue(sponsor.amount || sponsor.confirmedAmount || 0),
+    actualValue: numberValue(sponsor.actualValue || 0),
+    estimatedValue: numberValue(sponsor.estimatedValue || 0),
+    balanceAmount: numberValue(sponsor.balanceAmount || 0),
+    unit: textValue(sponsor.unit, ''),
+    status: textValue(sponsor.status, 'Pending'),
+    remarks: textValue(sponsor.remarks, ''),
+    introducedBy: textValue(sponsor.introducedBy || sponsor.trusteeReference, ''),
+    trusteeReference: textValue(sponsor.trusteeReference || sponsor.introducedBy, ''),
+    paymentMode: textValue(sponsor.paymentMode, ''),
+    bankOrCash: textValue(sponsor.bankOrCash, ''),
+    paymentDate: textValue(sponsor.paymentDate, ''),
+    collectedBy: textValue(sponsor.collectedBy, ''),
+    receiptNumber: textValue(sponsor.receiptNumber, ''),
+    qrStatus: textValue(sponsor.qrStatus, ''),
+    arrivalStatus: textValue(sponsor.arrivalStatus, ''),
+    honourStatus: textValue(sponsor.honourStatus, ''),
+    honouredAt: textValue(sponsor.honouredAt, ''),
+    appealSentDate: textValue(sponsor.appealSentDate, ''),
+    sentDate: textValue(sponsor.sentDate, ''),
+    confirmationSentDate: textValue(sponsor.confirmationSentDate, ''),
+    paymentMessageSentDate: textValue(sponsor.paymentMessageSentDate, ''),
+    postEventSentDate: textValue(sponsor.postEventSentDate, ''),
+    whatsappSent: boolValue(sponsor.whatsappSent || sponsor.whatsAppSent),
+    whatsAppSent: boolValue(sponsor.whatsAppSent || sponsor.whatsappSent),
+    confirmationSent: boolValue(sponsor.confirmationSent),
+    paymentMessageSent: boolValue(sponsor.paymentMessageSent),
+    postEventSent: boolValue(sponsor.postEventSent),
+    treasurerVerified: boolValue(sponsor.treasurerVerified),
+    identityReady: sponsor.identityReady !== false,
+    qrUrl: textValue(sponsor.qrUrl, ''),
+  };
+}
+
+function safeRequirementForRender(row = {}) {
+  return {
+    ...row,
+    id: textValue(row.id, ''),
+    eventYear: textValue(row.eventYear, ''),
+    category: textValue(row.category, ''),
+    canonicalCategory: textValue(row.canonicalCategory, ''),
+    unit: textValue(row.unit, ''),
+    requiredQuantity: numberValue(row.requiredQuantity, 0),
+    confirmedQuantity: numberValue(row.confirmedQuantity, 0),
+    receivedQuantity: numberValue(row.receivedQuantity, 0),
+    remainingQuantity: numberValue(row.remainingQuantity, 0),
+    estimatedTotalCost: numberValue(row.estimatedTotalCost, 0),
+    confirmedAmount: numberValue(row.confirmedAmount, 0),
+    receivedAmount: numberValue(row.receivedAmount, 0),
+    remainingAmount: numberValue(row.remainingAmount, 0),
+  };
 }
 
 function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
@@ -4828,30 +4917,30 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const [sponsorQuery, setSponsorQuery] = useState('');
   const [quantityFilter, setQuantityFilter] = useState('All');
   const [drilldownKey, setDrilldownKey] = useState('');
-  const activeDonors = useMemo(() => donorRows.filter(isVisibleCurrentMangalyaSponsor), [donorRows]);
-  const activeRequirements = useMemo(() => requirementRows.filter((row) => isActiveEventYear(row.eventYear)), [requirementRows]);
+  const activeDonors = useMemo(() => donorRows.filter(isVisibleCurrentMangalyaSponsor).map(safeSponsorForRender), [donorRows]);
+  const activeRequirements = useMemo(() => requirementRows.filter((row) => isActiveEventYear(row.eventYear)).map(safeRequirementForRender), [requirementRows]);
 
   const summary = useMemo(() => {
     const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
     const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
     const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
-    const returningSponsors = confirmedSponsors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) > 0);
-    const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
-    const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + Number(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
-    const directBottus = directBottuSponsors.reduce((sum, sponsor) => sum + Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
+    const returningSponsors = confirmedSponsors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0);
+    const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
+    const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + numberValue(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
+    const directBottus = directBottuSponsors.reduce((sum, sponsor) => sum + numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
     const confirmedAmount = cashSponsors.reduce((sum, sponsor) => sum + sponsorAmount(sponsor), 0);
-    const receivedAmount = receivedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + Number(sponsor.receivedAmount || sponsorAmount(sponsor) || 0), 0);
-    const requirementQuantity = activeRequirements.reduce((sum, row) => sum + Number(row.requiredQuantity || 0), 0);
+    const receivedAmount = receivedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + numberValue(sponsor.receivedAmount || sponsorAmount(sponsor) || 0), 0);
+    const requirementQuantity = activeRequirements.reduce((sum, row) => sum + numberValue(row.requiredQuantity || 0), 0);
     return {
       totalSponsors: activeDonors.length,
       sponsorsConfirmed: confirmedSponsors.length,
       cashSponsors: cashSponsors.length,
       directBottuSponsors: directBottuSponsors.length,
-      sponsorsPending: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending').length,
-      newSponsors: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0).length,
+      sponsorsPending: activeDonors.filter((sponsor) => textValue(sponsor.status, '').toLowerCase() === 'pending').length,
+      newSponsors: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) === 0).length,
       returningSponsors: returningSponsors.length,
-      sponsored2025: activeDonors.reduce((sum, sponsor) => sum + Number(sponsor.sponsored2025 || 0), 0),
+      sponsored2025: activeDonors.reduce((sum, sponsor) => sum + numberValue(sponsor.sponsored2025 || 0), 0),
       confirmed2026: confirmedBottus,
       directBottus,
       remainingRequirement: Math.max(Number(requirementQuantity || requiredBottus || 0) - confirmedBottus, 0),
@@ -4861,20 +4950,20 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       balanceCollection: Math.max(confirmedAmount - receivedAmount, 0),
       averageBottus: confirmedSponsors.length ? confirmedBottus / confirmedSponsors.length : 0,
       topSponsors: [...confirmedSponsors]
-        .sort((a, b) => Number(b.confirmedQuantity || b.sponsored2026 || 0) - Number(a.confirmedQuantity || a.sponsored2026 || 0))
+        .sort((a, b) => numberValue(b.confirmedQuantity || b.sponsored2026 || 0) - numberValue(a.confirmedQuantity || a.sponsored2026 || 0))
         .slice(0, 4),
     };
   }, [activeDonors, activeRequirements, requiredBottus]);
 
   const requirementTotals = useMemo(() => activeRequirements.reduce((totals, row) => ({
-    requiredQuantity: totals.requiredQuantity + Number(row.requiredQuantity || 0),
-    confirmedQuantity: totals.confirmedQuantity + Number(row.confirmedQuantity || 0),
-    receivedQuantity: totals.receivedQuantity + Number(row.receivedQuantity || 0),
-    remainingQuantity: totals.remainingQuantity + Number(row.remainingQuantity || 0),
-    estimatedTotalCost: totals.estimatedTotalCost + Number(row.estimatedTotalCost || 0),
-    confirmedAmount: totals.confirmedAmount + Number(row.confirmedAmount || 0),
-    receivedAmount: totals.receivedAmount + Number(row.receivedAmount || 0),
-    remainingAmount: totals.remainingAmount + Number(row.remainingAmount || 0),
+    requiredQuantity: totals.requiredQuantity + numberValue(row.requiredQuantity || 0),
+    confirmedQuantity: totals.confirmedQuantity + numberValue(row.confirmedQuantity || 0),
+    receivedQuantity: totals.receivedQuantity + numberValue(row.receivedQuantity || 0),
+    remainingQuantity: totals.remainingQuantity + numberValue(row.remainingQuantity || 0),
+    estimatedTotalCost: totals.estimatedTotalCost + numberValue(row.estimatedTotalCost || 0),
+    confirmedAmount: totals.confirmedAmount + numberValue(row.confirmedAmount || 0),
+    receivedAmount: totals.receivedAmount + numberValue(row.receivedAmount || 0),
+    remainingAmount: totals.remainingAmount + numberValue(row.remainingAmount || 0),
   }), {
     requiredQuantity: 0,
     confirmedQuantity: 0,
@@ -4887,14 +4976,14 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   }), [activeRequirements]);
 
   const financialTotals = useMemo(() => activeDonors.reduce((totals, sponsor) => {
-    const received = Number(sponsor.receivedAmount || 0);
-    const estimated = Number(sponsor.estimatedValue || 0);
+    const received = numberValue(sponsor.receivedAmount || 0);
+    const estimated = numberValue(sponsor.estimatedValue || 0);
     const directBottu = isDirectBottuSponsor(sponsor);
-    const nature = String(sponsor.contributionNature || '').toLowerCase();
-    const mode = String(sponsor.paymentMode || sponsor.bankOrCash || '').toLowerCase();
+    const nature = textValue(sponsor.contributionNature, '').toLowerCase();
+    const mode = textValue(sponsor.paymentMode || sponsor.bankOrCash, '').toLowerCase();
     if (directBottu) {
       totals.directBottuDonors += 1;
-      totals.directBottuQuantity += Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
+      totals.directBottuQuantity += numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
       totals.inKindEstimatedValue += estimated;
     }
     if (nature.includes('service')) totals.serviceEstimatedValue += estimated;
@@ -4922,9 +5011,9 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
   const currentBulkDonor = bulkQueue[bulkIndex];
   const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
-  const sponsorQuantity = (sponsor) => Number(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
-  const sponsorReceived = (sponsor) => Number(sponsor.receivedAmount || 0);
-  const sponsorBalance = (sponsor) => Math.max(Number(sponsor.balanceAmount || 0) || (sponsorAmount(sponsor) - sponsorReceived(sponsor)), 0);
+  const sponsorQuantity = (sponsor) => numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
+  const sponsorReceived = (sponsor) => numberValue(sponsor.receivedAmount || 0);
+  const sponsorBalance = (sponsor) => Math.max(numberValue(sponsor.balanceAmount || 0) || (sponsorAmount(sponsor) - sponsorReceived(sponsor)), 0);
   const drilldown = useMemo(() => {
     const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
@@ -4958,13 +5047,13 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       sponsorsPending: {
         title: 'Sponsors Pending',
         value: summary.sponsorsPending,
-        rows: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending'),
+        rows: activeDonors.filter((sponsor) => textValue(sponsor.status, '').toLowerCase() === 'pending'),
         note: 'Rows still marked Pending.',
       },
       newSponsors: {
         title: 'New Sponsors',
         value: summary.newSponsors,
-        rows: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) === 0),
+        rows: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) === 0),
         note: 'Rows with no previous-year sponsored quantity.',
       },
       returningSponsors: {
@@ -4976,7 +5065,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       previousQty: {
         title: 'Previous Qty',
         value: summary.sponsored2025,
-        rows: activeDonors.filter((sponsor) => Number(sponsor.sponsored2025 || 0) > 0),
+        rows: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0),
         note: 'Donors with previous-year quantity history.',
       },
       confirmedQty: {
@@ -4994,7 +5083,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       remainingRequirement: {
         title: 'Remaining Requirement',
         value: summary.remainingRequirement,
-        rows: activeDonors.filter((sponsor) => String(sponsor.status || '').toLowerCase() === 'pending'),
+        rows: activeDonors.filter((sponsor) => textValue(sponsor.status, '').toLowerCase() === 'pending'),
         note: 'Calculated from requirement quantity minus confirmed quantity. Pending sponsor rows are shown for follow-up.',
       },
       expectedCollection: {
@@ -5063,19 +5152,20 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         if (sponsorFilter === 'whatsapp-pending') return !donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'whatsapp-sent') return donorJourneySent(sponsor, 'appeal');
         if (sponsorFilter === 'confirmed-quantity') return isConfirmedSponsor(sponsor);
-        if (sponsorFilter === 'new-sponsors') return Number(sponsor.sponsored2025 || 0) === 0;
-        if (sponsorFilter === 'returning-sponsors') return isConfirmedSponsor(sponsor) && Number(sponsor.sponsored2025 || 0) > 0;
-        if (sponsorFilter !== 'all') return String(sponsor.status || '').toLowerCase() === sponsorFilter;
+        if (sponsorFilter === 'new-sponsors') return numberValue(sponsor.sponsored2025 || 0) === 0;
+        if (sponsorFilter === 'returning-sponsors') return isConfirmedSponsor(sponsor) && numberValue(sponsor.sponsored2025 || 0) > 0;
+        if (sponsorFilter !== 'all') return textValue(sponsor.status, '').toLowerCase() === sponsorFilter;
         return true;
       })
       .filter((sponsor) => {
         if (quantityFilter === 'All') return true;
-        if (quantityFilter === '3+') return Number(sponsor.sponsored2026 || 0) >= 3;
-        return Number(sponsor.sponsored2026 || 0) === Number(quantityFilter);
+        if (quantityFilter === '3+') return numberValue(sponsor.sponsored2026 || 0) >= 3;
+        return numberValue(sponsor.sponsored2026 || 0) === Number(quantityFilter);
       })
       .filter((sponsor) => {
         if (!search) return true;
         return [sponsorDisplayName(sponsor), sponsor.contactNo, sponsor.status, sponsor.sponsored2025, sponsor.sponsored2026]
+          .map((value) => textValue(value, ''))
           .join(' ')
           .toLowerCase()
           .includes(search);
@@ -7682,7 +7772,7 @@ function App({ auth }) {
           {activeView === 'mangalya-donors' && isPst && !mustChangePassword ? (
             <SectionErrorBoundary
               title="Mangalya Donors"
-              resetKey={`${donorState.lastRefreshedAt || ''}-${donorState.donors.length}`}
+              resetKey={`${donorState.lastRefreshedAt || ''}-${Array.isArray(donorState.donors) ? donorState.donors.length : 0}`}
               onRefresh={donorState.refresh}
               onHome={() => setActiveView('home')}
             >
