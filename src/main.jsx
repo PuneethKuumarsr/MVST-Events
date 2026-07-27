@@ -2036,6 +2036,14 @@ function sponsorAmount(sponsor) {
   return numberValue(sponsor.confirmedAmount || sponsor.amount || sponsor.actualValue || 0);
 }
 
+function sponsorReceived(sponsor) {
+  return numberValue(sponsor.receivedAmount || 0);
+}
+
+function sponsorBalance(sponsor) {
+  return Math.max(numberValue(sponsor.balanceAmount || 0) || (sponsorAmount(sponsor) - sponsorReceived(sponsor)), 0);
+}
+
 function sponsorQuantityText(quantity, unit) {
   if (!Number(quantity)) return unit || 'sponsorship';
   return `${quantity} ${unit}${Number(quantity) === 1 || String(unit).endsWith('s') ? '' : 's'}`;
@@ -3623,6 +3631,10 @@ function isReceivedSponsor(sponsor) {
   return ['received', 'fully received'].includes(textValue(sponsor.status, '').toLowerCase());
 }
 
+function isCollectionPendingSponsor(sponsor) {
+  return isConfirmedSponsor(sponsor) && !isReceivedSponsor(sponsor);
+}
+
 function sponsorDisplayName(sponsor) {
   return textValue(sponsor.sponsorName, '') || textValue(sponsor.donorName, '') || 'Unnamed sponsor';
 }
@@ -3784,6 +3796,8 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const normalizedContact = normalizeIndianMobileNumber(sponsor.contactNo);
   const identityReady = sponsor.identityReady !== false && Boolean(sponsor.donorId || !String(sponsor.id || '').startsWith('missing-donor-id:'));
   const qrPaymentReady = donorPaymentVerified(sponsor);
+  const directBottu = isDirectBottuSponsor(sponsor);
+  const collectionPending = isCollectionPendingSponsor(sponsor);
   const sponsorResetKey = [
     sponsor.id,
     sponsor.sponsorName,
@@ -4018,6 +4032,23 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         <span><small>Contribution</small><b>{mangalyaValueLabel(sponsor)}</b></span>
       </div>
 
+      {collectionPending ? (
+        <div className={`collection-today-strip ${directBottu ? 'direct-bottu' : 'cash-pending'}`}>
+          <div>
+            <span>{directBottu ? 'Direct Bottu Collection Pending' : 'Cash Collection Pending'}</span>
+            <strong>{directBottu ? `${sponsorQuantity(sponsor) || 1} Bottu${(sponsorQuantity(sponsor) || 1) === 1 ? '' : 's'}` : formatCurrency(sponsorBalance(sponsor) || sponsorAmount(sponsor))}</strong>
+          </div>
+          <div>
+            <small>Reference</small>
+            <b>{sponsor.introducedBy || sponsor.trusteeReference || 'Not entered'}</b>
+          </div>
+          <div>
+            <small>Collected By</small>
+            <b>{sponsor.collectedBy || 'Not entered'}</b>
+          </div>
+        </div>
+      ) : null}
+
       <div className="detail-grid donor-detail-grid">
         <p><span>Donor ID</span>{sponsor.donorId || 'Migration required'}</p>
         <p><span>Receipt Number</span>{sponsor.receiptNumber || 'Not assigned'}</p>
@@ -4105,7 +4136,17 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
         ) : null}
         <button type="button" onClick={() => setEditing(!editing)} disabled={!identityReady}>Edit</button>
         <button type="button" onClick={() => saveSponsor({ status: 'Paid' })} disabled={!writeEnabled || saving || !identityReady}>Mark Paid</button>
-        <button type="button" onClick={() => saveSponsor({ status: 'Received' })} disabled={!writeEnabled || saving || !identityReady}>Mark Received</button>
+        <button
+          type="button"
+          onClick={() => saveSponsor({
+            status: 'Received',
+            receivedAmount: directBottu ? sponsor.receivedAmount : (sponsor.receivedAmount || sponsorAmount(sponsor)),
+            receivedQuantity: sponsor.receivedQuantity || sponsorQuantity(sponsor),
+          })}
+          disabled={!writeEnabled || saving || !identityReady}
+        >
+          {directBottu ? 'Mark Bottu Received' : 'Mark Payment Received'}
+        </button>
       </div>
 
       {opened ? (
@@ -5007,6 +5048,9 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
     const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
     const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
+    const collectionPendingSponsors = confirmedSponsors.filter(isCollectionPendingSponsor);
+    const cashCollectionPendingSponsors = collectionPendingSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
+    const directBottuCollectionPendingSponsors = collectionPendingSponsors.filter(isDirectBottuSponsor);
     const returningSponsors = confirmedSponsors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0);
     const confirmedBottus = confirmedSponsors.reduce((sum, sponsor) => sum + numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0), 0);
     const receivedBottus = receivedSponsors.reduce((sum, sponsor) => sum + numberValue(sponsor.receivedQuantity || sponsor.sponsored2026 || 0), 0);
@@ -5019,8 +5063,15 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       sponsorsConfirmed: confirmedSponsors.length,
       cashSponsors: cashSponsors.length,
       directBottuSponsors: directBottuSponsors.length,
+      collectionPending: collectionPendingSponsors.length,
+      cashCollectionPending: cashCollectionPendingSponsors.length,
+      cashCollectionPendingAmount: cashCollectionPendingSponsors.reduce((sum, sponsor) => sum + (sponsorBalance(sponsor) || sponsorAmount(sponsor)), 0),
+      directBottuCollectionPending: directBottuCollectionPendingSponsors.length,
+      directBottuCollectionPendingQty: directBottuCollectionPendingSponsors.reduce((sum, sponsor) => sum + sponsorQuantity(sponsor), 0),
+      collectionReceived: receivedSponsors.length,
       sponsorsPending: activeDonors.filter((sponsor) => textValue(sponsor.status, '').toLowerCase() === 'pending').length,
       newSponsors: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) === 0).length,
+      previousDonors: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0).length,
       returningSponsors: returningSponsors.length,
       sponsored2025: activeDonors.reduce((sum, sponsor) => sum + numberValue(sponsor.sponsored2025 || 0), 0),
       confirmed2026: confirmedBottus,
@@ -5093,14 +5144,14 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
   const currentBulkDonor = bulkQueue[bulkIndex];
   const hasNextBulkDonor = bulkStarted && bulkIndex < bulkQueue.length - 1;
-  const sponsorQuantity = (sponsor) => numberValue(sponsor.confirmedQuantity || sponsor.sponsored2026 || 0);
-  const sponsorReceived = (sponsor) => numberValue(sponsor.receivedAmount || 0);
-  const sponsorBalance = (sponsor) => Math.max(numberValue(sponsor.balanceAmount || 0) || (sponsorAmount(sponsor) - sponsorReceived(sponsor)), 0);
   const drilldown = useMemo(() => {
     const confirmedSponsors = activeDonors.filter(isConfirmedSponsor);
     const receivedSponsors = activeDonors.filter(isReceivedSponsor);
     const cashSponsors = confirmedSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
     const directBottuSponsors = confirmedSponsors.filter(isDirectBottuSponsor);
+    const collectionPendingSponsors = confirmedSponsors.filter(isCollectionPendingSponsor);
+    const cashCollectionPendingSponsors = collectionPendingSponsors.filter((sponsor) => !isDirectBottuSponsor(sponsor));
+    const directBottuCollectionPendingSponsors = collectionPendingSponsors.filter(isDirectBottuSponsor);
     const returningSponsors = confirmedSponsors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0);
     const drilldowns = {
       totalSponsors: {
@@ -5127,6 +5178,30 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         rows: directBottuSponsors,
         note: 'Confirmed in-kind Mangalya Bottu sponsors. These do not add to cash collection.',
       },
+      collectionToday: {
+        title: 'Collection Today',
+        value: summary.collectionPending,
+        rows: collectionPendingSponsors,
+        note: 'Confirmed sponsors pending cash collection or direct Bottu pickup.',
+      },
+      cashCollectionPending: {
+        title: 'Cash Collection Pending',
+        value: formatCurrency(summary.cashCollectionPendingAmount),
+        rows: cashCollectionPendingSponsors,
+        note: 'Confirmed cash sponsors where collection is not yet marked Received.',
+      },
+      directBottuCollectionPending: {
+        title: 'Direct Bottu Collection Pending',
+        value: summary.directBottuCollectionPendingQty,
+        rows: directBottuCollectionPendingSponsors,
+        note: 'Direct Bottu sponsors still pending physical Bottu collection.',
+      },
+      collectionReceived: {
+        title: 'Collection Received',
+        value: summary.collectionReceived,
+        rows: receivedSponsors,
+        note: 'Sponsors already marked Received.',
+      },
       sponsorsPending: {
         title: 'Sponsors Pending',
         value: summary.sponsorsPending,
@@ -5134,22 +5209,22 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         note: 'Rows still marked Pending.',
       },
       newSponsors: {
-        title: 'New Sponsors',
+        title: 'New Donors',
         value: summary.newSponsors,
         rows: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) === 0),
         note: 'Rows with no previous-year sponsored quantity.',
       },
       returningSponsors: {
-        title: 'Old Sponsors Donating This Year',
+        title: 'Previous Donors Donating This Year',
         value: summary.returningSponsors,
         rows: returningSponsors,
         note: 'Previous-year sponsors who are confirmed again for the current event year.',
       },
       previousQty: {
-        title: 'Previous Qty',
-        value: summary.sponsored2025,
+        title: 'Previous Donors',
+        value: summary.previousDonors,
         rows: activeDonors.filter((sponsor) => numberValue(sponsor.sponsored2025 || 0) > 0),
-        note: 'Donors with previous-year quantity history.',
+        note: 'Donors with previous-year sponsorship history.',
       },
       confirmedQty: {
         title: 'Confirmed Qty',
@@ -5237,6 +5312,9 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         if (sponsorFilter === 'confirmed-quantity') return isConfirmedSponsor(sponsor);
         if (sponsorFilter === 'new-sponsors') return numberValue(sponsor.sponsored2025 || 0) === 0;
         if (sponsorFilter === 'returning-sponsors') return isConfirmedSponsor(sponsor) && numberValue(sponsor.sponsored2025 || 0) > 0;
+        if (sponsorFilter === 'collection-today') return isCollectionPendingSponsor(sponsor);
+        if (sponsorFilter === 'cash-collection-pending') return isCollectionPendingSponsor(sponsor) && !isDirectBottuSponsor(sponsor);
+        if (sponsorFilter === 'direct-bottu-collection-pending') return isCollectionPendingSponsor(sponsor) && isDirectBottuSponsor(sponsor);
         if (sponsorFilter !== 'all') return textValue(sponsor.status, '').toLowerCase() === sponsorFilter;
         return true;
       })
@@ -5404,6 +5482,15 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
       <div className="sponsorship-summary-block">
         <div>
+          <p className="event-label">Collection Today</p>
+          <div className="stats-grid donor-stats-grid collection-today-grid">
+            <StatCard icon={BadgeCheck} label="Collection Today" value={summary.collectionPending} tone="warning" onClick={() => { setSponsorFilter('collection-today'); setDrilldownKey('collectionToday'); }} />
+            <StatCard icon={IndianRupee} label="Cash Collection Pending" value={formatCurrency(summary.cashCollectionPendingAmount)} tone="warning" onClick={() => { setSponsorFilter('cash-collection-pending'); setDrilldownKey('cashCollectionPending'); }} />
+            <StatCard icon={Gift} label="Direct Bottu Pending" value={`${summary.directBottuCollectionPendingQty} Bottus`} tone="warning" onClick={() => { setSponsorFilter('direct-bottu-collection-pending'); setDrilldownKey('directBottuCollectionPending'); }} />
+            <StatCard icon={CheckCircle2} label="Collection Received" value={summary.collectionReceived} tone="success" onClick={() => setDrilldownKey('collectionReceived')} />
+          </div>
+        </div>
+        <div>
           <p className="event-label">Sponsors</p>
           <div className="stats-grid donor-stats-grid">
             <StatCard icon={UsersRound} label="Total Sponsors" value={summary.totalSponsors} onClick={() => setDrilldownKey('totalSponsors')} />
@@ -5411,14 +5498,15 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
             <StatCard icon={IndianRupee} label="Cash Sponsors" value={summary.cashSponsors} tone="success" onClick={() => setDrilldownKey('cashSponsors')} />
             <StatCard icon={Gift} label="Direct Bottu Sponsors" value={summary.directBottuSponsors} tone="warning" onClick={() => setDrilldownKey('directBottuSponsors')} />
             <StatCard icon={AlertTriangle} label="Sponsors Pending" value={summary.sponsorsPending} tone="warning" onClick={() => setDrilldownKey('sponsorsPending')} />
-            <StatCard icon={Sparkles} label="New Sponsors" value={summary.newSponsors} onClick={() => setDrilldownKey('newSponsors')} />
-            <StatCard icon={BadgeCheck} label="Old Sponsors Donating This Year" value={summary.returningSponsors} tone="success" onClick={() => { setSponsorFilter('returning-sponsors'); setDrilldownKey('returningSponsors'); }} />
+            <StatCard icon={Sparkles} label="New Donors" value={summary.newSponsors} onClick={() => setDrilldownKey('newSponsors')} />
+            <StatCard icon={BadgeCheck} label="Previous Donors Donating This Year" value={summary.returningSponsors} tone="success" onClick={() => { setSponsorFilter('returning-sponsors'); setDrilldownKey('returningSponsors'); }} />
           </div>
         </div>
         <div>
-          <p className="event-label">Requirement Quantity</p>
+          <p className="event-label">Donor Type & Quantity</p>
           <div className="stats-grid donor-stats-grid">
-            <StatCard icon={Gift} label="Previous Qty" value={summary.sponsored2025} onClick={() => setDrilldownKey('previousQty')} />
+            <StatCard icon={Gift} label="Previous Donors" value={summary.previousDonors} onClick={() => setDrilldownKey('previousQty')} />
+            <StatCard icon={Sparkles} label="New Donors" value={summary.newSponsors} onClick={() => setDrilldownKey('newSponsors')} />
             <StatCard icon={Gift} label="Confirmed Qty" value={summary.confirmed2026} tone="success" onClick={() => { setSponsorFilter('confirmed-quantity'); setDrilldownKey('confirmedQty'); }} />
             <StatCard icon={Gift} label="Direct Bottu Qty" value={summary.directBottus} tone="warning" onClick={() => setDrilldownKey('directBottuQty')} />
             <StatCard icon={Gift} label="Remaining Requirement" value={summary.remainingRequirement} tone="warning" onClick={() => setDrilldownKey('remainingRequirement')} />
@@ -5505,7 +5593,10 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <option value="confirmed">Confirmed</option>
           <option value="confirmed-quantity">Confirmed Quantity</option>
           <option value="new-sponsors">New Sponsors</option>
-          <option value="returning-sponsors">Old Sponsors Donating This Year</option>
+          <option value="returning-sponsors">Previous Donors Donating This Year</option>
+          <option value="collection-today">Collection Today</option>
+          <option value="cash-collection-pending">Cash Collection Pending</option>
+          <option value="direct-bottu-collection-pending">Direct Bottu Collection Pending</option>
           <option value="paid">Paid</option>
           <option value="received">Received</option>
           <option value="cancelled">Cancelled</option>
@@ -5553,12 +5644,33 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       {sponsorFilter === 'returning-sponsors' ? (
         <div className="confirmed-sponsors-panel">
           <div>
-            <p>Old Sponsors Donating This Year</p>
+            <p>Previous Donors Donating This Year</p>
             <strong>{visibleDonors.length} returning sponsors with WhatsApp and QR actions below</strong>
           </div>
           <div className="confirmed-sponsors-list">
             {visibleDonors.map((sponsor) => (
               <span key={sponsor.id}>{sponsorDisplayName(sponsor)} - {sponsor.confirmedQuantity || sponsor.sponsored2026 || 0} {sponsor.unit || 'qty'} - {isDirectBottuSponsor(sponsor) ? 'Direct Bottu' : formatCurrency(sponsorAmount(sponsor))}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {['collection-today', 'cash-collection-pending', 'direct-bottu-collection-pending'].includes(sponsorFilter) ? (
+        <div className="confirmed-sponsors-panel collection-today-panel">
+          <div>
+            <p>Collection Today</p>
+            <strong>
+              {visibleDonors.length} pending collection rows · Cash {formatCurrency(visibleDonors.filter((sponsor) => !isDirectBottuSponsor(sponsor)).reduce((sum, sponsor) => sum + (sponsorBalance(sponsor) || sponsorAmount(sponsor)), 0))} · Direct Bottus {visibleDonors.filter(isDirectBottuSponsor).reduce((sum, sponsor) => sum + sponsorQuantity(sponsor), 0)}
+            </strong>
+          </div>
+          <div className="collection-today-list">
+            {visibleDonors.map((sponsor) => (
+              <article key={`collection-${sponsor.id}`}>
+                <strong>{sponsorDisplayName(sponsor)}</strong>
+                <span>{isDirectBottuSponsor(sponsor) ? `${sponsorQuantity(sponsor) || 1} direct Bottu${(sponsorQuantity(sponsor) || 1) === 1 ? '' : 's'}` : formatCurrency(sponsorBalance(sponsor) || sponsorAmount(sponsor))}</span>
+                <span>Ref: {sponsor.introducedBy || sponsor.trusteeReference || 'Not entered'}</span>
+                <span>{mobileValidationStatus(sponsor.contactNo).status === 'ok' ? sponsor.contactNo : 'Valid mobile required'}</span>
+              </article>
             ))}
           </div>
         </div>

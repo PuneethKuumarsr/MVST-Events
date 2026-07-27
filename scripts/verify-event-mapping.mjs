@@ -305,7 +305,7 @@ assert.ok(frontend.includes('Remaining Requirement'), 'Sponsorship dashboard mus
 assert.ok(frontend.includes('Expected Collection'), 'Sponsorship dashboard must show collection summary');
 assert.ok(frontend.includes('Top Sponsors'), 'Sponsorship dashboard must show top sponsors');
 assert.ok(frontend.includes('Mark Paid'), 'Sponsor cards must support Mark Paid');
-assert.ok(frontend.includes('Mark Received'), 'Sponsor cards must support Mark Received');
+assert.ok(frontend.includes('Mark Payment Received') && frontend.includes('Mark Bottu Received'), 'Sponsor cards must support clear received actions for cash and direct Bottu');
 assert.ok(frontend.includes('Donor Journey'), 'Sponsor cards must show the donor journey');
 assert.ok(frontend.includes('DONOR_JOURNEY_STEPS'), 'Sponsor cards must track donor journey steps separately');
 assert.ok(frontend.includes('journey-sent-button'), 'Sent donor journey actions must have a completed visual state');
@@ -1055,6 +1055,12 @@ assert.ok(frontend.includes("if (donor.donorType === 'DONOR') return amount > 0 
 assert.ok(backend.includes("'Promised Amount'") && backend.includes("'Donation (₹)'"), 'Donor amount parsing must support promised amount and rupee donation headers');
 assert.ok(frontend.includes('const sponsorResetKey =') && frontend.includes('}, [sponsorResetKey]);'), 'Mangalya sponsor cards must not reset form state from unstable sponsor object identity');
 assert.ok((frontend.match(/const returningSponsors = confirmedSponsors\.filter/g) || []).length >= 2, 'Mangalya donor summary and drilldown must each define returning sponsors in scope');
+assert.ok(frontend.includes('Collection Today'), 'Mangalya Donors must show a Collection Today work queue');
+assert.ok(frontend.includes('Cash Collection Pending'), 'Mangalya Donors must show pending cash collection');
+assert.ok(frontend.includes('Direct Bottu Collection Pending'), 'Mangalya Donors must show pending direct Bottu collection');
+assert.ok(frontend.includes('collection-today-strip'), 'Mangalya Donor cards must show per-sponsor collection cues');
+assert.ok(frontend.includes('Mark Bottu Received'), 'Direct Bottu sponsors must have a clear Bottu received action');
+assert.ok(frontend.includes('Mark Payment Received'), 'Cash sponsors must have a clear payment received action');
 assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates)'), 'Participant bulk queue must save delivery status immediately');
 assert.ok(frontend.includes("await saveDonor(donor.id, donorJourneySentUpdates('appeal'))"), 'Sponsorship bulk queue must save sent status immediately');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');

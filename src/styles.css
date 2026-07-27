@@ -2783,6 +2783,74 @@ main {
   margin-bottom: 10px;
 }
 
+.collection-today-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.collection-today-strip {
+  display: grid;
+  grid-template-columns: 1.15fr 0.9fr 0.9fr;
+  gap: 8px;
+  margin: 10px 0;
+  border: 1px solid rgba(120, 31, 42, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 243, 212, 0.72);
+  padding: 10px;
+}
+
+.collection-today-strip.direct-bottu {
+  background: rgba(240, 220, 168, 0.38);
+}
+
+.collection-today-strip.cash-pending {
+  background: rgba(221, 171, 78, 0.18);
+}
+
+.collection-today-strip div {
+  display: grid;
+  gap: 3px;
+}
+
+.collection-today-strip span,
+.collection-today-strip small {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.collection-today-strip strong,
+.collection-today-strip b {
+  color: var(--maroon-deep);
+  font-size: 0.94rem;
+}
+
+.collection-today-list {
+  display: grid;
+  gap: 8px;
+}
+
+.collection-today-list article {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(110px, 0.75fr) minmax(130px, 0.9fr) minmax(110px, 0.7fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(120, 31, 42, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.86);
+  padding: 10px;
+}
+
+.collection-today-list strong {
+  color: var(--maroon-deep);
+}
+
+.collection-today-list span {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
 .sponsorship-summary-block {
   display: grid;
   gap: 14px;
@@ -3315,6 +3383,10 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .collection-today-list article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sponsorship-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3325,6 +3397,9 @@ main {
   .requirement-total-grid,
   .mangalya-drilldown-summary,
   .sponsorship-controls,
+  .collection-today-grid,
+  .collection-today-strip,
+  .collection-today-list article,
   .sponsorship-money-grid {
     grid-template-columns: 1fr;
   }
