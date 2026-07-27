@@ -632,7 +632,8 @@ main {
   margin: 12px 0;
 }
 
-.detail-grid p {
+.detail-grid p,
+.detail-grid div {
   display: grid;
   gap: 4px;
   margin: 0;
@@ -641,6 +642,98 @@ main {
   border-radius: 8px;
   color: #4a2b24;
   line-height: 1.35;
+}
+
+.expenses-section .event-note {
+  margin-bottom: 16px;
+}
+
+.expense-stats-grid {
+  margin-bottom: 14px;
+}
+
+.expense-breakdown-card,
+.expense-form {
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.expense-breakdown-card h3 {
+  margin: 0 0 10px;
+  color: var(--maroon-deep);
+}
+
+.expense-breakdown-card p,
+.save-note {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.expense-form .compact {
+  margin-bottom: 10px;
+}
+
+.expense-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.expense-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.expense-form-grid input,
+.expense-form-grid select,
+.expense-form-grid textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 248, 0.94);
+  color: var(--ink);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.expense-form-grid textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.wide-field {
+  grid-column: span 2;
+}
+
+.expense-form .primary-action {
+  margin-top: 12px;
+}
+
+.expense-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.expense-card .donor-message-preview {
+  white-space: pre-wrap;
+}
+
+.expense-modal {
+  max-width: 860px;
+}
+
+.modal-list {
+  max-height: 56vh;
+  overflow: auto;
 }
 
 .links-row a,
@@ -705,6 +798,10 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .expense-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .search-field {
     grid-column: 1 / -1;
   }
@@ -750,8 +847,13 @@ main {
   .controls,
   .money-grid,
   .detail-grid,
+  .expense-form-grid,
   .whatsapp-grid {
     grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: 1;
   }
 
   .stats-grid {

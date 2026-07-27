@@ -1087,7 +1087,16 @@ assert.ok(backend.includes("role: 'Representative'"), 'Backend must import repre
 assert.ok(!backend.includes("role: 'Secretary', name: representative"), 'Backend must not infer Secretary from representative details');
 assert.ok(frontend.includes('useMangalyaDonors(isPst)'), 'Frontend must not load donor APIs for volunteers');
 assert.ok(frontend.includes('useSponsorshipRequirements(isPst)'), 'Frontend must not load requirements APIs for volunteers');
+assert.ok(frontend.includes('useExpenses(isPst)'), 'Frontend must not load expense APIs for volunteers');
 assert.ok(frontend.includes('useWhatsAppGroupConfig(isPst)'), 'Frontend must not load PST admins for volunteers');
+assert.ok(frontend.includes("activeView === 'expenses' && isPst"), 'Expenses module must be PST-only in the frontend');
+assert.ok(frontend.includes('function ExpensesSection'), 'Frontend must include the Expenses section');
+assert.ok(frontend.includes('Cash Holder Breakdown'), 'Expenses section must show cash holder tracking');
+assert.ok(frontend.includes('Add Expense'), 'Expenses section must allow adding new expense records');
+assert.ok(backend.includes("app.get('/api/expenses', requirePst"), 'Backend expenses API must require PST access');
+assert.ok(backend.includes("app.post('/api/expenses', requirePst"), 'Backend expense writes must require PST access');
+assert.ok(backend.includes('EXPENSES_RANGE'), 'Backend must support configurable Expenses sheet range');
+assert.ok(envExample.includes('EXPENSES_SHEET_ID=') && envExample.includes('EXPENSES_RANGE='), 'Env example must include Expenses sheet configuration');
 assert.ok(frontend.includes('backendError.status === 401 || backendError.status === 403'), 'Frontend must not fall back to public CSV after auth failure');
 assert.ok(frontend.includes('VolunteerParticipantCard'), 'Volunteer/Crew participant list must use restricted participant cards');
 const volunteerCardBody = frontend.slice(

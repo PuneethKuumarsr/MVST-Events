@@ -54,6 +54,37 @@ const PUBLIC_PORTAL_ORIGIN = (import.meta.env.VITE_PUBLIC_PORTAL_ORIGIN || impor
 const RECEIPT_TEXT_COLOR = '#0B2D5C';
 const MANGALYA_RATE = 15000;
 const MANGALYA_RECEIPT_TEXT_COLOR = '#0B2D5C';
+const EXPENSE_HEADS = [
+  'Choultry',
+  'Breakfast',
+  'Lunch / Food',
+  'Vegetables',
+  'Fruits',
+  'Fruits & Coconut',
+  'Flowers',
+  'Flower Decoration',
+  'Pooja Materials',
+  'Homa Materials',
+  'Prasadam',
+  'Sweets',
+  'Photo & Video',
+  'Photo Frames',
+  'Infrastructure',
+  'Drinking Water',
+  'Cooking Water',
+  'Cooking Oil',
+  'Gas',
+  'Grocery',
+  'Cutlery',
+  'Vessels',
+  'Printing / Stationery',
+  'Advertisement',
+  'Transport',
+  'Labour',
+  'Other',
+];
+const EXPENSE_PAYMENT_MODES = ['Cash', 'Bank Transfer', 'UPI', 'Cheque', 'Pending'];
+const EXPENSE_STATUSES = ['Paid', 'Pending', 'Reimbursable', 'Cancelled'];
 const mangalyaReceiptLayout = {
   receiptNo: [
     { x: 88, y: 219, width: 86, height: 28 },
@@ -2809,6 +2840,78 @@ function useMangalyaDonors(enabled = true) {
   };
 }
 
+function useExpenses(enabled = true) {
+  const [expenses, setExpenses] = useState([]);
+  const [status, setStatus] = useState('Loading expenses...');
+  const [error, setError] = useState('');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
+  const [writeEnabled, setWriteEnabled] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  function applyPayload(payload) {
+    const refreshedAt = payload.refreshedAt || new Date().toISOString();
+    setExpenses(payload.rows || []);
+    setLastRefreshedAt(refreshedAt);
+    setWriteEnabled(Boolean(payload.writeEnabled));
+    setStatus(`Private Google Sheet. Last refreshed: ${formatRefreshTime(refreshedAt)}`);
+    setError(payload.notice || '');
+  }
+
+  async function load(forceRefresh = false, aliveRef = { current: true }) {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/expenses' + (forceRefresh ? '/refresh' : ''), {
+        method: forceRefresh ? 'POST' : 'GET',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `Expenses API returned ${response.status}`);
+      if (!aliveRef.current) return;
+      applyPayload(payload);
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setError(loadError.message || 'Unable to load expenses');
+      setWriteEnabled(false);
+    } finally {
+      if (aliveRef.current) setIsRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const aliveRef = { current: true };
+    load(false, aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [enabled]);
+
+  return {
+    expenses,
+    status,
+    error,
+    lastRefreshedAt,
+    writeEnabled,
+    isRefreshing,
+    refresh: () => load(true),
+    addExpense: async (expense) => {
+      const response = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(expense),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `Expense save returned ${response.status}`);
+      }
+      applyPayload(payload);
+      return payload;
+    },
+  };
+}
+
 function useSponsorshipRequirements(enabled = true) {
   const [requirements, setRequirements] = useState([]);
   const [status, setStatus] = useState('Loading sponsorship requirements...');
@@ -3765,6 +3868,42 @@ function buildCollectionBreakdown(rows, amountGetter) {
   };
 }
 
+function expenseModeKey(mode) {
+  const normalized = textValue(mode, '').toLowerCase();
+  if (normalized.includes('cash')) return 'cash';
+  if (normalized.includes('upi')) return 'upi';
+  if (normalized.includes('cheque') || normalized.includes('check')) return 'cheque';
+  if (normalized.includes('bank') || normalized.includes('transfer') || normalized.includes('account')) return 'bank';
+  if (normalized.includes('pending')) return 'pending';
+  return 'other';
+}
+
+function buildExpenseSummary(expenses) {
+  const activeRows = (Array.isArray(expenses) ? expenses : [])
+    .filter((expense) => textValue(expense.status, '').toLowerCase() !== 'cancelled');
+  const summary = {
+    total: 0,
+    cash: 0,
+    bank: 0,
+    upi: 0,
+    cheque: 0,
+    pending: 0,
+    other: 0,
+    byCashHolder: {},
+  };
+  activeRows.forEach((expense) => {
+    const amount = numberValue(expense.amount, 0);
+    const mode = expenseModeKey(expense.paymentMode);
+    summary.total += amount;
+    if (summary[mode] !== undefined) summary[mode] += amount;
+    if (mode === 'cash') {
+      const holder = textValue(expense.cashHolder || expense.paidBy, 'Not entered') || 'Not entered';
+      summary.byCashHolder[holder] = (summary.byCashHolder[holder] || 0) + amount;
+    }
+  });
+  return summary;
+}
+
 function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -4447,6 +4586,310 @@ function MandaliDetailsSection({ mandaliState, user }) {
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function ExpensesSection({ expenseState }) {
+  const [query, setQuery] = useState('');
+  const [selectedHead, setSelectedHead] = useState('All');
+  const [selectedMode, setSelectedMode] = useState('All');
+  const [drilldown, setDrilldown] = useState('');
+  const [form, setForm] = useState({
+    eventYear: ACTIVE_EVENT_YEAR,
+    expenseDate: '',
+    voucherNo: '',
+    expenseHead: 'Other',
+    payee: '',
+    description: '',
+    paymentMode: 'Cash',
+    amount: '',
+    paidBy: '',
+    cashHolder: '',
+    approvedBy: '',
+    status: 'Paid',
+    billProofLink: '',
+    remarks: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const expenses = expenseState.expenses || [];
+  const summary = useMemo(() => buildExpenseSummary(expenses), [expenses]);
+  const heads = useMemo(() => Array.from(new Set([...EXPENSE_HEADS, ...expenses.map((expense) => expense.expenseHead).filter(Boolean)])).sort(), [expenses]);
+  const filteredExpenses = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return expenses
+      .filter((expense) => selectedHead === 'All' || expense.expenseHead === selectedHead)
+      .filter((expense) => selectedMode === 'All' || expenseModeKey(expense.paymentMode) === selectedMode)
+      .filter((expense) => {
+        if (!search) return true;
+        return [
+          expense.expenseHead,
+          expense.payee,
+          expense.description,
+          expense.paymentMode,
+          expense.paidBy,
+          expense.cashHolder,
+          expense.voucherNo,
+          expense.remarks,
+        ].some((value) => textValue(value, '').toLowerCase().includes(search));
+      })
+      .sort((a, b) => Number(b.rowNumber || 0) - Number(a.rowNumber || 0));
+  }, [expenses, query, selectedHead, selectedMode]);
+
+  const drilldownRows = useMemo(() => {
+    if (drilldown === 'cash') return expenses.filter((expense) => expenseModeKey(expense.paymentMode) === 'cash');
+    if (drilldown === 'bank') return expenses.filter((expense) => ['bank', 'upi', 'cheque'].includes(expenseModeKey(expense.paymentMode)));
+    if (drilldown === 'pending') return expenses.filter((expense) => expenseModeKey(expense.paymentMode) === 'pending' || textValue(expense.status, '').toLowerCase() === 'pending');
+    return expenses;
+  }, [expenses, drilldown]);
+
+  async function submitExpense(event) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await expenseState.addExpense(form);
+      setMessage('Expense recorded to Google Sheet.');
+      setForm((current) => ({
+        ...current,
+        expenseDate: '',
+        voucherNo: '',
+        payee: '',
+        description: '',
+        amount: '',
+        paidBy: '',
+        cashHolder: '',
+        approvedBy: '',
+        billProofLink: '',
+        remarks: '',
+      }));
+    } catch (error) {
+      setMessage(error.message || 'Expense could not be recorded.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="management-section expenses-section">
+      <div className="section-heading">
+        <div>
+          <p>Expenses</p>
+          <h2>Event payment records</h2>
+        </div>
+        <button className="refresh-button" type="button" onClick={expenseState.refresh} disabled={expenseState.isRefreshing}>
+          <RefreshCw size={16} className={expenseState.isRefreshing ? 'spin' : ''} />
+          Refresh Expenses
+        </button>
+      </div>
+
+      <div className="event-note">
+        <b>{expenseState.status}</b>
+        <span>Record only current event expenses here. The 2025 workbook is used as the accounting format guide.</span>
+      </div>
+      {expenseState.error ? (
+        <div className="error-strip">
+          <AlertTriangle size={18} />
+          <span>{expenseState.error}</span>
+        </div>
+      ) : null}
+
+      <div className="stats-grid expense-stats-grid">
+        <StatCard icon={IndianRupee} label="Total Expenses" value={formatCurrency(summary.total)} onClick={() => setDrilldown('all')} />
+        <StatCard icon={IndianRupee} label="Cash Paid" value={formatCurrency(summary.cash)} tone="warning" onClick={() => setDrilldown('cash')} />
+        <StatCard icon={IndianRupee} label="Bank / UPI / Cheque" value={formatCurrency(summary.bank + summary.upi + summary.cheque)} tone="success" onClick={() => setDrilldown('bank')} />
+        <StatCard icon={AlertTriangle} label="Pending Expenses" value={formatCurrency(summary.pending)} tone="danger" onClick={() => setDrilldown('pending')} />
+      </div>
+
+      <div className="expense-breakdown-card">
+        <h3>Cash Holder Breakdown</h3>
+        {Object.entries(summary.byCashHolder).length ? (
+          <div className="pill-list">
+            {Object.entries(summary.byCashHolder).map(([name, amount]) => (
+              <button key={name} type="button" className="inline-pill">
+                {name} - {formatCurrency(amount)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p>No cash-holder entries yet.</p>
+        )}
+      </div>
+
+      <form className="expense-form" onSubmit={submitExpense}>
+        <div className="section-heading compact">
+          <div>
+            <p>Add Expense</p>
+            <h2>Record a new payment</h2>
+          </div>
+        </div>
+        <div className="expense-form-grid">
+          <label>
+            <span>Expense Date</span>
+            <input type="text" value={form.expenseDate} placeholder="DD/MM/YYYY" onChange={(event) => setForm({ ...form, expenseDate: event.target.value })} />
+          </label>
+          <label>
+            <span>Expense Head</span>
+            <select value={form.expenseHead} onChange={(event) => setForm({ ...form, expenseHead: event.target.value })}>
+              {heads.map((head) => <option key={head} value={head}>{head}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Amount</span>
+            <input type="number" min="1" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} required />
+          </label>
+          <label>
+            <span>Payment Mode</span>
+            <select value={form.paymentMode} onChange={(event) => setForm({ ...form, paymentMode: event.target.value })}>
+              {EXPENSE_PAYMENT_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Payee / Vendor</span>
+            <input type="text" value={form.payee} onChange={(event) => setForm({ ...form, payee: event.target.value })} />
+          </label>
+          <label>
+            <span>Paid By</span>
+            <input type="text" value={form.paidBy} onChange={(event) => setForm({ ...form, paidBy: event.target.value })} />
+          </label>
+          <label>
+            <span>Cash Holder</span>
+            <input type="text" value={form.cashHolder} onChange={(event) => setForm({ ...form, cashHolder: event.target.value })} />
+          </label>
+          <label>
+            <span>Status</span>
+            <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+              {EXPENSE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Voucher No</span>
+            <input type="text" value={form.voucherNo} onChange={(event) => setForm({ ...form, voucherNo: event.target.value })} />
+          </label>
+          <label>
+            <span>Approved By</span>
+            <input type="text" value={form.approvedBy} onChange={(event) => setForm({ ...form, approvedBy: event.target.value })} />
+          </label>
+          <label>
+            <span>Bill / Proof Link</span>
+            <input type="text" value={form.billProofLink} onChange={(event) => setForm({ ...form, billProofLink: event.target.value })} />
+          </label>
+          <label>
+            <span>Event Year</span>
+            <input type="text" value={form.eventYear} onChange={(event) => setForm({ ...form, eventYear: event.target.value })} />
+          </label>
+          <label className="wide-field">
+            <span>Description</span>
+            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          </label>
+          <label className="wide-field">
+            <span>Remarks</span>
+            <textarea value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} />
+          </label>
+        </div>
+        <button className="primary-action" type="submit" disabled={!expenseState.writeEnabled || saving}>
+          <Save size={18} />
+          {saving ? 'Recording' : 'Add Expense'}
+        </button>
+        {message ? <p className="save-note">{message}</p> : null}
+      </form>
+
+      <div className="filters-row">
+        <label className="search-field">
+          <Search size={18} />
+          <input value={query} placeholder="Search head, vendor, paid by, voucher" onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <label className="select-field">
+          <Filter size={18} />
+          <select value={selectedHead} onChange={(event) => setSelectedHead(event.target.value)}>
+            <option value="All">All Heads</option>
+            {heads.map((head) => <option key={head} value={head}>{head}</option>)}
+          </select>
+        </label>
+        <label className="select-field">
+          <IndianRupee size={18} />
+          <select value={selectedMode} onChange={(event) => setSelectedMode(event.target.value)}>
+            <option value="All">All Modes</option>
+            <option value="cash">Cash</option>
+            <option value="bank">Bank Transfer</option>
+            <option value="upi">UPI</option>
+            <option value="cheque">Cheque</option>
+            <option value="pending">Pending</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="expense-list">
+        {filteredExpenses.length ? filteredExpenses.map((expense) => (
+          <article className="donor-card expense-card" key={expense.id}>
+            <div className="donor-card-header">
+              <div>
+                <p className="event-label">{expense.expenseHead || 'Expense'}</p>
+                <h3>{expense.payee || expense.description || 'Expense record'}</h3>
+                <p>{expense.expenseDate || 'Date not entered'} - {expense.paymentMode || 'Mode not entered'}</p>
+              </div>
+              <span className="status-pill">{expense.status || 'Paid'}</span>
+            </div>
+            <div className="detail-grid">
+              <div><span>Amount</span><strong>{formatCurrency(expense.amount)}</strong></div>
+              <div><span>Paid By</span><strong>{expense.paidBy || '-'}</strong></div>
+              <div><span>Cash Holder</span><strong>{expense.cashHolder || '-'}</strong></div>
+              <div><span>Voucher No</span><strong>{expense.voucherNo || '-'}</strong></div>
+              <div><span>Approved By</span><strong>{expense.approvedBy || '-'}</strong></div>
+              <div><span>Bill / Proof</span><strong>{expense.billProofLink ? 'Available' : '-'}</strong></div>
+            </div>
+            {expense.description || expense.remarks ? (
+              <p className="donor-message-preview">{[expense.description, expense.remarks].filter(Boolean).join(' | ')}</p>
+            ) : null}
+          </article>
+        )) : (
+          <div className="empty-state">
+            <FileText size={28} />
+            <p>No expenses match this view.</p>
+          </div>
+        )}
+      </div>
+
+      {drilldown ? (
+        <div className="modal-backdrop">
+          <div className="balance-modal expense-modal" role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <div>
+                <p>Expense Details</p>
+                <h2>{drilldown === 'cash' ? 'Cash Expenses' : drilldown === 'bank' ? 'Bank / UPI / Cheque Expenses' : drilldown === 'pending' ? 'Pending Expenses' : 'All Expenses'}</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setDrilldown('')} aria-label="Close expenses">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="event-note">
+              <b>{drilldownRows.length} entries / {formatCurrency(drilldownRows.reduce((sum, row) => sum + numberValue(row.amount, 0), 0))}</b>
+              <span>{drilldown === 'cash' ? 'Cash holder details are shown on each row.' : 'Read-only summary from the private expense sheet.'}</span>
+            </div>
+            <div className="expense-list modal-list">
+              {drilldownRows.map((expense) => (
+                <article className="donor-card expense-card" key={`modal-${expense.id}`}>
+                  <div className="donor-card-header">
+                    <div>
+                      <h3>{expense.payee || expense.expenseHead || 'Expense'}</h3>
+                      <p>{expense.expenseHead} - {expense.expenseDate || 'Date not entered'}</p>
+                    </div>
+                    <strong>{formatCurrency(expense.amount)}</strong>
+                  </div>
+                  <div className="detail-grid">
+                    <div><span>Mode</span><strong>{expense.paymentMode || '-'}</strong></div>
+                    <div><span>Paid By</span><strong>{expense.paidBy || '-'}</strong></div>
+                    <div><span>Cash Holder</span><strong>{expense.cashHolder || '-'}</strong></div>
+                    <div><span>Status</span><strong>{expense.status || '-'}</strong></div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -7304,6 +7747,7 @@ function App({ auth }) {
   const donorState = useMangalyaDonors(isPst);
   const requirementState = useSponsorshipRequirements(isPst);
   const mandaliState = useMandaliContacts(isPst);
+  const expenseState = useExpenses(isPst);
   const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
@@ -7877,6 +8321,10 @@ function App({ auth }) {
                 <MessageCircle size={18} />
                 <span>Donors</span>
               </button>
+              <button className={activeView === 'expenses' ? 'active' : ''} type="button" onClick={() => setActiveView('expenses')}>
+                <FileText size={18} />
+                <span>Expenses</span>
+              </button>
               <button className={activeView === 'mandali-details' ? 'active' : ''} type="button" onClick={() => setActiveView('mandali-details')}>
                 <UsersRound size={18} />
                 <span>Mandali Details</span>
@@ -8049,6 +8497,8 @@ function App({ auth }) {
           ) : null}
 
           {activeView === 'previous-donors' && isPst && !mustChangePassword ? <PreviousDonorsCampaign donorState={donorState} /> : null}
+
+          {activeView === 'expenses' && isPst && !mustChangePassword ? <ExpensesSection expenseState={expenseState} /> : null}
 
           {activeView === 'mandali-details' && isPst && !mustChangePassword ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
 

@@ -132,9 +132,29 @@ const DONOR_FIELDS = {
 const MANGALYA_DONOR_RANGE = sponsorshipRange(process.env.MANGALYA_SPONSORSHIP_RANGE || process.env.SPONSORSHIP_CONTRIBUTIONS_RANGE || process.env.MANGALYA_DONORS_RANGE || "'Sponsorship Contributions'!A:AZ");
 const GENERAL_DONOR_RANGE = sponsorshipRange(process.env.GENERAL_DONORS_RANGE || process.env.PREVIOUS_DONORS_RANGE || "'Donors'!A:AZ");
 const REQUIREMENT_RANGE = process.env.SPONSORSHIP_REQUIREMENTS_RANGE || "'Sponsorship Requirements'!A:O";
+const EXPENSES_RANGE = sponsorshipRange(process.env.EXPENSES_RANGE || "'Expenses'!A:AZ");
 const WHATSAPP_PST_ADMINS_RANGE = process.env.WHATSAPP_PST_ADMINS_RANGE || "'WhatsApp PST Admins'!A:B";
 const WHATSAPP_GROUP_LOG_RANGE = process.env.WHATSAPP_GROUP_LOG_RANGE || "'WhatsApp Group Log'!A:F";
 const WHATSAPP_GROUP_LOG_HEADERS = ['Group Name', 'Event', 'Creation Date', 'Participant Count', 'Status', 'Remarks'];
+const EXPENSE_HEADERS = [
+  'Sl No',
+  'Event Year',
+  'Expense Date',
+  'Voucher No',
+  'Expense Head',
+  'Payee / Vendor',
+  'Description',
+  'Payment Mode',
+  'Amount',
+  'Paid By',
+  'Cash Holder',
+  'Approved By',
+  'Status',
+  'Bill / Proof Link',
+  'Remarks',
+  'Created At',
+  'Created By',
+];
 const MANDALI_CONTACTS_CSV = process.env.MANDALI_CONTACTS_CSV || path.join(projectRoot, 'server', 'private-data', 'bangalore-arya-vysya-mandali-final.csv');
 const FREE_SPONSORSHIP_STATUS = 'free sponsorship';
 const QR_TOKEN_VERSION = 'mvstqr:v1';
@@ -242,6 +262,13 @@ let generalDonorCache = {
 };
 
 let requirementCache = {
+  rows: [],
+  refreshedAt: null,
+  source: null,
+  writeEnabled: false,
+};
+
+let expenseCache = {
   rows: [],
   refreshedAt: null,
   source: null,
@@ -627,6 +654,10 @@ function mangalyaDonorSpreadsheetId() {
 
 function generalDonorSpreadsheetId() {
   return process.env.GENERAL_DONORS_SHEET_ID || process.env.PREVIOUS_DONORS_SHEET_ID || mangalyaDonorSpreadsheetId();
+}
+
+function expenseSpreadsheetId() {
+  return process.env.EXPENSES_SHEET_ID || process.env.MVST_EXPENSES_SHEET_ID || mangalyaDonorSpreadsheetId();
 }
 
 function donorSheetConfig(kind = 'MANGALYA') {
@@ -1469,6 +1500,85 @@ function normalizeRequirementRows(values) {
     .filter((row) => row.eventYear || row.eventName || row.category);
 }
 
+function normalizeExpenseRows(values) {
+  if (!values || values.length < 2) return [];
+  const headers = values[0];
+  const headerMap = buildHeaderMap(headers);
+
+  return values
+    .slice(1)
+    .map((row, index) => {
+      const rowNumber = index + 2;
+      const amount = numberFrom(getCell(row, headerMap, ['Amount', 'Expense Amount', 'Paid Amount']));
+      return {
+        id: `expense:${rowNumber}`,
+        rowNumber,
+        slNo: getCell(row, headerMap, ['Sl No', 'Sl. No.']) || String(index + 1),
+        eventYear: getCell(row, headerMap, ['Event Year']) || MANGALYA_EVENT_YEAR,
+        expenseDate: getCell(row, headerMap, ['Expense Date', 'Date']),
+        voucherNo: getCell(row, headerMap, ['Voucher No', 'Voucher Number', 'Bill No']),
+        expenseHead: canonicalCategory(getCell(row, headerMap, ['Expense Head', 'Category', 'Head'])),
+        payee: getCell(row, headerMap, ['Payee / Vendor', 'Payee', 'Vendor', 'Paid To']),
+        description: getCell(row, headerMap, ['Description', 'Particulars', 'Details']),
+        paymentMode: getCell(row, headerMap, ['Payment Mode', 'Mode']) || 'Cash',
+        amount,
+        paidBy: getCell(row, headerMap, ['Paid By', 'Paid From']),
+        cashHolder: getCell(row, headerMap, ['Cash Holder', 'Holding Cash', 'Amount With']),
+        approvedBy: getCell(row, headerMap, ['Approved By']),
+        status: getCell(row, headerMap, ['Status']) || 'Paid',
+        billProofLink: getCell(row, headerMap, ['Bill / Proof Link', 'Bill Link', 'Proof Link']),
+        remarks: getCell(row, headerMap, ['Remarks']),
+        createdAt: getCell(row, headerMap, ['Created At']),
+        createdBy: getCell(row, headerMap, ['Created By']),
+      };
+    })
+    .filter((row) => row.expenseHead || row.payee || row.description || row.amount);
+}
+
+function publicExpenseRows(rows) {
+  return rows.map((row) => ({ ...row }));
+}
+
+function todayIndiaDate() {
+  return new Date().toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function sanitizeExpenseInput(body = {}) {
+  const amount = numberFrom(body.amount);
+  if (amount <= 0) {
+    const error = new Error('Expense amount must be greater than zero.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const expenseHead = String(body.expenseHead || '').trim();
+  if (!expenseHead) {
+    const error = new Error('Expense head is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    eventYear: String(body.eventYear || MANGALYA_EVENT_YEAR).trim(),
+    expenseDate: String(body.expenseDate || todayIndiaDate()).trim(),
+    voucherNo: String(body.voucherNo || '').trim(),
+    expenseHead: canonicalCategory(expenseHead),
+    payee: String(body.payee || '').trim(),
+    description: String(body.description || '').trim(),
+    paymentMode: String(body.paymentMode || 'Cash').trim(),
+    amount,
+    paidBy: String(body.paidBy || '').trim(),
+    cashHolder: String(body.cashHolder || '').trim(),
+    approvedBy: String(body.approvedBy || '').trim(),
+    status: String(body.status || 'Paid').trim(),
+    billProofLink: String(body.billProofLink || '').trim(),
+    remarks: String(body.remarks || '').trim(),
+  };
+}
+
 function requireConfig() {
   const missing = [];
   const credentials = getGoogleCredentials();
@@ -2137,6 +2247,79 @@ async function loadSponsorshipRequirements() {
   }
 
   return requirementCache;
+}
+
+async function loadExpenses() {
+  const spreadsheetId = expenseSpreadsheetId();
+  if (!spreadsheetId) {
+    expenseCache = {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'not-configured',
+      writeEnabled: false,
+      notice: 'Expense sheet is not configured.',
+    };
+    return expenseCache;
+  }
+
+  const sheets = await ensureSheetTabWithHeaders(spreadsheetId, EXPENSES_RANGE, EXPENSE_HEADERS);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: EXPENSES_RANGE,
+  });
+
+  expenseCache = {
+    rows: normalizeExpenseRows(response.data.values),
+    refreshedAt: new Date().toISOString(),
+    source: 'google-api',
+    writeEnabled: true,
+    notice: null,
+  };
+  return expenseCache;
+}
+
+async function appendExpense(body, user) {
+  const spreadsheetId = expenseSpreadsheetId();
+  if (!spreadsheetId) {
+    const error = new Error('Expense sheet is not configured.');
+    error.statusCode = 403;
+    throw error;
+  }
+  const input = sanitizeExpenseInput(body);
+  const sheets = await ensureSheetTabWithHeaders(spreadsheetId, EXPENSES_RANGE, EXPENSE_HEADERS);
+  const latest = await loadExpenses();
+  const nextSlNo = Math.max(0, ...latest.rows.map((row) => numberFrom(row.slNo))) + 1;
+  const createdAt = indiaDateTime();
+  const createdBy = actorName(user);
+  const values = [[
+    nextSlNo,
+    input.eventYear,
+    input.expenseDate,
+    input.voucherNo,
+    input.expenseHead,
+    input.payee,
+    input.description,
+    input.paymentMode,
+    input.amount,
+    input.paidBy,
+    input.cashHolder,
+    input.approvedBy,
+    input.status,
+    input.billProofLink,
+    input.remarks,
+    createdAt,
+    createdBy,
+  ]];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: EXPENSES_RANGE,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values },
+  });
+
+  return loadExpenses();
 }
 
 async function loadWhatsappPstAdmins() {
@@ -3414,6 +3597,69 @@ app.post(['/api/sponsorship-requirements/refresh', '/api/sponsorship/requirement
       mode: 'read-only',
       error: error.message,
     });
+  }
+});
+
+app.get('/api/expenses', requirePst, async (req, res) => {
+  try {
+    if (!expenseCache.refreshedAt) await loadExpenses();
+    res.json({
+      ok: true,
+      rows: publicExpenseRows(expenseCache.rows),
+      refreshedAt: expenseCache.refreshedAt,
+      source: expenseCache.source,
+      writeEnabled: expenseCache.writeEnabled,
+      notice: expenseCache.notice,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: publicExpenseRows(expenseCache.rows),
+      refreshedAt: expenseCache.refreshedAt,
+      writeEnabled: false,
+      notice: expenseCache.notice,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/expenses/refresh', requirePst, async (req, res) => {
+  try {
+    const next = await loadExpenses();
+    res.json({
+      ok: true,
+      rows: publicExpenseRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      notice: next.notice,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      rows: publicExpenseRows(expenseCache.rows),
+      refreshedAt: expenseCache.refreshedAt,
+      writeEnabled: false,
+      notice: expenseCache.notice,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/expenses', requirePst, async (req, res) => {
+  try {
+    const next = await appendExpense(req.body, req.user);
+    res.json({
+      ok: true,
+      rows: publicExpenseRows(next.rows),
+      refreshedAt: next.refreshedAt,
+      source: next.source,
+      writeEnabled: next.writeEnabled,
+      notice: next.notice,
+      message: 'Expense recorded to Google Sheet',
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message });
   }
 });
 
