@@ -4528,7 +4528,7 @@ const MANDALI_RECIPIENT_FILTERS = [
   { id: 'all', label: 'All contacts', test: () => true },
 ];
 
-const TRUSTEE_RECOVERY_THROUGH_NAME = 'Jayalakshmi K S';
+const TRUSTEE_RECOVERY_THROUGH_NAME = 'Satish B V';
 
 function TrusteesSection({ trusteeState, user }) {
   const { trustees, status, error, isRefreshing, refresh } = trusteeState;
@@ -4759,7 +4759,7 @@ function TrusteesSection({ trusteeState, user }) {
       <div className="bulk-whatsapp-panel donor-bulk-panel">
         <div className="event-note">
           <b>Trustee queue recovery active</b>
-          <span>Recipients 1–23 are confirmed Sent through Jayalakshmi K S. Generate Queue continues with Kala Pradeep.</span>
+          <span>Recipients 1–73 are confirmed Sent through Satish B V. Generate Queue continues with Satish Kumar V A.</span>
         </div>
         <EventInvitationCardPackage />
         <label className="field-block">

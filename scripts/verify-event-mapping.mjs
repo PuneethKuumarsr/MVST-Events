@@ -1098,10 +1098,12 @@ assert.ok(mangalyaDonorInvitationQueue.includes('const sameTabWhatsApp = shouldO
 assert.ok(mangalyaDonorInvitationQueue.includes('openWhatsAppRecipient(url, whatsappWindow);'), 'Mangalya Donor invitation queue must use the mobile-safe WhatsApp handoff');
 assert.ok(!generalDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'General Donor invitation queue must not directly redirect a reserved blank tab');
 assert.ok(!mangalyaDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'Mangalya Donor invitation queue must not directly redirect a reserved blank tab');
-assert.ok(frontend.includes("const TRUSTEE_RECOVERY_THROUGH_NAME = 'Jayalakshmi K S';"), 'Trustee queue must restore the operator-confirmed sent boundary');
+assert.ok(frontend.includes("const TRUSTEE_RECOVERY_THROUGH_NAME = 'Satish B V';"), 'Trustee queue must restore the latest operator-confirmed sent boundary');
 assert.ok(trusteeInvitationQueue.includes('markQueueSentThroughRecipient('), 'Trustee queue must rebuild confirmed progress through the recovery boundary');
 assert.ok(trusteeInvitationQueue.includes('Queue continues from the next name.'), 'Trustee recovery must explain where sending resumes');
 assert.ok(trusteeInvitationQueue.includes('Trustee queue recovery active'), 'Trustee screen must visibly confirm the recovered sent boundary');
+assert.ok(trusteeInvitationQueue.includes('Recipients 1–73 are confirmed Sent through Satish B V.'), 'Trustee recovery notice must show 73 confirmed sent recipients');
+assert.ok(trusteeInvitationQueue.includes('Generate Queue continues with Satish Kumar V A.'), 'Trustee recovery notice must show the correct next recipient');
 assert.ok(frontend.includes('function useFrontendFreshness()'), 'App must check for a newer bundle after Safari restores a page');
 assert.ok(frontend.includes("window.addEventListener('pageshow', handlePageShow)"), 'App must check restored browser pages for stale code');
 assert.ok(frontend.includes("document.addEventListener('visibilitychange', handleVisibilityChange)"), 'App must check for stale code when returning from WhatsApp');

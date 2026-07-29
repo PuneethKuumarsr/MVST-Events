@@ -60,21 +60,22 @@ assert.equal(firstPendingQueueIndex(queue.slice(0, 3), statuses), -1, 'Completed
 
 const trusteeRecoveryQueue = [
   { id: 'trustee-1', name: 'AMARNATH CA' },
-  { id: 'trustee-2', name: 'INDRA JAGANNATHA SETTY' },
-  { id: 'trustee-3', name: 'JAYALAKSHMI  K S' },
-  { id: 'trustee-4', name: 'KALA PRADEEP' },
+  { id: 'trustee-2', name: 'JAYALAKSHMI  K S' },
+  { id: 'trustee-3', name: 'KALA PRADEEP' },
+  { id: 'trustee-4', name: 'SATISH  B V' },
+  { id: 'trustee-5', name: 'SATISH KUMAR V A' },
 ];
 const recoveredTrusteeProgress = markQueueSentThroughRecipient(
   trusteeRecoveryQueue,
   {},
-  'Jayalakshmi K S',
+  'Satish B V',
   (trustee) => ({ recipient: trustee.name }),
 );
-assert.equal(recoveredTrusteeProgress.throughIndex, 2, 'Trustee recovery must find names despite repeated spaces');
+assert.equal(recoveredTrusteeProgress.throughIndex, 3, 'Trustee recovery must find names despite repeated spaces');
 assert.equal(recoveredTrusteeProgress.statusMap['trustee-1'].status, 'Sent');
-assert.equal(recoveredTrusteeProgress.statusMap['trustee-3'].status, 'Sent');
-assert.equal(recoveredTrusteeProgress.statusMap['trustee-4'], undefined, 'Trustee recovery must not mark later recipients');
-assert.equal(firstPendingQueueIndex(trusteeRecoveryQueue, recoveredTrusteeProgress.statusMap), 3, 'Trustee recovery must resume from the name after the confirmed recipient');
+assert.equal(recoveredTrusteeProgress.statusMap['trustee-4'].status, 'Sent');
+assert.equal(recoveredTrusteeProgress.statusMap['trustee-5'], undefined, 'Trustee recovery must not mark later recipients');
+assert.equal(firstPendingQueueIndex(trusteeRecoveryQueue, recoveredTrusteeProgress.statusMap), 4, 'Trustee recovery must resume from the name after the confirmed recipient');
 
 const oldBundle = frontendBundlePathFromScripts(['https://mvst-events.onrender.com/assets/index-old123.js']);
 const latestBundle = frontendBundlePathFromHtml('<script type="module" src="/assets/index-new456.js"></script>');
