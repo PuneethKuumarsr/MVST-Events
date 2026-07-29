@@ -157,7 +157,7 @@ const WHATSAPP_CONTACT_PREFIXES = {
   bhimaratha: 'MVST Bheema',
   pst: 'MVST PST',
 };
-const PAYMENT_STATUSES = ['Full Paid', 'Part Paid', 'Pending', 'Free Sponsorship'];
+const PAYMENT_STATUSES = ['Full Paid', 'Part Paid', 'Pending', 'Sponsorship'];
 const DISTRIBUTION_OPERATIONS = {
   meetingAttendance: {
     label: 'Meeting Attendance',
@@ -422,7 +422,7 @@ function boolFrom(value) {
 }
 
 function isFreeSponsorshipStatus(status) {
-  return String(status || '').trim().toLowerCase() === 'free sponsorship';
+  return ['free sponsorship', 'sponsorship'].includes(String(status || '').trim().toLowerCase());
 }
 
 function normalizeRow(row, headerMap, source) {
@@ -937,7 +937,7 @@ function isReceiptEligible(participant) {
 
 function receiptUnavailableMessage(participant) {
   if (isFreeSponsorship(participant)) {
-    return 'Payment receipt is not available for Free Sponsorship because no money was received.';
+    return 'Payment receipt is not available for Sponsorship because no money was received.';
   }
   return 'Receipt will be generated after full payment is received.';
 }
@@ -8127,6 +8127,7 @@ function App({ auth }) {
   }, [isVolunteerRole, activeView, mustChangePassword]);
 
   const summary = useMemo(() => {
+    const sponsorshipRows = rows.filter((row) => isFreeSponsorship(row));
     const expected = rows.reduce((sum, row) => sum + (isFreeSponsorship(row) ? 0 : row.contribution), 0);
     const received = rows.reduce((sum, row) => sum + row.paidAmount, 0);
     return {
@@ -8135,7 +8136,9 @@ function App({ auth }) {
       bhimaratha: rows.filter((row) => row.eventType === 'bhimaratha').length,
       fullPaid: rows.filter((row) => row.paymentStatus === 'Full Paid').length,
       partPaid: rows.filter((row) => row.paymentStatus === 'Part Paid').length,
-      freeSponsorship: rows.filter((row) => isFreeSponsorship(row)).length,
+      sponsorship: sponsorshipRows.length,
+      sponsorshipShashtipoorthi: sponsorshipRows.filter((row) => row.eventType === 'shashtipoorthi').length,
+      sponsorshipBhimaratha: sponsorshipRows.filter((row) => row.eventType === 'bhimaratha').length,
       pending: rows.filter((row) => row.paymentStatus === 'Pending').length,
       verified: rows.filter((row) => row.treasurerVerified).length,
       newRegistrations: rows.filter((row) => !row.treasurerVerified).length,
@@ -8217,7 +8220,11 @@ function App({ auth }) {
           .toLowerCase()
           .includes(search);
       })
-      .filter((row) => paymentFilter === 'All' || row.paymentStatus === paymentFilter)
+      .filter((row) => {
+        if (paymentFilter === 'All') return true;
+        if (paymentFilter === 'Sponsorship') return isFreeSponsorship(row);
+        return row.paymentStatus === paymentFilter;
+      })
       .filter((row) =>
         verifiedFilter === 'All'
           ? true
@@ -8478,7 +8485,7 @@ function App({ auth }) {
   }
 
   function goToFreeSponsorship() {
-    setPaymentFilter('Free Sponsorship');
+    setPaymentFilter('Sponsorship');
     setVerifiedFilter('All');
     setKitFilter('All');
     setActiveView(activeEvent);
@@ -8716,7 +8723,13 @@ function App({ auth }) {
                   <StatCard icon={HeartHandshake} label="Bhimaratha" value={summary.bhimaratha} onClick={() => openEventView('bhimaratha')} />
                   <StatCard icon={CheckCircle2} label="Full Paid" value={summary.fullPaid} tone="success" />
                   <StatCard icon={CircleDollarSign} label="Part Paid" value={summary.partPaid} tone="warning" />
-                  <StatCard icon={HeartHandshake} label="Free Sponsorship" value={summary.freeSponsorship} tone="success" onClick={goToFreeSponsorship} />
+                  <StatCard
+                    icon={HeartHandshake}
+                    label="Sponsorship"
+                    value={`${summary.sponsorship} (SP ${summary.sponsorshipShashtipoorthi} / BS ${summary.sponsorshipBhimaratha})`}
+                    tone="success"
+                    onClick={goToFreeSponsorship}
+                  />
                   <StatCard icon={IndianRupee} label="Pending" value={summary.pending} tone="danger" onClick={goToPaymentPending} />
                   <StatCard icon={ShieldCheck} label="Treasurer Verified" value={summary.verified} onClick={goToParticipantManagement} />
                   <StatCard icon={Gift} label="KIT Issued" value={summary.kitIssued} />

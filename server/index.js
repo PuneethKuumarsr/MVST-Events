@@ -605,7 +605,7 @@ function boolFrom(value) {
 }
 
 function isFreeSponsorshipStatus(status) {
-  return String(status || '').trim().toLowerCase() === FREE_SPONSORSHIP_STATUS;
+  return [FREE_SPONSORSHIP_STATUS, 'sponsorship'].includes(String(status || '').trim().toLowerCase());
 }
 
 function readServiceAccountFile() {

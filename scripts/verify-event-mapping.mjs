@@ -82,7 +82,7 @@ assert.ok(frontend.includes('Cash Holding Details'), 'Collection drill-down must
 assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome Sent Date');
 assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
 assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');
-assert.ok(frontend.includes('Free Sponsorship'), 'Dashboard must support Free Sponsorship payment status');
+assert.ok(frontend.includes('Sponsorship'), 'Dashboard must support Sponsorship payment status');
 assert.ok(frontend.includes('isFreeSponsorshipStatus'), 'Frontend must identify Free Sponsorship status');
 assert.ok(frontend.includes('sheetPaymentStatus'), 'CSV fallback must read the Payment Status column from the sheet');
 assert.ok(frontend.includes('balance = isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Free Sponsorship participants must not show a balance receivable');
@@ -469,13 +469,14 @@ assert.deepEqual(sortLatestForTest([
 const receiptEligibilityForTest = (participant) =>
   String(participant.paymentStatus || '').trim() === 'Full Paid' &&
   Number(participant.balance || 0) === 0 &&
-  String(participant.paymentStatus || '').trim().toLowerCase() !== 'free sponsorship';
+  !['free sponsorship', 'sponsorship'].includes(String(participant.paymentStatus || '').trim().toLowerCase());
 
 const receiptEligibilityCases = [
   [{ paymentStatus: 'Full Paid', balance: 0 }, true, 'Full Paid with zero balance'],
   [{ paymentStatus: 'Part Paid', balance: 20000 }, false, 'Part Paid with balance'],
   [{ paymentStatus: 'Pending', balance: 30000 }, false, 'Pending with balance'],
   [{ paymentStatus: 'Free Sponsorship', balance: 0 }, false, 'Free Sponsorship'],
+  [{ paymentStatus: 'Sponsorship', balance: 0 }, false, 'Sponsorship'],
   [{ paymentStatus: 'Full Paid', balance: 1 }, false, 'Full Paid with positive balance'],
 ];
 for (const [participant, expected, label] of receiptEligibilityCases) {
@@ -487,10 +488,11 @@ const balanceRowsForTest = [
   { id: 'pending', eventType: 'bhimaratha', paymentStatus: 'Pending', contribution: 20000, paidAmount: 0, balance: 20000, timestamp: '7/11/2026 10:00:00' },
   { id: 'full-paid', eventType: 'bhimaratha', paymentStatus: 'Full Paid', contribution: 20000, paidAmount: 20000, balance: 0, timestamp: '7/12/2026 10:00:00' },
   { id: 'free', eventType: 'shashtipoorthi', paymentStatus: 'Free Sponsorship', contribution: 30000, paidAmount: 0, balance: 0, timestamp: '7/13/2026 10:00:00' },
+  { id: 'sponsored', eventType: 'bhimaratha', paymentStatus: 'Sponsorship', contribution: 20000, paidAmount: 0, balance: 0, timestamp: '7/14/2026 10:00:00' },
 ];
 const balanceListForTest = [...balanceRowsForTest]
   .filter((row) => Number(row.balance || 0) > 0)
-  .filter((row) => String(row.paymentStatus || '').toLowerCase() !== 'free sponsorship')
+  .filter((row) => !['free sponsorship', 'sponsorship'].includes(String(row.paymentStatus || '').toLowerCase()))
   .sort((a, b) => {
     const balanceDifference = Number(b.balance || 0) - Number(a.balance || 0);
     if (balanceDifference !== 0) return balanceDifference;
@@ -547,12 +549,13 @@ assert.ok(!balanceReminder.includes('mvstqr'), 'Balance reminder must not disclo
 const balanceActionEligibleForTest = (participant, mobileStatus = 'ok') =>
   Number(participant.balance || 0) > 0 &&
   ['Part Paid', 'Pending'].includes(participant.paymentStatus) &&
-  participant.paymentStatus !== 'Free Sponsorship' &&
+  !['free sponsorship', 'sponsorship'].includes(String(participant.paymentStatus || '').trim().toLowerCase()) &&
   mobileStatus === 'ok';
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Part Paid', balance: 20000 }, 'ok'), true, 'Part Paid participant must get balance action');
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Pending', balance: 30000 }, 'ok'), true, 'Pending participant must get balance action');
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Full Paid', balance: 0 }, 'ok'), false, 'Full Paid participant must not get balance action');
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Free Sponsorship', balance: 0 }, 'ok'), false, 'Free Sponsorship participant must not get balance action');
+assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Sponsorship', balance: 0 }, 'ok'), false, 'Sponsorship participant must not get balance action');
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Part Paid', balance: 0 }, 'ok'), false, 'Balance zero must hide balance action');
 assert.equal(balanceActionEligibleForTest({ paymentStatus: 'Pending', balance: 30000 }, 'issue'), false, 'Invalid mobile must block balance action');
 
