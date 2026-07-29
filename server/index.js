@@ -7,6 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectMongo, isMongoConfigured } from './db/mongo.js';
+import { donorPaymentVerified } from './donorEligibility.js';
+import {
+  extractGeneralDonorQrToken,
+  generalDonorFingerprint,
+  GENERAL_DONOR_QR_PREFIX,
+} from './generalDonorIdentity.js';
 import { DistributionLog } from './models/DistributionLog.js';
 import { GeneralDonorAudit } from './models/GeneralDonorAudit.js';
 import { GeneralDonorOperation } from './models/GeneralDonorOperation.js';
@@ -1723,11 +1729,6 @@ function donorIdentityError() {
   return error;
 }
 
-function donorPaymentVerified(donor) {
-  const status = String(donor?.status || donor?.paymentStatus || '').trim().toLowerCase();
-  return Boolean(donor?.treasurerVerified) || status.includes('received');
-}
-
 function mangalyaDonorQuantity(donor) {
   const quantity = Number(
     donor?.confirmedQuantity ||
@@ -1882,7 +1883,8 @@ function mergeGeneralDonorOperations(rows, operationsMap) {
   return rows.map((row) => {
     if (!isGeneralPreviousDonor(row)) return row;
     const sourceId = generalDonorSourceId(row);
-    const operation = sourceId ? operationsMap.get(`${donorEventYear(row)}:${sourceId}`) || {} : {};
+    const storedOperation = sourceId ? operationsMap.get(`${donorEventYear(row)}:${sourceId}`) || {} : {};
+    const operation = storedOperation.donorFingerprint === generalDonorFingerprint(row) ? storedOperation : {};
     return {
       ...row,
       id: sourceId || row.id,
@@ -1980,6 +1982,23 @@ function publicMangalyaDonor(donor, operation = {}, user = null, includeTokenUrl
     honouredAt: operation.honouredAt || null,
     honouredBy: operation.honouredBy || '',
     qrUrl: includeTokenUrl && operation.clearToken ? `${publicOrigin(req)}${MANGALYA_QR_PREFIX}${operation.clearToken}` : '',
+  };
+}
+
+function publicGeneralDonor(donor, operation = {}, user = null) {
+  const isPrivileged = isTreasurerOrPst(user);
+  const donorSourceId = generalDonorSourceId(donor);
+  return {
+    id: donorSourceId,
+    generalDonorSourceId: donorSourceId,
+    donorType: 'DONOR',
+    eventYear: donorEventYear(donor),
+    donorName: donor.donorName || donor.sponsorName || donor.name || '',
+    mobile: isPrivileged ? donor.contactNo || '' : maskForVolunteer(donor.contactNo),
+    contributionType: donor.contributionType || donor.category || donor.canonicalCategory || 'General Donation',
+    amount: Number(donor.confirmedAmount || donor.receivedAmount || donor.amount || donor.previousDonationAmount || 0),
+    paymentStatus: donor.status || donor.paymentStatus || '',
+    qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
   };
 }
 
@@ -2635,6 +2654,16 @@ async function scanDistributionToken({ token, operationKey, actorUser }) {
     };
   }
 
+  const generalDonorMatch = await resolveGeneralDonorToken(token, actorUser);
+  if (generalDonorMatch) {
+    return {
+      status: 'general-donor',
+      recordType: 'DONOR',
+      donor: generalDonorMatch.publicDonor,
+      rows: cache.rows,
+    };
+  }
+
   const parsedQr = parseFixedReceiptQr(token);
   if (!parsedQr?.validation?.ok) {
     const error = new Error(parsedQr?.validation?.reason || 'Invalid QR. Participant not found.');
@@ -2977,8 +3006,11 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
   await connectMongo();
   const eventYear = donorEventYear(donor);
   const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId });
-  const clearToken = operation?.tokenRef && !regenerate ? operation.tokenRef : createMangalyaToken();
+  const donorFingerprint = generalDonorFingerprint(donor);
+  const identityMatches = operation?.donorFingerprint === donorFingerprint;
+  const clearToken = operation?.tokenRef && identityMatches && !regenerate ? operation.tokenRef : createMangalyaToken();
   const update = {
+    donorFingerprint,
     qrStatus: 'ACTIVE',
     tokenRef: clearToken,
     tokenHash: tokenHash(clearToken),
@@ -3004,7 +3036,7 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
       generalDonorSourceId: donorSourceId,
       donorType: 'DONOR',
       qrStatus: next.qrStatus,
-      qrUrl: `${publicOrigin(req)}/qr/donor/${clearToken}`,
+      qrUrl: `${publicOrigin(req)}${GENERAL_DONOR_QR_PREFIX}${clearToken}`,
     },
     token: clearToken,
   };
@@ -3016,7 +3048,7 @@ async function updateGeneralDonorCampaignStatus({ donorId, status, campaignName,
     error.statusCode = 503;
     throw error;
   }
-  const allowedStatuses = new Set(['Pending', 'Sent', 'Skipped', 'Failed']);
+  const allowedStatuses = new Set(['Pending', 'Prepared', 'Sent', 'Skipped', 'Failed']);
   if (!allowedStatuses.has(status)) {
     const error = new Error('Invalid donor campaign status.');
     error.statusCode = 400;
@@ -3027,11 +3059,20 @@ async function updateGeneralDonorCampaignStatus({ donorId, status, campaignName,
   if (!donorSourceId) throw donorIdentityError();
   await connectMongo();
   const eventYear = donorEventYear(donor);
+  const donorFingerprint = generalDonorFingerprint(donor);
+  const currentOperation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId }).lean();
+  const resetStaleQr = Boolean(
+    currentOperation &&
+    currentOperation.donorFingerprint !== donorFingerprint &&
+    (currentOperation.tokenHash || currentOperation.tokenRef),
+  );
   const next = await GeneralDonorOperation.findOneAndUpdate(
     { eventYear, donorSourceId },
     {
       $setOnInsert: { eventYear, donorSourceId },
       $set: {
+        donorFingerprint,
+        ...(resetStaleQr ? { qrStatus: 'NOT_GENERATED', tokenRef: '', tokenHash: '' } : {}),
         campaignName: String(campaignName || 'Previous Donors Campaign 2026').trim(),
         campaignStatus: status,
         campaignStatusAt: new Date(),
@@ -3068,6 +3109,27 @@ async function resolveMangalyaToken(rawToken, user = null) {
   }
   const donor = await findMangalyaDonorById(operation.donorSourceId);
   return { donor, operation, publicDonor: publicMangalyaDonor(donor, operation, user) };
+}
+
+async function resolveGeneralDonorToken(rawToken, user = null) {
+  if (!isMongoConfigured()) return null;
+  const tokenValue = extractGeneralDonorQrToken(rawToken);
+  if (!tokenValue) return null;
+  await connectMongo();
+  const operation = await GeneralDonorOperation.findOne({ tokenHash: tokenHash(tokenValue) }).lean();
+  if (!operation) return null;
+  if (operation.qrStatus === 'REVOKED') {
+    const error = new Error('General donor QR is revoked.');
+    error.statusCode = 410;
+    throw error;
+  }
+  const donor = await findGeneralDonorById(operation.donorSourceId);
+  if (!operation.donorFingerprint || operation.donorFingerprint !== generalDonorFingerprint(donor)) {
+    const error = new Error('General donor QR identity is stale. Regenerate the QR before use.');
+    error.statusCode = 409;
+    throw error;
+  }
+  return { donor, operation, publicDonor: publicGeneralDonor(donor, operation, user) };
 }
 
 async function updateMangalyaArrivalOrHonour({ donorId, action, user }) {
@@ -3581,6 +3643,16 @@ app.get('/api/qr/mangalya/:token', requireAuth, async (req, res) => {
     const result = await resolveMangalyaToken(req.params.token, req.user);
     if (!result) return res.status(404).json({ ok: false, error: 'Mangalya donor QR not found.' });
     return res.json({ ok: true, recordType: 'MANGALYA', donor: result.publicDonor });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/qr/donor/:token', requireAuth, async (req, res) => {
+  try {
+    const result = await resolveGeneralDonorToken(req.params.token, req.user);
+    if (!result) return res.status(404).json({ ok: false, error: 'General donor QR not found.' });
+    return res.json({ ok: true, recordType: 'DONOR', donor: result.publicDonor });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ ok: false, error: error.message });
   }

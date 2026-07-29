@@ -35,9 +35,16 @@ import {
   X,
 } from 'lucide-react';
 import { buildWhatsAppMessage, normalizeWhatsAppMessage } from './whatsappMessages.js';
+import {
+  buildEventInvitationMessage,
+  DEFAULT_DONOR_INVITATION_MESSAGE,
+  DEFAULT_TRUSTEE_MESSAGE,
+} from './eventInvitation.js';
+import { firstPendingQueueIndex, queueCounts } from './queueStatus.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
 import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mangalya_Donor_Receipt.jpeg';
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
+import trusteeInvitationCard from '../assets/invitations/mvst-samoohika-shanti-invitation-2026.jpg';
 import './styles.css';
 
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
@@ -1265,6 +1272,22 @@ function donorPaymentVerified(donor) {
   return boolValue(donor?.treasurerVerified) || status.includes('received');
 }
 
+function generalDonorInvitationPackageReady(donor) {
+  return donorMobileIsValid(donor)
+    && donorPaymentVerified(donor)
+    && Boolean(donor.generalDonorSourceId || donor.id);
+}
+
+function mangalyaDonorInvitationPackageReady(donor) {
+  const identityReady = donor.identityReady !== false
+    && Boolean(donor.donorId || !String(donor.id || '').startsWith('missing-donor-id:'));
+  return donorMobileIsValid(donor)
+    && donorPaymentVerified(donor)
+    && identityReady
+    && sponsorQuantity(donor) > 0
+    && Boolean(normalizeMangalyaReceiptNumber(donor.receiptNumber));
+}
+
 function donorQrPayload(donor, donationType) {
   if (!donorPaymentVerified(donor)) throw new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
   if (donor.qrUrl) return donor.qrUrl;
@@ -2029,19 +2052,6 @@ function writeQueueStatus(campaignName, recipientId, entry) {
   return next;
 }
 
-function queueCounts(queue, statusMap) {
-  const total = queue.length;
-  const sent = queue.filter((item) => statusMap[item.id]?.status === 'Sent').length;
-  const skipped = queue.filter((item) => statusMap[item.id]?.status === 'Skipped').length;
-  const failed = queue.filter((item) => statusMap[item.id]?.status === 'Failed').length;
-  return { total, sent, skipped, failed, remaining: Math.max(total - sent - skipped - failed, 0) };
-}
-
-function firstPendingQueueIndex(queue, statusMap) {
-  const index = queue.findIndex((item) => !['Sent', 'Skipped'].includes(statusMap[item.id]?.status));
-  return index >= 0 ? index : 0;
-}
-
 function sponsorCategory(sponsor) {
   return textValue(sponsor.category, '') || textValue(sponsor.canonicalCategory, '') || 'Sponsorship';
 }
@@ -2265,6 +2275,7 @@ function makeMangalyaDonorWhatsAppUrl(donor, messageType = 'appeal') {
   const normalizedMobile = normalizeIndianMobileNumber(donor.contactNo);
   const messageMap = {
     appeal: buildMangalyaDonorAppealMessage,
+    invitation: buildMangalyaDonorInvitationMessage,
     'thank-you': buildMangalyaDonorThankYouMessage,
     'new-donor-collection': buildMangalyaNewDonorCollectionMessage,
     'payment-received': buildMangalyaDonorPaymentReceivedMessage,
@@ -2455,6 +2466,7 @@ Manemanege Vasavi Seva Trust (R) & Team`;
 function buildGeneralDonorMessage(donor, messageType = 'appeal') {
   const messageMap = {
     appeal: buildPreviousDonorAppealMessage,
+    invitation: buildGeneralDonorInvitationMessage,
     confirmation: buildDonorConfirmationMessage,
     'payment-receipt': buildDonorPaymentReceiptMessage,
     'post-event-thanks': buildDonorPostEventThankYouMessage,
@@ -2503,26 +2515,100 @@ function makeMandaliWhatsAppUrl(contact) {
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
 
-const DEFAULT_TRUSTEE_MESSAGE = `🙏 Jai Vasavi 🙏
-
-Dear {{name}},
-
-This is a message from *Manemanege Vasavi Seva Trust (R.)*.
-
-Regards,
-*Manemanege Vasavi Seva Trust (R.)*`;
+const TRUSTEE_INVITATION_CARD_FILENAME = 'MVST-Samoohika-Shanti-Invitation-02-Aug-2026.jpg';
 
 function buildTrusteeMessage(contact, template = DEFAULT_TRUSTEE_MESSAGE) {
-  return String(template || DEFAULT_TRUSTEE_MESSAGE)
-    .replaceAll('{{name}}', contact.name || 'Trustee')
+  return buildEventInvitationMessage(contact.name || 'Esteemed Trustee', template)
     .replaceAll('{{mobile}}', contact.mobileNumber ? `+${contact.mobileNumber}` : '')
     .replaceAll('{{role}}', contact.role || 'Trustee');
+}
+
+function buildGeneralDonorInvitationMessage(donor) {
+  return buildEventInvitationMessage(sponsorDisplayName(donor), DEFAULT_DONOR_INVITATION_MESSAGE);
+}
+
+function buildMangalyaDonorInvitationMessage(donor) {
+  return buildEventInvitationMessage(sponsorDisplayName(donor), DEFAULT_DONOR_INVITATION_MESSAGE);
 }
 
 function makeTrusteeWhatsAppUrl(contact, template = DEFAULT_TRUSTEE_MESSAGE) {
   const normalizedMobile = normalizeIndianMobileNumber(contact.mobileNumber);
   const encodedText = encodeURIComponent(buildTrusteeMessage(contact, template));
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
+}
+
+function downloadEventInvitationCard() {
+  const link = document.createElement('a');
+  link.href = trusteeInvitationCard;
+  link.download = TRUSTEE_INVITATION_CARD_FILENAME;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function canShareEventFiles(files) {
+  if (!navigator.share || !navigator.canShare) return false;
+  try {
+    return navigator.canShare?.({ files }) || false;
+  } catch {
+    return false;
+  }
+}
+
+function canShareEventInvitationPackage() {
+  const inviteProbe = new File(['MVST invitation'], TRUSTEE_INVITATION_CARD_FILENAME, { type: 'image/jpeg' });
+  const qrProbe = new File(['MVST donor QR'], 'MVST-Donor-QR.jpg', { type: 'image/jpeg' });
+  return canShareEventFiles([inviteProbe, qrProbe]);
+}
+
+async function loadEventInvitationCardFile() {
+  const response = await fetch(trusteeInvitationCard, { cache: 'force-cache' });
+  if (!response.ok) throw new Error('Unable to load the invitation card.');
+  const blob = await response.blob();
+  return new File([blob], TRUSTEE_INVITATION_CARD_FILENAME, { type: blob.type || 'image/jpeg' });
+}
+
+function donorQrPassFilename(donor, donationType) {
+  return `MVST-${safeFilePart(donationType)}-QR-${safeFilePart(sponsorDisplayName(donor))}.jpg`;
+}
+
+function donorQrPassFile(donor, donationType, dataUrl) {
+  return dataUrlToFile(dataUrl, donorQrPassFilename(donor, donationType));
+}
+
+function downloadEventInvitationPackage(donor, donationType, qrDataUrl) {
+  downloadEventInvitationCard();
+  downloadBlob(dataUrlToBlob(qrDataUrl), donorQrPassFilename(donor, donationType));
+}
+
+function EventInvitationCardPackage({ includeQr = false }) {
+  return (
+    <div className="event-invitation-package">
+      <a href={trusteeInvitationCard} target="_blank" rel="noreferrer" aria-label="Open the full invitation card">
+        <img
+          src={trusteeInvitationCard}
+          alt="MVST Samoohika Shastipoorthi and Bheemaratha Shanti invitation card"
+          loading="lazy"
+          decoding="async"
+        />
+      </a>
+      <div className="event-invitation-copy">
+        <p>{includeQr ? 'Invitation + Personal QR Package' : 'Invitation Card Included'}</p>
+        <h3>4th Samoohika Shastipoorthi Shanti &amp; 2nd Bheemaratha Shanti</h3>
+        <span>
+          {includeQr
+            ? 'Each eligible recipient receives this invitation card, their personal QR-pass JPG, and the personalized invitation message.'
+            : 'On mobile, generate the queue and use Share Card + Message. On desktop, download the card once, open each WhatsApp chat, and attach the downloaded JPG before sending.'}
+        </span>
+        <div className="bulk-actions event-invitation-actions">
+          <button type="button" onClick={downloadEventInvitationCard}>
+            <Download size={17} />
+            Download Invite Card
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function linkLabel(url) {
@@ -4421,7 +4507,7 @@ const MANDALI_RECIPIENT_FILTERS = [
 
 function TrusteesSection({ trusteeState, user }) {
   const { trustees, status, error, isRefreshing, refresh } = trusteeState;
-  const campaignName = 'MVST Trustees WhatsApp Campaign';
+  const campaignName = 'MVST Trustees Event Invitation – 2 August 2026';
   const [query, setQuery] = useState('');
   const [messageTemplate, setMessageTemplate] = useState(DEFAULT_TRUSTEE_MESSAGE);
   const [queue, setQueue] = useState([]);
@@ -4429,6 +4515,8 @@ function TrusteesSection({ trusteeState, user }) {
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const [message, setMessage] = useState('');
   const [issueFilter, setIssueFilter] = useState('');
+  const [sharingInvitation, setSharingInvitation] = useState(false);
+  const [preparedTrusteeShare, setPreparedTrusteeShare] = useState(null);
 
   const visibleTrustees = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -4461,6 +4549,7 @@ function TrusteesSection({ trusteeState, user }) {
     setStatusMap(latestStatus);
     setQueue(readyTrustees);
     setQueueIndex(firstPendingQueueIndex(readyTrustees, latestStatus));
+    setPreparedTrusteeShare(null);
     setMessage(readyTrustees.length ? 'Trustee WhatsApp queue ready.' : 'No WhatsApp-ready trustees for this search.');
   }
 
@@ -4481,11 +4570,14 @@ function TrusteesSection({ trusteeState, user }) {
   }
 
   function advanceToNextPending(nextStatusMap, startIndex = queueIndex + 1) {
-    const nextIndex = queue.findIndex((trustee, index) => index >= startIndex && !['Sent', 'Skipped'].includes(nextStatusMap[trustee.id]?.status));
+    const nextIndex = queue.findIndex((trustee, index) => index >= startIndex && !['Sent', 'Prepared', 'Skipped'].includes(nextStatusMap[trustee.id]?.status));
     if (nextIndex >= 0) {
       setQueueIndex(nextIndex);
+      setPreparedTrusteeShare(null);
       return;
     }
+    setQueueIndex(-1);
+    setPreparedTrusteeShare(null);
     setMessage('Trustee WhatsApp queue completed.');
   }
 
@@ -4495,7 +4587,7 @@ function TrusteesSection({ trusteeState, user }) {
     setMessage(reason);
   }
 
-  function openTrustee(index) {
+  function openTrustee(index, options = {}) {
     const trustee = queue[index];
     if (!trustee) return;
     if (!trustee.validWhatsApp) {
@@ -4516,9 +4608,19 @@ function TrusteesSection({ trusteeState, user }) {
       failTrustee(trustee, queueError.message || 'WhatsApp message validation failed.');
       return;
     }
-    const nextStatus = recordQueueStatus(trustee, 'Sent', 'Opened WhatsApp for manual sending.');
+    const nextStatus = recordQueueStatus(
+      trustee,
+      'Prepared',
+      options.invitationCardDownloaded
+        ? 'Downloaded invitation card and opened WhatsApp for manual attachment. Delivery is not confirmed.'
+        : 'Opened WhatsApp for manual attachment. Delivery is not confirmed.',
+    );
     window.open(url, '_blank', 'noopener,noreferrer');
-    setMessage('Marked Sent and opened WhatsApp. Queue advanced to the next pending trustee.');
+    setMessage(
+      options.invitationCardDownloaded
+        ? 'Invitation card downloaded and WhatsApp opened. Package marked Prepared, not delivered. Attach the JPG before sending.'
+        : 'WhatsApp opened. Package marked Prepared, not delivered. Attach the invitation card before sending.',
+    );
     advanceToNextPending(nextStatus, index + 1);
   }
 
@@ -4539,6 +4641,64 @@ function TrusteesSection({ trusteeState, user }) {
     }
   }
 
+  async function shareCurrentInvitation() {
+    if (!currentTrustee || sharingInvitation) return;
+
+    const probeFile = new File(['MVST invitation'], TRUSTEE_INVITATION_CARD_FILENAME, { type: 'image/jpeg' });
+    if (!canShareEventFiles([probeFile])) {
+      downloadEventInvitationCard();
+      openTrustee(queueIndex, { invitationCardDownloaded: true });
+      return;
+    }
+
+    if (!preparedTrusteeShare || preparedTrusteeShare.trusteeId !== currentTrustee.id) {
+      setSharingInvitation(true);
+      try {
+        const file = await loadEventInvitationCardFile();
+        if (!canShareEventFiles([file])) {
+          throw new Error('This browser cannot share the invitation card. Use Download Invite Card and Open WhatsApp.');
+        }
+        setPreparedTrusteeShare({
+          trusteeId: currentTrustee.id,
+          file,
+          personalizedMessage: buildTrusteeMessage(currentTrustee, messageTemplate),
+        });
+        setMessage('Invitation card ready. Tap Share Card + Message again to open the device share sheet.');
+      } catch (prepareError) {
+        setPreparedTrusteeShare(null);
+        setMessage(prepareError.message || 'Unable to prepare the invitation card.');
+      } finally {
+        setSharingInvitation(false);
+      }
+      return;
+    }
+
+    setSharingInvitation(true);
+    try {
+      await navigator.share({
+        files: [preparedTrusteeShare.file],
+        title: 'MVST Samoohika Shanti Invitation',
+        text: preparedTrusteeShare.personalizedMessage,
+      });
+      setPreparedTrusteeShare(null);
+      const nextStatus = recordQueueStatus(
+        currentTrustee,
+        'Prepared',
+        'Device share flow completed for the invitation card and personalized message. Delivery is not confirmed.',
+      );
+      setMessage('Share flow completed. Package marked Prepared, not delivered. Queue advanced.');
+      advanceToNextPending(nextStatus);
+    } catch (shareError) {
+      if (shareError?.name === 'AbortError') {
+        setMessage('Share cancelled. This trustee remains pending.');
+      } else {
+        setMessage(shareError.message || 'Unable to share the invitation card. Use Download Invite Card and Open WhatsApp.');
+      }
+    } finally {
+      setSharingInvitation(false);
+    }
+  }
+
   function retryTrustee(trustee) {
     const nextStatus = { ...statusMap };
     delete nextStatus[trustee.id];
@@ -4546,6 +4706,7 @@ function TrusteesSection({ trusteeState, user }) {
     setStatusMap(nextStatus);
     const index = queue.findIndex((item) => item.id === trustee.id);
     if (index >= 0) setQueueIndex(index);
+    setPreparedTrusteeShare(null);
     setMessage('Retry ready. Open WhatsApp when ready.');
   }
 
@@ -4610,9 +4771,17 @@ function TrusteesSection({ trusteeState, user }) {
       </div>
 
       <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <EventInvitationCardPackage />
         <label className="field-block">
-          <span>Bulk WhatsApp Message</span>
-          <textarea rows="8" value={messageTemplate} onChange={(event) => setMessageTemplate(event.target.value)} />
+          <span>Invitation Message</span>
+          <textarea
+            rows="18"
+            value={messageTemplate}
+            onChange={(event) => {
+              setMessageTemplate(event.target.value);
+              setPreparedTrusteeShare(null);
+            }}
+          />
         </label>
         <div className="bulk-actions">
           <button type="button" onClick={prepareQueue}>Generate Queue</button>
@@ -4623,7 +4792,7 @@ function TrusteesSection({ trusteeState, user }) {
             <div className="bulk-preview-head">
               <div>
                 <p>{campaignName}</p>
-                <h3>{progress.total} Total · {progress.sent} Sent · {progress.skipped} Skipped · {progress.failed} Failed · {progress.remaining} Remaining</h3>
+                <h3>{progress.total} Total · {progress.prepared} Prepared · {progress.sent} Sent · {progress.skipped} Skipped · {progress.failed} Failed · {progress.remaining} Remaining</h3>
               </div>
               <button type="button" onClick={() => setQueue([])}>Clear</button>
             </div>
@@ -4634,7 +4803,18 @@ function TrusteesSection({ trusteeState, user }) {
               </div>
             ) : null}
             <div className="bulk-queue-controls">
-              <button type="button" onClick={() => openTrustee(queueIndex)}>Open WhatsApp</button>
+              <button type="button" onClick={shareCurrentInvitation} disabled={!currentTrustee || sharingInvitation}>
+                <Share2 size={17} />
+                {sharingInvitation
+                  ? 'Preparing...'
+                  : preparedTrusteeShare?.trusteeId === currentTrustee?.id
+                    ? 'Share Card + Message'
+                    : 'Prepare Card + Message'}
+              </button>
+              <button type="button" onClick={() => openTrustee(queueIndex)} disabled={!currentTrustee}>
+                <MessageCircle size={17} />
+                Open WhatsApp (Attach Card)
+              </button>
               <button type="button" onClick={skipCurrent}>Skip</button>
               <button type="button" onClick={copyCurrentMessage}>Copy Message</button>
             </div>
@@ -5222,7 +5402,7 @@ function ExpensesSection({ expenseState }) {
 
 function PreviousDonorsCampaign({ donorState }) {
   const { donors, status, error, writeEnabled, isRefreshing, refresh, saveDonor, prepareGeneralDonorQr, recordPreviousDonorCampaignStatus } = donorState;
-  const campaignName = 'Donors Campaign 2026';
+  const campaignName = 'General Donors Event Invitation – 2 August 2026';
   const [filterId, setFilterId] = useState('all');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState('');
@@ -5244,6 +5424,8 @@ function PreviousDonorsCampaign({ donorState }) {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueOpened, setQueueOpened] = useState(false);
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
+  const [preparingInvitation, setPreparingInvitation] = useState(false);
+  const [preparedInvitationShare, setPreparedInvitationShare] = useState(null);
   const [qrPreview, setQrPreview] = useState({ open: false, donor: null, dataUrl: '', message: '' });
   const [drilldownKey, setDrilldownKey] = useState('');
   const previousDonors = useMemo(() => donors.filter(isConfirmedCurrentGeneralDonor), [donors]);
@@ -5268,6 +5450,14 @@ function PreviousDonorsCampaign({ donorState }) {
   }, [filterId, previousDonors, query]);
 
   const readyDonors = useMemo(() => visibleDonors.filter(donorMobileIsValid), [visibleDonors]);
+  const invitationPackageReadyDonors = useMemo(
+    () => visibleDonors.filter(generalDonorInvitationPackageReady),
+    [visibleDonors],
+  );
+  const invitationQrBlockedDonors = useMemo(
+    () => visibleDonors.filter((donor) => donorMobileIsValid(donor) && !generalDonorInvitationPackageReady(donor)),
+    [visibleDonors],
+  );
   const currentQueueDonor = queue[queueIndex];
   const previousDonorProgress = queueCounts(queue, statusMap);
   const donorSummary = useMemo(() => ({
@@ -5325,9 +5515,13 @@ function PreviousDonorsCampaign({ donorState }) {
   useEffect(() => {
     const mongoStatus = {};
     previousDonors.forEach((donor) => {
-      if (donor.previousDonorCampaignStatus && donor.previousDonorCampaignStatus !== 'Pending') {
+      if (
+        donor.previousDonorCampaignName === campaignName
+        && donor.previousDonorCampaignStatus
+        && donor.previousDonorCampaignStatus !== 'Pending'
+      ) {
         mongoStatus[donor.id] = {
-          campaign: donor.previousDonorCampaignName || campaignName,
+          campaign: campaignName,
           recipient: sponsorDisplayName(donor),
           status: donor.previousDonorCampaignStatus,
           at: donor.previousDonorCampaignStatusAt || '',
@@ -5439,11 +5633,16 @@ function PreviousDonorsCampaign({ donorState }) {
   function prepareQueue() {
     const latestStatus = readQueueStatus(campaignName);
     setStatusMap(latestStatus);
-    setQueue(readyDonors);
+    setQueue(invitationPackageReadyDonors);
     setQueueStarted(false);
-    setQueueIndex(firstPendingQueueIndex(readyDonors, latestStatus));
+    setQueueIndex(firstPendingQueueIndex(invitationPackageReadyDonors, latestStatus));
     setQueueOpened(false);
-    setMessage(readyDonors.length ? 'Campaign preview ready. Open one WhatsApp message at a time.' : 'No WhatsApp-ready donors for this filter.');
+    setPreparedInvitationShare(null);
+    setMessage(
+      invitationPackageReadyDonors.length
+        ? `Invitation package queue ready. ${invitationQrBlockedDonors.length} donor(s) excluded until QR eligibility is complete.`
+        : 'No donors in this filter have both a valid WhatsApp number and an eligible personal QR.',
+    );
   }
 
   function clearQueue() {
@@ -5451,12 +5650,13 @@ function PreviousDonorsCampaign({ donorState }) {
     setQueueStarted(false);
     setQueueIndex(0);
     setQueueOpened(false);
+    setPreparedInvitationShare(null);
     setMessage('');
   }
 
   async function recordPreviousDonorStatus(donor, statusValue, remarks = '') {
     const stamp = queueAuditStamp();
-    const nextStatus = writeQueueStatus(campaignName, donor.id, {
+    const statusEntry = {
       campaign: campaignName,
       recipient: sponsorDisplayName(donor),
       status: statusValue,
@@ -5465,8 +5665,7 @@ function PreviousDonorsCampaign({ donorState }) {
       at: stamp.at,
       user: stamp.user,
       remarks,
-    });
-    setStatusMap(nextStatus);
+    };
     if (recordPreviousDonorCampaignStatus) {
       await recordPreviousDonorCampaignStatus(donor.id, {
         campaignName,
@@ -5475,35 +5674,122 @@ function PreviousDonorsCampaign({ donorState }) {
         whatsappDestination: donor.contactNo,
       });
     }
+    const nextStatus = writeQueueStatus(campaignName, donor.id, statusEntry);
+    setStatusMap(nextStatus);
     return nextStatus;
   }
 
   function advancePreviousDonorQueue(nextStatusMap, startIndex = queueIndex + 1) {
-    const nextIndex = queue.findIndex((donor, index) => index >= startIndex && !['Sent', 'Skipped'].includes(nextStatusMap[donor.id]?.status));
+    const nextIndex = queue.findIndex((donor, index) => index >= startIndex && !['Sent', 'Prepared', 'Skipped'].includes(nextStatusMap[donor.id]?.status));
     if (nextIndex >= 0) {
       setQueueIndex(nextIndex);
       setQueueOpened(false);
     } else {
+      setQueueIndex(-1);
       setMessage('Donors WhatsApp queue completed.');
       setQueueOpened(false);
     }
   }
 
-  async function openQueueDonor(index) {
+  async function prepareGeneralDonorInvitationPackage(donor) {
+    const payload = donor.qrUrl
+      ? { donor }
+      : await prepareGeneralDonorQr(donor.id, {});
+    const donorWithQr = {
+      ...donor,
+      ...(payload.donor || {}),
+      contactNo: donor.contactNo,
+    };
+    const qrDataUrl = await generateDonorQrPassJpg(donorWithQr, { donationType: 'Donor' });
+    return {
+      donorWithQr,
+      qrDataUrl,
+      qrFile: donorQrPassFile(donorWithQr, 'Donor', qrDataUrl),
+    };
+  }
+
+  async function prepareGeneralDonorNativeShare(donor) {
+    if (!generalDonorInvitationPackageReady(donor)) {
+      throw new Error('A valid WhatsApp number and Treasurer Verified / Payment Received status are required for the invitation QR package.');
+    }
+    const personalizedMessage = buildGeneralDonorInvitationMessage(donor);
+    const invitationPackage = await prepareGeneralDonorInvitationPackage(donor);
+    const invitationFile = await loadEventInvitationCardFile();
+    const files = [invitationFile, invitationPackage.qrFile];
+    if (!canShareEventFiles(files)) {
+      throw new Error('This browser cannot share both invitation images. Use Download Both + Open WhatsApp.');
+    }
+    return {
+      donorId: donor.id,
+      files,
+      personalizedMessage,
+    };
+  }
+
+  async function openQueueDonor(index, nativeShare = false, preparedShare = null) {
     const donor = queue[index];
     if (!donor) return;
+    let whatsappWindow = null;
+    let deliveryStarted = false;
     try {
-      if (!donorMobileIsValid(donor)) throw new Error('Invalid or missing WhatsApp mobile.');
-      const personalizedMessage = buildPreviousDonorAppealMessage(donor);
+      if (!generalDonorInvitationPackageReady(donor)) {
+        throw new Error('A valid WhatsApp number and Treasurer Verified / Payment Received status are required for the invitation QR package.');
+      }
+      const personalizedMessage = buildGeneralDonorInvitationMessage(donor);
       if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
-      const url = makePreviousDonorWhatsAppUrl(donor);
+      const url = makePreviousDonorWhatsAppUrl(donor, 'invitation');
       if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
-      const nextStatus = await recordPreviousDonorStatus(donor, 'Sent', 'Opened WhatsApp for manual sending.');
-      window.open(url, '_blank', 'noopener,noreferrer');
+
+      if (!nativeShare) {
+        whatsappWindow = window.open('', '_blank');
+        if (!whatsappWindow) {
+          throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+        }
+      }
+      setPreparingInvitation(true);
+      let remarks = '';
+      if (nativeShare) {
+        if (!preparedShare || preparedShare.donorId !== donor.id) {
+          throw new Error('Prepare this donor package before opening the device share sheet.');
+        }
+        await navigator.share({
+          files: preparedShare.files,
+          title: 'MVST Event Invitation and Donor QR',
+          text: preparedShare.personalizedMessage,
+        });
+        deliveryStarted = true;
+        setPreparedInvitationShare(null);
+        remarks = 'Device share flow completed for the invitation card, personal donor QR pass and personalized message. Delivery is not confirmed.';
+      } else {
+        const invitationPackage = await prepareGeneralDonorInvitationPackage(donor);
+        downloadEventInvitationPackage(donor, 'Donor', invitationPackage.qrDataUrl);
+        whatsappWindow.opener = null;
+        whatsappWindow.location.href = url;
+        deliveryStarted = true;
+        remarks = 'Downloaded invitation card and personal donor QR pass, then opened WhatsApp for manual attachment. Delivery is not confirmed.';
+      }
+
+      const nextStatus = await recordPreviousDonorStatus(donor, 'Prepared', remarks);
       advancePreviousDonorQueue(nextStatus, index + 1);
+      setMessage(
+        nativeShare
+          ? 'Share flow completed. Package marked Prepared, not delivered. Queue advanced.'
+          : 'Both images downloaded and WhatsApp opened. Package marked Prepared, not delivered. Attach both images before sending.',
+      );
     } catch (openError) {
+      if (!deliveryStarted) whatsappWindow?.close();
+      if (openError?.name === 'AbortError') {
+        setMessage('Share cancelled. This donor remains pending.');
+        return;
+      }
+      if (deliveryStarted) {
+        setMessage('The invitation package was opened/shared, but its campaign status could not be saved. Please verify before retrying.');
+        return;
+      }
       await recordPreviousDonorStatus(donor, 'Failed', openError.message || 'WhatsApp validation failed.').catch(() => {});
       setMessage(openError.message || 'WhatsApp validation failed.');
+    } finally {
+      setPreparingInvitation(false);
     }
     setQueueStarted(true);
     setQueueOpened(true);
@@ -5511,7 +5797,31 @@ function PreviousDonorsCampaign({ donorState }) {
 
   function openCurrentQueueDonor() {
     if (!queue.length) return;
-    openQueueDonor(queueIndex);
+    openQueueDonor(queueIndex, false);
+  }
+
+  function shareCurrentQueueDonor() {
+    if (!queue.length) return;
+    if (!canShareEventInvitationPackage()) {
+      openQueueDonor(queueIndex, false);
+      return;
+    }
+    if (preparedInvitationShare?.donorId === currentQueueDonor?.id) {
+      openQueueDonor(queueIndex, true, preparedInvitationShare);
+      return;
+    }
+    setPreparingInvitation(true);
+    setMessage('Preparing invitation card and personal QR for secure sharing...');
+    prepareGeneralDonorNativeShare(currentQueueDonor)
+      .then((preparedShare) => {
+        setPreparedInvitationShare(preparedShare);
+        setMessage('Package ready. Tap Share Invite + QR + Message again to open the device share sheet.');
+      })
+      .catch((shareError) => {
+        setPreparedInvitationShare(null);
+        setMessage(shareError.message || 'Unable to prepare the invitation package.');
+      })
+      .finally(() => setPreparingInvitation(false));
   }
 
   function skipQueueDonor() {
@@ -5525,15 +5835,15 @@ function PreviousDonorsCampaign({ donorState }) {
   }
 
   async function copyAllMessages() {
-    const text = readyDonors
+    const text = invitationPackageReadyDonors
       .map((donor, index) => [
         `${index + 1}. ${sponsorDisplayName(donor)}`,
-        buildPreviousDonorAppealMessage(donor),
+        buildGeneralDonorInvitationMessage(donor),
       ].join('\n'))
       .join('\n\n------------------------------\n\n');
     try {
       await navigator.clipboard.writeText(text);
-      setMessage(`Copied ${readyDonors.length} personalized messages.`);
+      setMessage(`Copied ${invitationPackageReadyDonors.length} personalized invitation messages.`);
     } catch (copyError) {
       setMessage('Automatic copy is blocked. Use the preview text from each donor card.');
     }
@@ -5595,10 +5905,10 @@ function PreviousDonorsCampaign({ donorState }) {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search donor, mobile, amount, year" />
         </label>
         <button className="refresh-button compact" type="button" onClick={prepareQueue}>
-          <MessageCircle size={16} /> Preview Campaign Queue
+          <MessageCircle size={16} /> Generate Invitation + QR Queue
         </button>
-        <button className="refresh-button compact secondary-action" type="button" onClick={copyAllMessages} disabled={!readyDonors.length}>
-          Copy All Messages
+        <button className="refresh-button compact secondary-action" type="button" onClick={copyAllMessages} disabled={!invitationPackageReadyDonors.length}>
+          Copy Invitation Messages
         </button>
       </div>
 
@@ -5616,13 +5926,20 @@ function PreviousDonorsCampaign({ donorState }) {
         </div>
       ) : null}
 
-      {queue.length || queueStarted ? (
-        <div className="bulk-whatsapp-panel donor-bulk-panel">
+      <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <EventInvitationCardPackage includeQr />
+        <div className="event-note invitation-package-readiness">
+          <b>{invitationPackageReadyDonors.length} package-ready donors</b>
+          <span>
+            {invitationQrBlockedDonors.length} excluded until Treasurer Verified / Payment Received and personal QR eligibility are complete.
+          </span>
+        </div>
+        {queue.length || queueStarted ? (
           <div className="bulk-preview">
             <div className="bulk-preview-head">
               <div>
-                <p>Donors WhatsApp Queue</p>
-                <h3>{previousDonorProgress.total} Total · {previousDonorProgress.sent} Sent · {previousDonorProgress.skipped} Skipped · {previousDonorProgress.failed} Failed · {previousDonorProgress.remaining} Remaining</h3>
+                <p>General Donors Invitation + QR Queue</p>
+                <h3>{previousDonorProgress.total} Total · {previousDonorProgress.prepared} Prepared · {previousDonorProgress.sent} Sent · {previousDonorProgress.skipped} Skipped · {previousDonorProgress.failed} Failed · {previousDonorProgress.remaining} Remaining</h3>
               </div>
               <button type="button" onClick={clearQueue}>Close</button>
             </div>
@@ -5630,7 +5947,7 @@ function PreviousDonorsCampaign({ donorState }) {
               <>
                 <div className="bulk-preview-list donor-bulk-list">
                   {queue.map((donor, index) => (
-                    <button className={index === queueIndex ? 'active' : ''} key={donor.id} onClick={() => { setQueueIndex(index); setQueueOpened(false); }} type="button">
+                    <button className={index === queueIndex ? 'active' : ''} key={donor.id} onClick={() => { setQueueIndex(index); setQueueOpened(false); setPreparedInvitationShare(null); }} type="button">
                       <strong>{sponsorDisplayName(donor)}</strong>
                       <span>{formatCurrency(previousDonationAmount(donor))}</span>
                       <span>{donor.contactNo}</span>
@@ -5640,20 +5957,31 @@ function PreviousDonorsCampaign({ donorState }) {
                 </div>
                 {currentQueueDonor ? (
                   <div className="donor-current-preview">
-                    <div><p>Current Message Preview</p><strong>{sponsorDisplayName(currentQueueDonor)} - {formatCurrency(previousDonationAmount(currentQueueDonor))}</strong></div>
-                    <textarea readOnly rows="10" value={buildPreviousDonorAppealMessage(currentQueueDonor)} />
+                    <div><p>Invitation Package Preview</p><strong>{sponsorDisplayName(currentQueueDonor)} - Invite Card + Personal QR</strong></div>
+                    <textarea readOnly rows="16" value={buildGeneralDonorInvitationMessage(currentQueueDonor)} />
                   </div>
                 ) : null}
                 <div className="bulk-queue-controls">
                   <span>Current {queueIndex + 1} of {queue.length}: {sponsorDisplayName(currentQueueDonor || {})}</span>
-                  <button type="button" onClick={openCurrentQueueDonor}>Open WhatsApp</button>
-                  <button type="button" onClick={skipQueueDonor}>Skip</button>
+                  <button type="button" onClick={shareCurrentQueueDonor} disabled={preparingInvitation || !currentQueueDonor}>
+                    <Share2 size={17} />
+                    {preparingInvitation
+                      ? 'Preparing Package...'
+                      : preparedInvitationShare?.donorId === currentQueueDonor?.id
+                        ? 'Share Invite + QR + Message'
+                        : 'Prepare Invite + QR'}
+                  </button>
+                  <button type="button" onClick={openCurrentQueueDonor} disabled={preparingInvitation || !currentQueueDonor}>
+                    <Download size={17} />
+                    Download Both + Open WhatsApp
+                  </button>
+                  <button type="button" onClick={skipQueueDonor} disabled={preparingInvitation}>Skip</button>
                 </div>
               </>
-            ) : <p className="bulk-empty">No eligible donors found for this filter.</p>}
+            ) : <p className="bulk-empty">No eligible donors found. A valid mobile and Treasurer Verified / Payment Received status are required for the personal QR package.</p>}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       <div className="participants-list donor-list">
         {visibleDonors.length ? visibleDonors.map((donor) => {
@@ -5805,6 +6133,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
   const [bulkMessage, setBulkMessage] = useState('');
   const [savingBulk, setSavingBulk] = useState(false);
   const [bulkOpened, setBulkOpened] = useState(false);
+  const [preparedBulkShare, setPreparedBulkShare] = useState(null);
   const [sponsorFilter, setSponsorFilter] = useState('all');
   const [sponsorQuery, setSponsorQuery] = useState('');
   const [quantityFilter, setQuantityFilter] = useState('All');
@@ -6103,11 +6432,29 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       .sort((a, b) => Number(b.rowNumber || 0) - Number(a.rowNumber || 0));
   }, [activeDonors, sponsorFilter, sponsorQuery, quantityFilter]);
 
+  const invitationPackageReadySponsors = useMemo(
+    () => visibleDonors.filter(mangalyaDonorInvitationPackageReady),
+    [visibleDonors],
+  );
+  const invitationQrBlockedSponsors = useMemo(
+    () => visibleDonors.filter((donor) => donorMobileIsValid(donor) && !mangalyaDonorInvitationPackageReady(donor)),
+    [visibleDonors],
+  );
+  const invitationAlreadyPreparedSponsors = useMemo(
+    () => visibleDonors.filter((donor) => mangalyaDonorInvitationPackageReady(donor) && donor.invitationPreparedAt),
+    [visibleDonors],
+  );
+
   function prepareBulkQueue() {
-    setBulkQueue(visibleDonors.filter((donor) => donorMobileIsValid(donor) && !donorJourneySent(donor, 'appeal')));
+    setBulkQueue(invitationPackageReadySponsors);
     setBulkStarted(false);
     setBulkIndex(0);
-    setBulkMessage('');
+    setPreparedBulkShare(null);
+    setBulkMessage(
+      invitationPackageReadySponsors.length
+        ? `Invitation package queue ready. ${invitationQrBlockedSponsors.length} QR-ineligible sponsor(s) excluded. ${invitationAlreadyPreparedSponsors.length} previously prepared package(s) remain included for operator verification.`
+        : 'No Mangalya sponsors in this filter are ready for an invitation card + personal QR package.',
+    );
     setBulkOpened(false);
   }
 
@@ -6117,9 +6464,46 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     setBulkIndex(0);
     setBulkMessage('');
     setBulkOpened(false);
+    setPreparedBulkShare(null);
   }
 
-  async function openBulkDonor(index) {
+  async function prepareMangalyaInvitationPackage(donor) {
+    const payload = donor.qrUrl
+      ? { donor }
+      : await prepareQr(donor.id, {});
+    const donorWithQr = {
+      ...donor,
+      ...(payload.donor || {}),
+      contactNo: donor.contactNo,
+    };
+    if (!donorWithQr.qrUrl) throw new Error('Mangalya donor QR could not be prepared.');
+    const qrDataUrl = await generateDonorQrPassJpg(donorWithQr, { donationType: 'Mangalya Donor' });
+    return {
+      donorWithQr,
+      qrDataUrl,
+      qrFile: donorQrPassFile(donorWithQr, 'Mangalya Donor', qrDataUrl),
+    };
+  }
+
+  async function prepareMangalyaNativeShare(donor) {
+    if (!mangalyaDonorInvitationPackageReady(donor)) {
+      throw new Error('Valid mobile, donor identity, receipt number, quantity and Treasurer Verified / Payment Received status are required.');
+    }
+    const personalizedMessage = buildMangalyaDonorInvitationMessage(donor);
+    const invitationPackage = await prepareMangalyaInvitationPackage(donor);
+    const invitationFile = await loadEventInvitationCardFile();
+    const files = [invitationFile, invitationPackage.qrFile];
+    if (!canShareEventFiles(files)) {
+      throw new Error('This browser cannot share both invitation images. Use Download Both + Open WhatsApp.');
+    }
+    return {
+      donorId: donor.id,
+      files,
+      personalizedMessage,
+    };
+  }
+
+  async function openBulkDonor(index, nativeShare = false, preparedShare = null) {
     const donor = bulkQueue[index];
     if (!donor) return;
     if (!writeEnabled) {
@@ -6128,26 +6512,71 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     }
     setBulkMessage('');
     setSavingBulk(true);
+    let whatsappWindow = null;
+    let deliveryStarted = false;
     try {
-      if (!donorMobileIsValid(donor)) throw new Error('Invalid or missing WhatsApp mobile.');
-      const personalizedMessage = buildMangalyaDonorAppealMessage(donor);
+      if (!mangalyaDonorInvitationPackageReady(donor)) {
+        throw new Error('Valid mobile, donor identity, receipt number, quantity and Treasurer Verified / Payment Received status are required.');
+      }
+      const personalizedMessage = buildMangalyaDonorInvitationMessage(donor);
       if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
-      const url = makeMangalyaDonorWhatsAppUrl(donor);
+      const url = makeMangalyaDonorWhatsAppUrl(donor, 'invitation');
       if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
-      await saveDonor(donor.id, donorJourneySentUpdates('appeal'));
-      window.open(url, '_blank', 'noopener,noreferrer');
+
+      if (!nativeShare) {
+        whatsappWindow = window.open('', '_blank');
+        if (!whatsappWindow) {
+          throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+        }
+      }
+      if (nativeShare) {
+        if (!preparedShare || preparedShare.donorId !== donor.id) {
+          throw new Error('Prepare this donor package before opening the device share sheet.');
+        }
+        await navigator.share({
+          files: preparedShare.files,
+          title: 'MVST Event Invitation and Mangalya Donor QR',
+          text: preparedShare.personalizedMessage,
+        });
+        deliveryStarted = true;
+        setPreparedBulkShare(null);
+      } else {
+        const invitationPackage = await prepareMangalyaInvitationPackage(donor);
+        downloadEventInvitationPackage(donor, 'Mangalya Donor', invitationPackage.qrDataUrl);
+        whatsappWindow.opener = null;
+        whatsappWindow.location.href = url;
+        deliveryStarted = true;
+      }
+
+      await markInvitationPrepared(donor.id, { whatsappDestination: donor.contactNo });
       setBulkStarted(true);
       setBulkOpened(true);
       const nextIndex = index + 1;
       if (nextIndex < bulkQueue.length) {
         setBulkIndex(nextIndex);
         setBulkOpened(false);
-        setBulkMessage('Marked sent and opened WhatsApp. Queue advanced to the next sponsor.');
+        setBulkMessage(
+          nativeShare
+            ? 'Share flow completed. Package marked Prepared, not delivered. Queue advanced to the next sponsor.'
+            : 'Both images downloaded and WhatsApp opened. Package marked Prepared, not delivered. Attach both images before sending.',
+        );
       } else {
-        setBulkMessage('Sponsorship WhatsApp queue completed.');
+        setBulkIndex(-1);
+        setBulkMessage(
+          nativeShare
+            ? 'Share flow completed. Package marked Prepared, not delivered. Mangalya donor queue completed.'
+            : 'Both images downloaded and WhatsApp opened. Package marked Prepared, not delivered. Attach both images before sending. Queue completed.',
+        );
       }
     } catch (saveError) {
-      setBulkMessage(saveError.message || 'Unable to open WhatsApp and save sent status');
+      if (!deliveryStarted) whatsappWindow?.close();
+      if (saveError?.name === 'AbortError') {
+        setBulkMessage('Share cancelled. This sponsor remains pending.');
+      } else if (deliveryStarted) {
+        setBulkMessage('The invitation package was opened/shared, but its Prepared status could not be saved. Please verify before retrying.');
+      } else {
+        setBulkMessage(saveError.message || 'Unable to prepare the invitation and QR package');
+      }
     } finally {
       setSavingBulk(false);
     }
@@ -6155,12 +6584,31 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
 
   function openCurrentBulkDonor() {
     if (!bulkQueue.length) return;
-    openBulkDonor(bulkIndex);
+    openBulkDonor(bulkIndex, false);
   }
 
-  function openNextBulkDonor() {
-    if (!bulkQueue[bulkIndex]) return;
-    openBulkDonor(bulkIndex);
+  function shareCurrentBulkDonor() {
+    if (!bulkQueue.length) return;
+    if (!canShareEventInvitationPackage()) {
+      openBulkDonor(bulkIndex, false);
+      return;
+    }
+    if (preparedBulkShare?.donorId === currentBulkDonor?.id) {
+      openBulkDonor(bulkIndex, true, preparedBulkShare);
+      return;
+    }
+    setSavingBulk(true);
+    setBulkMessage('Preparing invitation card and personal QR for secure sharing...');
+    prepareMangalyaNativeShare(currentBulkDonor)
+      .then((preparedShare) => {
+        setPreparedBulkShare(preparedShare);
+        setBulkMessage('Package ready. Tap Share Invite + QR + Message again to open the device share sheet.');
+      })
+      .catch((shareError) => {
+        setPreparedBulkShare(null);
+        setBulkMessage(shareError.message || 'Unable to prepare the invitation package.');
+      })
+      .finally(() => setSavingBulk(false));
   }
 
   return (
@@ -6446,9 +6894,16 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       ) : null}
 
       <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <EventInvitationCardPackage includeQr />
+        <div className="event-note invitation-package-readiness">
+          <b>{invitationPackageReadySponsors.length} package-ready Mangalya donors</b>
+          <span>
+            {invitationQrBlockedSponsors.length} QR-ineligible · {invitationAlreadyPreparedSponsors.length} previously prepared package(s) included for verification.
+          </span>
+        </div>
         <div className="bulk-actions">
           <button type="button" onClick={prepareBulkQueue}>
-            <MessageCircle size={16} /> Preview All WhatsApp Messages
+            <MessageCircle size={16} /> Generate Invitation + QR Queue
           </button>
         </div>
 
@@ -6456,7 +6911,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
           <div className="bulk-preview">
             <div className="bulk-preview-head">
               <div>
-                <p>Sponsorship WhatsApp Queue</p>
+                <p>Mangalya Donors Invitation + QR Queue</p>
                 <h3>Total count: {bulkQueue.length}</h3>
               </div>
               <button type="button" onClick={clearBulkQueue}>Close</button>
@@ -6465,7 +6920,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
               <>
                 <div className="bulk-preview-list donor-bulk-list">
                   {bulkQueue.map((donor, index) => (
-                    <button className={index === bulkIndex ? 'active' : ''} key={donor.id} onClick={() => { setBulkIndex(index); setBulkOpened(false); setBulkMessage(''); }} type="button">
+                    <button className={index === bulkIndex ? 'active' : ''} key={donor.id} onClick={() => { setBulkIndex(index); setBulkOpened(false); setBulkMessage(''); setPreparedBulkShare(null); }} type="button">
                       <strong>{sponsorDisplayName(donor)}</strong>
                       <span>{donor.contactNo}</span>
                       <span>{donor.sponsored2025} previous qty</span>
@@ -6475,20 +6930,30 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
                 </div>
                 {currentBulkDonor ? (
                   <div className="donor-current-preview">
-                    <div><p>Current Message Preview</p><strong>{sponsorDisplayName(currentBulkDonor)} - {currentBulkDonor.contactNo}</strong></div>
-                    <textarea readOnly rows="10" value={buildMangalyaDonorAppealMessage(currentBulkDonor)} />
+                    <div><p>Invitation Package Preview</p><strong>{sponsorDisplayName(currentBulkDonor)} - Invite Card + Personal QR</strong></div>
+                    <textarea readOnly rows="16" value={buildMangalyaDonorInvitationMessage(currentBulkDonor)} />
                   </div>
                 ) : null}
                 <div className="bulk-queue-controls">
                   <span>{bulkOpened ? 'Opened' : 'Ready'} {bulkIndex + 1} of {bulkQueue.length}: {sponsorDisplayName(currentBulkDonor || {})}</span>
-                  <button type="button" onClick={openCurrentBulkDonor} disabled={!writeEnabled || savingBulk}>{savingBulk ? 'Saving' : 'Open WhatsApp'}</button>
-                  <button type="button" onClick={openNextBulkDonor} disabled={!currentBulkDonor || savingBulk}>Open Current</button>
-                  {bulkMessage ? <small>{bulkMessage}</small> : null}
+                  <button type="button" onClick={shareCurrentBulkDonor} disabled={!writeEnabled || savingBulk || !currentBulkDonor}>
+                    <Share2 size={17} />
+                    {savingBulk
+                      ? 'Preparing Package...'
+                      : preparedBulkShare?.donorId === currentBulkDonor?.id
+                        ? 'Share Invite + QR + Message'
+                        : 'Prepare Invite + QR'}
+                  </button>
+                  <button type="button" onClick={openCurrentBulkDonor} disabled={!writeEnabled || savingBulk || !currentBulkDonor}>
+                    <Download size={17} />
+                    Download Both + Open WhatsApp
+                  </button>
                 </div>
               </>
-            ) : <p className="bulk-empty">No eligible sponsors found. Missing mobile numbers and already-sent sponsors are skipped.</p>}
+            ) : <p className="bulk-empty">No eligible sponsors found. A valid mobile, donor identity, physical receipt number, quantity and Treasurer Verified / Payment Received status are required.</p>}
           </div>
         ) : null}
+        {bulkMessage ? <small className="donor-note">{bulkMessage}</small> : null}
       </div>
 
       <div className="participants-list donor-list">
@@ -7676,6 +8141,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   const [eventFilter, setEventFilter] = useState('All');
   const [selectedQrParticipant, setSelectedQrParticipant] = useState(null);
   const [scannedMangalyaDonor, setScannedMangalyaDonor] = useState(null);
+  const [scannedGeneralDonor, setScannedGeneralDonor] = useState(null);
   const [donorActionSaving, setDonorActionSaving] = useState(false);
   const operation = DISTRIBUTION_OPERATIONS[activeOperation];
   const searchableRows = rows.filter((row) => {
@@ -7721,6 +8187,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
     try {
       const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation });
       if (result.recordType === 'MANGALYA') {
+        setScannedGeneralDonor(null);
         setScannedMangalyaDonor(result.donor);
         setScanPopup({
           type: result.donor?.honourStatus === 'HONOURED' ? 'duplicate' : 'success',
@@ -7737,6 +8204,26 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
           message: result.donor?.honourStatus === 'HONOURED'
             ? `Already Honoured · ${result.donor?.donorName || 'Mangalya donor'}`
             : `Mangalya Donor Verified · ${result.donor?.donorName || 'Donor'} · Receipt ${result.donor?.receiptNumber || '-'}`,
+        });
+        setManualToken('');
+        return;
+      }
+      if (result.recordType === 'DONOR') {
+        setScannedMangalyaDonor(null);
+        setScannedGeneralDonor(result.donor);
+        setScanPopup({
+          type: 'success',
+          title: 'General Donor Verified',
+          participantName: result.donor?.donorName || 'General donor',
+          eventLabel: 'General Donation',
+          seatNo: '',
+          operationLabel: 'Donor Verified',
+          completedAt: result.completedAt || new Date().toISOString(),
+          completedBy: operatorName,
+        });
+        setScanState({
+          type: 'success',
+          message: `General Donor Verified · ${result.donor?.donorName || 'Donor'} · ${formatCurrency(result.donor?.amount || 0)}`,
         });
         setManualToken('');
         return;
@@ -7956,6 +8443,29 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
             <button type="button" onClick={() => setScannedMangalyaDonor(null)} disabled={donorActionSaving}>Close</button>
           </div>
           {scannedMangalyaDonor.honourStatus === 'HONOURED' ? <small>⚠ Already Honoured. Duplicate honouring is prevented.</small> : null}
+        </div>
+      ) : null}
+
+      {scannedGeneralDonor ? (
+        <div className="distribution-scanner-card mangalya-scan-result">
+          <div className="distribution-scanner-head">
+            <div>
+              <span>✓ General Donor Verified</span>
+              <strong>{scannedGeneralDonor.donorName || 'General donor'}</strong>
+            </div>
+            <StatusPill tone="success">QR Verified</StatusPill>
+          </div>
+          <div className="receipt-meta-grid">
+            <p><span>Mobile</span>{scannedGeneralDonor.mobile || '-'}</p>
+            <p><span>Contribution</span>{scannedGeneralDonor.contributionType || 'General Donation'}</p>
+            <p><span>Amount</span>{formatCurrency(scannedGeneralDonor.amount || 0)}</p>
+            <p><span>Payment Status</span>{scannedGeneralDonor.paymentStatus || '-'}</p>
+            <p><span>Event Year</span>{scannedGeneralDonor.eventYear || ACTIVE_EVENT_YEAR}</p>
+            <p><span>QR Status</span>{scannedGeneralDonor.qrStatus || 'ACTIVE'}</p>
+          </div>
+          <div className="receipt-queue-actions">
+            <button type="button" onClick={() => setScannedGeneralDonor(null)}>Close</button>
+          </div>
         </div>
       ) : null}
 

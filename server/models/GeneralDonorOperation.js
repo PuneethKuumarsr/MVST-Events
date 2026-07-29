@@ -4,11 +4,12 @@ const generalDonorOperationSchema = new mongoose.Schema(
   {
     eventYear: { type: String, required: true, index: true },
     donorSourceId: { type: String, required: true, index: true },
+    donorFingerprint: { type: String, default: '', trim: true },
     tokenRef: { type: String, default: '', trim: true },
     tokenHash: { type: String, default: '', trim: true },
     qrStatus: { type: String, enum: ['NOT_GENERATED', 'ACTIVE', 'REVOKED'], default: 'NOT_GENERATED', index: true },
     campaignName: { type: String, default: '' },
-    campaignStatus: { type: String, enum: ['Pending', 'Sent', 'Skipped', 'Failed'], default: 'Pending', index: true },
+    campaignStatus: { type: String, enum: ['Pending', 'Prepared', 'Sent', 'Skipped', 'Failed'], default: 'Pending', index: true },
     campaignStatusAt: { type: Date, default: null },
     campaignStatusBy: { type: String, default: '' },
     campaignRemarks: { type: String, default: '' },

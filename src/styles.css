@@ -3429,6 +3429,75 @@ main {
   margin-top: 12px;
 }
 
+.event-invitation-package {
+  display: grid;
+  grid-template-columns: minmax(190px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 14px;
+  border: 1px solid rgba(187, 135, 46, 0.32);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 250, 240, 0.98), rgba(255, 243, 212, 0.72));
+  padding: 14px;
+}
+
+.event-invitation-package > a {
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(120, 31, 42, 0.15);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(75, 17, 24, 0.12);
+}
+
+.event-invitation-package img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.event-invitation-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.event-invitation-copy p,
+.event-invitation-copy h3 {
+  margin: 0;
+}
+
+.event-invitation-copy p {
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.event-invitation-copy h3 {
+  color: var(--maroon-deep);
+  font-size: 1.15rem;
+}
+
+.event-invitation-copy > span {
+  color: var(--ink-soft);
+  line-height: 1.55;
+  font-weight: 750;
+}
+
+.event-invitation-actions {
+  padding: 4px 0 0;
+}
+
+.invitation-package-readiness {
+  margin-top: 0;
+}
+
+.invitation-package-readiness span {
+  white-space: normal;
+}
+
 .donor-bulk-list div,
 .donor-bulk-list button {
   grid-template-columns: minmax(170px, 1.2fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
@@ -3469,6 +3538,15 @@ main {
 }
 
 @media (max-width: 900px) {
+  .event-invitation-package {
+    grid-template-columns: 1fr;
+  }
+
+  .event-invitation-package > a {
+    width: min(100%, 360px);
+    margin: 0 auto;
+  }
+
   .donor-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

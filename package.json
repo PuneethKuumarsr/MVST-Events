@@ -6,7 +6,7 @@
     "scripts": {
         "build": "vite build",
         "preview": "vite preview --host 0.0.0.0",
-        "test": "node scripts/verify-event-mapping.mjs",
+        "test": "node scripts/verify-event-mapping.mjs && node scripts/verify-event-invitation.mjs",
         "verify:mongo": "node scripts/verify-mongo-foundation.mjs",
         "dev:api": "node server/index.js",
         "dev:frontend": "vite --host 0.0.0.0",
