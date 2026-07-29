@@ -10,6 +10,11 @@ import {
   queueCounts,
 } from '../src/queueStatus.js';
 import {
+  frontendBundleChanged,
+  frontendBundlePathFromHtml,
+  frontendBundlePathFromScripts,
+} from '../src/appFreshness.js';
+import {
   extractGeneralDonorQrToken,
   generalDonorFingerprint,
   GENERAL_DONOR_QR_PREFIX,
@@ -70,6 +75,13 @@ assert.equal(recoveredTrusteeProgress.statusMap['trustee-1'].status, 'Sent');
 assert.equal(recoveredTrusteeProgress.statusMap['trustee-3'].status, 'Sent');
 assert.equal(recoveredTrusteeProgress.statusMap['trustee-4'], undefined, 'Trustee recovery must not mark later recipients');
 assert.equal(firstPendingQueueIndex(trusteeRecoveryQueue, recoveredTrusteeProgress.statusMap), 3, 'Trustee recovery must resume from the name after the confirmed recipient');
+
+const oldBundle = frontendBundlePathFromScripts(['https://mvst-events.onrender.com/assets/index-old123.js']);
+const latestBundle = frontendBundlePathFromHtml('<script type="module" src="/assets/index-new456.js"></script>');
+assert.equal(oldBundle, '/assets/index-old123.js');
+assert.equal(latestBundle, '/assets/index-new456.js');
+assert.equal(frontendBundleChanged(oldBundle, latestBundle), true, 'A restored stale Safari page must detect the newer app bundle');
+assert.equal(frontendBundleChanged(latestBundle, latestBundle), false, 'The current app bundle must not reload unnecessarily');
 
 const donor = {
   eventYear: '2026',

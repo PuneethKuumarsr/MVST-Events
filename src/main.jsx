@@ -40,6 +40,11 @@ import {
   DEFAULT_DONOR_INVITATION_MESSAGE,
   DEFAULT_TRUSTEE_MESSAGE,
 } from './eventInvitation.js';
+import {
+  frontendBundleChanged,
+  frontendBundlePathFromHtml,
+  frontendBundlePathFromScripts,
+} from './appFreshness.js';
 import { firstPendingQueueIndex, markQueueSentThroughRecipient, queueCounts } from './queueStatus.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
 import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mangalya_Donor_Receipt.jpeg';
@@ -4752,6 +4757,10 @@ function TrusteesSection({ trusteeState, user }) {
       </div>
 
       <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <div className="event-note">
+          <b>Trustee queue recovery active</b>
+          <span>Recipients 1–23 are confirmed Sent through Jayalakshmi K S. Generate Queue continues with Kala Pradeep.</span>
+        </div>
         <EventInvitationCardPackage />
         <label className="field-block">
           <span>Invitation Message</span>
@@ -9495,7 +9504,56 @@ function App({ auth }) {
   );
 }
 
+function useFrontendFreshness() {
+  useEffect(() => {
+    let checking = false;
+    let active = true;
+
+    async function refreshIfFrontendChanged() {
+      if (checking) return;
+      const currentBundle = frontendBundlePathFromScripts(
+        Array.from(document.scripts, (script) => script.src),
+      );
+      if (!currentBundle) return;
+
+      checking = true;
+      try {
+        const response = await fetch(`/?app-shell-check=${Date.now()}`, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
+        if (!response.ok || !active) return;
+        const latestBundle = frontendBundlePathFromHtml(await response.text());
+        if (!frontendBundleChanged(currentBundle, latestBundle)) return;
+
+        const refreshUrl = new URL(window.location.href);
+        refreshUrl.searchParams.set('app-refresh', Date.now().toString());
+        window.location.replace(refreshUrl.toString());
+      } catch {
+        // Keep the current page available when the network is temporarily unavailable.
+      } finally {
+        checking = false;
+      }
+    }
+
+    const handlePageShow = () => refreshIfFrontendChanged();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfFrontendChanged();
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    refreshIfFrontendChanged();
+
+    return () => {
+      active = false;
+      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+}
+
 function RootApp() {
+  useFrontendFreshness();
   const auth = useAuth();
   if (auth.loading) {
     return (

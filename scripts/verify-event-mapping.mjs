@@ -1101,6 +1101,11 @@ assert.ok(!mangalyaDonorInvitationQueue.includes('whatsappWindow.location.href =
 assert.ok(frontend.includes("const TRUSTEE_RECOVERY_THROUGH_NAME = 'Jayalakshmi K S';"), 'Trustee queue must restore the operator-confirmed sent boundary');
 assert.ok(trusteeInvitationQueue.includes('markQueueSentThroughRecipient('), 'Trustee queue must rebuild confirmed progress through the recovery boundary');
 assert.ok(trusteeInvitationQueue.includes('Queue continues from the next name.'), 'Trustee recovery must explain where sending resumes');
+assert.ok(trusteeInvitationQueue.includes('Trustee queue recovery active'), 'Trustee screen must visibly confirm the recovered sent boundary');
+assert.ok(frontend.includes('function useFrontendFreshness()'), 'App must check for a newer bundle after Safari restores a page');
+assert.ok(frontend.includes("window.addEventListener('pageshow', handlePageShow)"), 'App must check restored browser pages for stale code');
+assert.ok(frontend.includes("document.addEventListener('visibilitychange', handleVisibilityChange)"), 'App must check for stale code when returning from WhatsApp');
+assert.ok(frontend.includes("refreshUrl.searchParams.set('app-refresh'"), 'Stale app reload must bypass restored browser snapshots');
 assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
 assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
 assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');
