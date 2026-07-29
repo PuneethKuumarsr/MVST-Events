@@ -317,13 +317,12 @@ assert.ok(frontend.includes('3. Payment + Receipt'), 'Sponsor cards must support
 assert.ok(frontend.includes('4. Post-Event Thanks'), 'Sponsor cards must support post-event thank-you WhatsApp messages');
 assert.ok(frontend.includes('Generate Invitation + QR Queue'), 'Donor dashboards must include invitation and personal QR bulk queues');
 assert.ok(frontend.includes('Current Message Preview'), 'Sponsorship dashboard must preview the selected bulk WhatsApp message');
-assert.ok(frontend.includes('Share Invite + QR + Message'), 'Donor bulk queues must support native sharing of the message and both images');
-assert.ok(frontend.includes('Download Both + Open WhatsApp'), 'Donor bulk queues must provide a desktop attachment fallback');
+assert.ok(frontend.includes('Download Invite + QR + Open Recipient'), 'Donor bulk queues must download both images and open the exact WhatsApp recipient');
 assert.ok(frontend.includes('buildGeneralDonorInvitationMessage'), 'General Donor bulk queue must personalize the approved event invitation');
 assert.ok(frontend.includes('buildMangalyaDonorInvitationMessage'), 'Mangalya Donor bulk queue must personalize the approved event invitation');
 assert.ok(frontend.includes('generalDonorInvitationPackageReady'), 'General Donor queue must exclude donors whose personal QR is not eligible');
 assert.ok(frontend.includes('mangalyaDonorInvitationPackageReady'), 'Mangalya Donor queue must require receipt, identity, quantity and QR eligibility');
-assert.ok(frontend.includes('files = [invitationFile, invitationPackage.qrFile]'), 'Donor native share package must attach the invite card and personal QR pass');
+assert.ok(frontend.includes('downloadEventInvitationPackage'), 'Donor recipient flow must download the invite card and personal QR pass');
 assert.ok(frontend.includes("markInvitationPrepared(donor.id"), 'Mangalya bulk invitation must record Prepared status without claiming delivery');
 assert.ok(backend.includes('SPONSORSHIP_REQUIREMENTS_RANGE'), 'Backend must support Sponsorship Requirements master range');
 assert.ok(backend.includes('normalizeRequirementRows'), 'Backend must normalize Sponsorship Requirements rows');
@@ -1060,15 +1059,34 @@ assert.ok(eventInvitationTemplates.includes('Ashoka T N - 9449653053'), 'Trustee
 assert.ok(eventInvitationTemplates.includes('Kedarnath M.N - 95350 56868'), 'Event invitations must include the second Registration Committee contact');
 assert.ok(!eventInvitationTemplates.includes('This is a message from *Manemanege Vasavi Seva Trust (R.)*.'), 'Trustee invitation must not regress to the short placeholder message');
 assert.ok(eventInvitationTemplates.includes(".replaceAll('{{Name}}', personalizedName)"), 'Event invitations must personalize the requested Name placeholder');
-assert.ok(frontend.includes('Share Card + Message'), 'Trustee queue must provide native invitation card sharing');
 assert.ok(frontend.includes('Download Invite Card'), 'Trustee queue must provide a desktop-safe invitation card download');
-assert.ok(frontend.includes('Open WhatsApp (Attach Card)'), 'Trustee queue must explain manual desktop attachment');
+const trusteeInvitationQueue = frontend.slice(
+  frontend.indexOf('function TrusteesSection'),
+  frontend.indexOf('function MandaliDetailsSection'),
+);
+const generalDonorInvitationQueue = frontend.slice(
+  frontend.indexOf('function PreviousDonorsCampaign'),
+  frontend.indexOf('function MangalyaDonorsSection'),
+);
+const mangalyaDonorInvitationQueue = frontend.slice(
+  frontend.indexOf('function MangalyaDonorsSection'),
+  frontend.indexOf('function SelectField'),
+);
+assert.ok(trusteeInvitationQueue.includes('Download Card + Open Recipient'), 'Trustee queue must download the card and open the queued WhatsApp recipient');
+assert.ok(generalDonorInvitationQueue.includes('Download Invite + QR + Open Recipient'), 'General Donor queue must download both images and open the queued WhatsApp recipient');
+assert.ok(mangalyaDonorInvitationQueue.includes('Download Invite + QR + Open Recipient'), 'Mangalya Donor queue must download both images and open the queued WhatsApp recipient');
+assert.ok(!trusteeInvitationQueue.includes('navigator.share('), 'Trustee invitation queue must not use the recipient-agnostic device share sheet');
+assert.ok(!generalDonorInvitationQueue.includes('navigator.share('), 'General Donor invitation queue must not use the recipient-agnostic device share sheet');
+assert.ok(!mangalyaDonorInvitationQueue.includes('navigator.share('), 'Mangalya Donor invitation queue must not use the recipient-agnostic device share sheet');
+assert.ok(trusteeInvitationQueue.includes('makeTrusteeWhatsAppUrl'), 'Trustee invitation queue must build a recipient-specific wa.me URL');
+assert.ok(generalDonorInvitationQueue.includes("makePreviousDonorWhatsAppUrl(donor, 'invitation')"), 'General Donor invitation queue must build a recipient-specific wa.me URL');
+assert.ok(mangalyaDonorInvitationQueue.includes("makeMangalyaDonorWhatsAppUrl(donor, 'invitation')"), 'Mangalya Donor invitation queue must build a recipient-specific wa.me URL');
 assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
 assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
 assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');
 assert.ok(frontend.includes("recordQueueStatus(contact, 'Sent'"), 'Mandali queue must save Sent status when WhatsApp opens');
 assert.ok(frontend.includes("recordQueueStatus(currentContact, 'Skipped'"), 'Mandali queue must save Skipped status');
-assert.ok(frontend.includes("recordPreviousDonorStatus(donor, 'Prepared'"), 'General Donor invitation queue must save Prepared status without claiming delivery');
+assert.match(generalDonorInvitationQueue, /recordPreviousDonorStatus\(\s*donor,\s*'Prepared'/, 'General Donor invitation queue must save Prepared status without claiming delivery');
 assert.ok(frontend.includes("recordPreviousDonorStatus(currentQueueDonor, 'Skipped'"), 'Previous donor queue must save Skipped status');
 assert.ok(frontend.includes('prepareGeneralDonorQr'), 'Previous donor QR pass must use the Mongo-backed donor QR endpoint');
 assert.ok(frontend.includes('recordPreviousDonorCampaignStatus'), 'Previous donor queue must call the Mongo-backed campaign status endpoint');
