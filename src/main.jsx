@@ -2537,6 +2537,25 @@ function makeTrusteeWhatsAppUrl(contact, template = DEFAULT_TRUSTEE_MESSAGE) {
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
 
+function shouldOpenWhatsAppInSameTab() {
+  const userAgent = navigator.userAgent || '';
+  const isIPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod/i.test(userAgent) || isIPadOs;
+}
+
+function openWhatsAppRecipient(url, reservedWindow = null) {
+  if (shouldOpenWhatsAppInSameTab()) {
+    window.location.assign(url);
+    return;
+  }
+  if (reservedWindow && !reservedWindow.closed) {
+    reservedWindow.opener = null;
+    reservedWindow.location.href = url;
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function downloadEventInvitationCard() {
   const link = document.createElement('a');
   link.href = trusteeInvitationCard;
@@ -2571,8 +2590,8 @@ function EventInvitationCardPackage({ includeQr = false }) {
         <h3>4th Samoohika Shastipoorthi Shanti &amp; 2nd Bheemaratha Shanti</h3>
         <span>
           {includeQr
-            ? 'The queue downloads the invitation card and personal QR-pass JPG, then opens the exact recipient in WhatsApp with the message prefilled. Attach both downloaded images before sending.'
-            : 'The queue downloads this invitation card, then opens the exact recipient in WhatsApp with the message prefilled. Attach the downloaded JPG before sending.'}
+            ? 'The queue downloads the invitation card and personal QR-pass JPG, then opens the exact recipient in WhatsApp with the message prefilled. On mobile, WhatsApp opens in this tab so no blank browser page is left behind. Attach both downloaded images before sending.'
+            : 'The queue downloads this invitation card, then opens the exact recipient in WhatsApp with the message prefilled. On mobile, WhatsApp opens in this tab so no blank browser page is left behind. Attach the downloaded JPG before sending.'}
         </span>
         <div className="bulk-actions event-invitation-actions">
           <button type="button" onClick={downloadEventInvitationCard}>
@@ -4585,13 +4604,13 @@ function TrusteesSection({ trusteeState, user }) {
         ? 'Downloaded invitation card and opened WhatsApp for manual attachment. Delivery is not confirmed.'
         : 'Opened WhatsApp for manual attachment. Delivery is not confirmed.',
     );
-    window.open(url, '_blank', 'noopener,noreferrer');
     setMessage(
       options.downloadInvitationCard
         ? `Invitation card downloaded and WhatsApp opened for ${trustee.name}. Attach the JPG before sending.`
         : `WhatsApp opened for ${trustee.name}. Attach the invitation card before sending.`,
     );
     advanceToNextPending(nextStatus, index + 1);
+    openWhatsAppRecipient(url);
   }
 
   function skipCurrent() {
@@ -5622,16 +5641,16 @@ function PreviousDonorsCampaign({ donorState }) {
       const url = makePreviousDonorWhatsAppUrl(donor, 'invitation');
       if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
 
-      whatsappWindow = window.open('', '_blank');
-      if (!whatsappWindow) {
-        throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+      const sameTabWhatsApp = shouldOpenWhatsAppInSameTab();
+      if (!sameTabWhatsApp) {
+        whatsappWindow = window.open('', '_blank');
+        if (!whatsappWindow) {
+          throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+        }
       }
       setPreparingInvitation(true);
       const invitationPackage = await prepareGeneralDonorInvitationPackage(donor);
       downloadEventInvitationPackage(donor, 'Donor', invitationPackage.qrDataUrl);
-      whatsappWindow.opener = null;
-      whatsappWindow.location.href = url;
-      deliveryStarted = true;
 
       const nextStatus = await recordPreviousDonorStatus(
         donor,
@@ -5640,6 +5659,10 @@ function PreviousDonorsCampaign({ donorState }) {
       );
       advancePreviousDonorQueue(nextStatus, index + 1);
       setMessage(`Both images downloaded and WhatsApp opened for ${sponsorDisplayName(donor)}. Attach both images before sending.`);
+      setQueueStarted(true);
+      setQueueOpened(true);
+      openWhatsAppRecipient(url, whatsappWindow);
+      deliveryStarted = true;
     } catch (openError) {
       if (!deliveryStarted) whatsappWindow?.close();
       if (deliveryStarted) {
@@ -5651,8 +5674,10 @@ function PreviousDonorsCampaign({ donorState }) {
     } finally {
       setPreparingInvitation(false);
     }
-    setQueueStarted(true);
-    setQueueOpened(true);
+    if (!deliveryStarted) {
+      setQueueStarted(true);
+      setQueueOpened(true);
+    }
   }
 
   function openCurrentQueueDonor() {
@@ -6329,15 +6354,15 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
       const url = makeMangalyaDonorWhatsAppUrl(donor, 'invitation');
       if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
 
-      whatsappWindow = window.open('', '_blank');
-      if (!whatsappWindow) {
-        throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+      const sameTabWhatsApp = shouldOpenWhatsAppInSameTab();
+      if (!sameTabWhatsApp) {
+        whatsappWindow = window.open('', '_blank');
+        if (!whatsappWindow) {
+          throw new Error('Browser blocked the WhatsApp window. Allow popups for this site and try again.');
+        }
       }
       const invitationPackage = await prepareMangalyaInvitationPackage(donor);
       downloadEventInvitationPackage(donor, 'Mangalya Donor', invitationPackage.qrDataUrl);
-      whatsappWindow.opener = null;
-      whatsappWindow.location.href = url;
-      deliveryStarted = true;
 
       await markInvitationPrepared(donor.id, { whatsappDestination: donor.contactNo });
       setBulkStarted(true);
@@ -6351,6 +6376,8 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
         setBulkIndex(-1);
         setBulkMessage(`Both images downloaded and WhatsApp opened for ${sponsorDisplayName(donor)}. Attach both images before sending. Queue completed.`);
       }
+      openWhatsAppRecipient(url, whatsappWindow);
+      deliveryStarted = true;
     } catch (saveError) {
       if (!deliveryStarted) whatsappWindow?.close();
       if (deliveryStarted) {

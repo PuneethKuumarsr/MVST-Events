@@ -1081,6 +1081,16 @@ assert.ok(!mangalyaDonorInvitationQueue.includes('navigator.share('), 'Mangalya 
 assert.ok(trusteeInvitationQueue.includes('makeTrusteeWhatsAppUrl'), 'Trustee invitation queue must build a recipient-specific wa.me URL');
 assert.ok(generalDonorInvitationQueue.includes("makePreviousDonorWhatsAppUrl(donor, 'invitation')"), 'General Donor invitation queue must build a recipient-specific wa.me URL');
 assert.ok(mangalyaDonorInvitationQueue.includes("makeMangalyaDonorWhatsAppUrl(donor, 'invitation')"), 'Mangalya Donor invitation queue must build a recipient-specific wa.me URL');
+assert.ok(frontend.includes('function shouldOpenWhatsAppInSameTab()'), 'Invitation queues must detect mobile WhatsApp handoffs');
+assert.ok(frontend.includes("window.location.assign(url)"), 'Mobile WhatsApp handoff must reuse the current tab instead of leaving a blank tab');
+assert.ok(frontend.includes("navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1"), 'Mobile WhatsApp handoff must detect iPadOS desktop-style user agents');
+assert.ok(trusteeInvitationQueue.includes('openWhatsAppRecipient(url);'), 'Trustee invitation queue must use the mobile-safe WhatsApp handoff');
+assert.ok(generalDonorInvitationQueue.includes('const sameTabWhatsApp = shouldOpenWhatsAppInSameTab();'), 'General Donor invitation queue must not reserve a blank mobile tab');
+assert.ok(generalDonorInvitationQueue.includes('openWhatsAppRecipient(url, whatsappWindow);'), 'General Donor invitation queue must use the mobile-safe WhatsApp handoff');
+assert.ok(mangalyaDonorInvitationQueue.includes('const sameTabWhatsApp = shouldOpenWhatsAppInSameTab();'), 'Mangalya Donor invitation queue must not reserve a blank mobile tab');
+assert.ok(mangalyaDonorInvitationQueue.includes('openWhatsAppRecipient(url, whatsappWindow);'), 'Mangalya Donor invitation queue must use the mobile-safe WhatsApp handoff');
+assert.ok(!generalDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'General Donor invitation queue must not directly redirect a reserved blank tab');
+assert.ok(!mangalyaDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'Mangalya Donor invitation queue must not directly redirect a reserved blank tab');
 assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
 assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
 assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');
