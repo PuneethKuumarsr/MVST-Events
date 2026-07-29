@@ -949,7 +949,14 @@ assert.ok(frontend.includes('New password and confirm password must match.'), 'C
 assert.ok(frontend.includes('Password changed successfully. Please login again.'), 'Change Password success must tell the user to login again');
 assert.ok(frontend.includes('function RootApp'), 'Root app must gate content behind auth state');
 assert.ok(frontend.includes('if (!auth.user) return <LoginPage auth={auth} />'), 'Application content must not render before login');
-assert.ok(!frontend.includes('localStorage'), 'Frontend must not store auth credentials or sessions in localStorage');
+const queueStorageHelpers = frontend.slice(
+  frontend.indexOf('function queueStatusKey'),
+  frontend.indexOf('function sponsorCategory'),
+);
+const frontendWithoutQueueStorage = frontend.replace(queueStorageHelpers, '');
+assert.ok(!frontendWithoutQueueStorage.includes('localStorage'), 'Frontend must use localStorage only for non-sensitive WhatsApp queue progress');
+assert.ok(queueStorageHelpers.includes('localStorage.setItem(key, serializedStatus)'), 'WhatsApp queue progress must survive mobile tab changes');
+assert.ok(queueStorageHelpers.includes('sessionStorage.getItem(key)'), 'Durable queue storage must migrate legacy tab-scoped progress');
 assert.ok(!frontend.includes('passwordHash'), 'Frontend must not expose password hashes');
 assert.ok(backend.includes('crypto.scryptSync'), 'Backend must hash PINs with scrypt');
 assert.ok(backend.includes('crypto.timingSafeEqual'), 'Backend must verify PIN hashes with timing-safe comparison');
@@ -1091,6 +1098,9 @@ assert.ok(mangalyaDonorInvitationQueue.includes('const sameTabWhatsApp = shouldO
 assert.ok(mangalyaDonorInvitationQueue.includes('openWhatsAppRecipient(url, whatsappWindow);'), 'Mangalya Donor invitation queue must use the mobile-safe WhatsApp handoff');
 assert.ok(!generalDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'General Donor invitation queue must not directly redirect a reserved blank tab');
 assert.ok(!mangalyaDonorInvitationQueue.includes('whatsappWindow.location.href = url'), 'Mangalya Donor invitation queue must not directly redirect a reserved blank tab');
+assert.ok(frontend.includes("const TRUSTEE_RECOVERY_THROUGH_NAME = 'Jayalakshmi K S';"), 'Trustee queue must restore the operator-confirmed sent boundary');
+assert.ok(trusteeInvitationQueue.includes('markQueueSentThroughRecipient('), 'Trustee queue must rebuild confirmed progress through the recovery boundary');
+assert.ok(trusteeInvitationQueue.includes('Queue continues from the next name.'), 'Trustee recovery must explain where sending resumes');
 assert.ok(frontend.includes('function queueAuditStamp'), 'WhatsApp queues must record date, time and user audit fields');
 assert.ok(frontend.includes('function writeQueueStatus'), 'WhatsApp queues must persist campaign status for resume');
 assert.ok(frontend.includes('Marked sent and opened WhatsApp. Queue advanced'), 'WhatsApp queues must mark sent and auto-advance after opening');

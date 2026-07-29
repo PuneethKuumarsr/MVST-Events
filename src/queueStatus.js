@@ -10,3 +10,22 @@ export function queueCounts(queue, statusMap) {
 export function firstPendingQueueIndex(queue, statusMap) {
   return queue.findIndex((item) => !['Sent', 'Prepared', 'Skipped'].includes(statusMap[item.id]?.status));
 }
+
+function normalizedRecipientName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+export function markQueueSentThroughRecipient(queue, statusMap, recipientName, createEntry = () => ({})) {
+  const targetName = normalizedRecipientName(recipientName);
+  const throughIndex = queue.findIndex((item) => normalizedRecipientName(item.name) === targetName);
+  const nextStatusMap = { ...statusMap };
+  if (throughIndex < 0) return { statusMap: nextStatusMap, throughIndex };
+
+  queue.slice(0, throughIndex + 1).forEach((item, index) => {
+    nextStatusMap[item.id] = {
+      ...createEntry(item, index),
+      status: 'Sent',
+    };
+  });
+  return { statusMap: nextStatusMap, throughIndex };
+}

@@ -4,7 +4,11 @@ import {
   DEFAULT_DONOR_INVITATION_MESSAGE,
   DEFAULT_TRUSTEE_MESSAGE,
 } from '../src/eventInvitation.js';
-import { firstPendingQueueIndex, queueCounts } from '../src/queueStatus.js';
+import {
+  firstPendingQueueIndex,
+  markQueueSentThroughRecipient,
+  queueCounts,
+} from '../src/queueStatus.js';
 import {
   extractGeneralDonorQrToken,
   generalDonorFingerprint,
@@ -48,6 +52,24 @@ assert.deepEqual(queueCounts(queue, statuses), {
 });
 assert.equal(firstPendingQueueIndex(queue, statuses), 3, 'Failed entries remain retryable');
 assert.equal(firstPendingQueueIndex(queue.slice(0, 3), statuses), -1, 'Completed queues must not reopen a recipient');
+
+const trusteeRecoveryQueue = [
+  { id: 'trustee-1', name: 'AMARNATH CA' },
+  { id: 'trustee-2', name: 'INDRA JAGANNATHA SETTY' },
+  { id: 'trustee-3', name: 'JAYALAKSHMI  K S' },
+  { id: 'trustee-4', name: 'KALA PRADEEP' },
+];
+const recoveredTrusteeProgress = markQueueSentThroughRecipient(
+  trusteeRecoveryQueue,
+  {},
+  'Jayalakshmi K S',
+  (trustee) => ({ recipient: trustee.name }),
+);
+assert.equal(recoveredTrusteeProgress.throughIndex, 2, 'Trustee recovery must find names despite repeated spaces');
+assert.equal(recoveredTrusteeProgress.statusMap['trustee-1'].status, 'Sent');
+assert.equal(recoveredTrusteeProgress.statusMap['trustee-3'].status, 'Sent');
+assert.equal(recoveredTrusteeProgress.statusMap['trustee-4'], undefined, 'Trustee recovery must not mark later recipients');
+assert.equal(firstPendingQueueIndex(trusteeRecoveryQueue, recoveredTrusteeProgress.statusMap), 3, 'Trustee recovery must resume from the name after the confirmed recipient');
 
 const donor = {
   eventYear: '2026',

@@ -40,7 +40,7 @@ import {
   DEFAULT_DONOR_INVITATION_MESSAGE,
   DEFAULT_TRUSTEE_MESSAGE,
 } from './eventInvitation.js';
-import { firstPendingQueueIndex, queueCounts } from './queueStatus.js';
+import { firstPendingQueueIndex, markQueueSentThroughRecipient, queueCounts } from './queueStatus.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
 import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mangalya_Donor_Receipt.jpeg';
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
@@ -2038,18 +2038,43 @@ function queueStatusKey(campaignName) {
 }
 
 function readQueueStatus(campaignName) {
+  const key = queueStatusKey(campaignName);
   try {
-    return JSON.parse(sessionStorage.getItem(queueStatusKey(campaignName)) || '{}');
+    const durableStatus = localStorage.getItem(key);
+    if (durableStatus) return JSON.parse(durableStatus);
+  } catch {
+    // Fall through to the legacy tab-scoped status.
+  }
+  try {
+    const legacyStatus = sessionStorage.getItem(key);
+    if (!legacyStatus) return {};
+    const parsedStatus = JSON.parse(legacyStatus);
+    try {
+      localStorage.setItem(key, legacyStatus);
+    } catch {
+      // Keep using the current tab if durable browser storage is unavailable.
+    }
+    return parsedStatus;
   } catch {
     return {};
   }
 }
 
+function replaceQueueStatus(campaignName, nextStatus) {
+  const key = queueStatusKey(campaignName);
+  const serializedStatus = JSON.stringify(nextStatus);
+  try {
+    localStorage.setItem(key, serializedStatus);
+  } catch {
+    sessionStorage.setItem(key, serializedStatus);
+  }
+  return nextStatus;
+}
+
 function writeQueueStatus(campaignName, recipientId, entry) {
   const current = readQueueStatus(campaignName);
   const next = { ...current, [recipientId]: entry };
-  sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(next));
-  return next;
+  return replaceQueueStatus(campaignName, next);
 }
 
 function sponsorCategory(sponsor) {
@@ -4498,6 +4523,8 @@ const MANDALI_RECIPIENT_FILTERS = [
   { id: 'all', label: 'All contacts', test: () => true },
 ];
 
+const TRUSTEE_RECOVERY_THROUGH_NAME = 'Jayalakshmi K S';
+
 function TrusteesSection({ trusteeState, user }) {
   const { trustees, status, error, isRefreshing, refresh } = trusteeState;
   const campaignName = 'MVST Trustees Event Invitation – 2 August 2026';
@@ -4519,6 +4546,7 @@ function TrusteesSection({ trusteeState, user }) {
         .includes(search);
     });
   }, [trustees, query]);
+  const campaignReadyTrustees = trustees.filter((trustee) => trustee.validWhatsApp && !trustee.duplicateMobile);
   const readyTrustees = visibleTrustees.filter((trustee) => trustee.validWhatsApp && !trustee.duplicateMobile);
   const currentTrustee = queue[queueIndex];
   const progress = queueCounts(queue, statusMap);
@@ -4536,11 +4564,34 @@ function TrusteesSection({ trusteeState, user }) {
   }), [trustees]);
 
   function prepareQueue() {
-    const latestStatus = readQueueStatus(campaignName);
+    let latestStatus = readQueueStatus(campaignName);
+    let recoveryMessage = '';
+    const stamp = queueAuditStamp(user);
+    const recovered = markQueueSentThroughRecipient(
+      campaignReadyTrustees,
+      latestStatus,
+      TRUSTEE_RECOVERY_THROUGH_NAME,
+      (trustee) => ({
+        campaign: campaignName,
+        recipient: trustee.name,
+        date: stamp.date,
+        time: stamp.time,
+        at: stamp.at,
+        user: stamp.user,
+        remarks: `Recovered as Sent through ${TRUSTEE_RECOVERY_THROUGH_NAME} from operator-confirmed mobile queue progress.`,
+      }),
+    );
+    const recoveryNeeded = recovered.throughIndex >= 0 && campaignReadyTrustees
+      .slice(0, recovered.throughIndex + 1)
+      .some((trustee) => latestStatus[trustee.id]?.status !== 'Sent');
+    if (recoveryNeeded) {
+      latestStatus = replaceQueueStatus(campaignName, recovered.statusMap);
+      recoveryMessage = `${recovered.throughIndex + 1} trustees restored as Sent through ${TRUSTEE_RECOVERY_THROUGH_NAME}. Queue continues from the next name.`;
+    }
     setStatusMap(latestStatus);
     setQueue(readyTrustees);
     setQueueIndex(firstPendingQueueIndex(readyTrustees, latestStatus));
-    setMessage(readyTrustees.length ? 'Trustee WhatsApp queue ready.' : 'No WhatsApp-ready trustees for this search.');
+    setMessage(recoveryMessage || (readyTrustees.length ? 'Trustee WhatsApp queue ready.' : 'No WhatsApp-ready trustees for this search.'));
   }
 
   function recordQueueStatus(trustee, nextQueueStatus, remarks = '') {
@@ -4633,7 +4684,7 @@ function TrusteesSection({ trusteeState, user }) {
   function retryTrustee(trustee) {
     const nextStatus = { ...statusMap };
     delete nextStatus[trustee.id];
-    sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(nextStatus));
+    replaceQueueStatus(campaignName, nextStatus);
     setStatusMap(nextStatus);
     const index = queue.findIndex((item) => item.id === trustee.id);
     if (index >= 0) setQueueIndex(index);
@@ -4905,7 +4956,7 @@ function MandaliDetailsSection({ mandaliState, user }) {
   function retryContact(contact) {
     const nextStatus = { ...statusMap };
     delete nextStatus[contact.id];
-    sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(nextStatus));
+    replaceQueueStatus(campaignName, nextStatus);
     setStatusMap(nextStatus);
     const index = queue.findIndex((item) => item.id === contact.id);
     if (index >= 0) setQueueIndex(index);
