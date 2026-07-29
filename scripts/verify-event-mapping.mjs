@@ -1057,6 +1057,8 @@ assert.ok((frontend.match(/DEFAULT_DONOR_INVITATION_MESSAGE/g) || []).length >= 
 assert.ok(eventInvitationTemplates.includes('Kindly collect your food coupon upon arrival.'), 'Donor invitation note must not ask donors to sign the attendance register');
 assert.ok(eventInvitationTemplates.includes('*4th Samoohika Shastipoorthi Shanti*') && eventInvitationTemplates.includes('*2nd Bheemaratha Shanti ceremony*'), 'Event invitation must name both ceremonies');
 assert.ok(eventInvitationTemplates.includes('Ashoka T N - 9449653053'), 'Trustee invitation must include the Registration Committee contact');
+assert.ok(eventInvitationTemplates.includes('Kedarnath M.N - 95350 56868'), 'Event invitations must include the second Registration Committee contact');
+assert.ok(!eventInvitationTemplates.includes('This is a message from *Manemanege Vasavi Seva Trust (R.)*.'), 'Trustee invitation must not regress to the short placeholder message');
 assert.ok(eventInvitationTemplates.includes(".replaceAll('{{Name}}', personalizedName)"), 'Event invitations must personalize the requested Name placeholder');
 assert.ok(frontend.includes('Share Card + Message'), 'Trustee queue must provide native invitation card sharing');
 assert.ok(frontend.includes('Download Invite Card'), 'Trustee queue must provide a desktop-safe invitation card download');

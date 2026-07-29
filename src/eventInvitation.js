@@ -18,6 +18,7 @@ We sincerely look forward to welcoming you and celebrating this auspicious occas
 *Registration Committee:*
 📞 *Contact:*
 Ashoka T N - 9449653053
+Kedarnath M.N - 95350 56868
 
 With Warm Regards
 *Manemanege Vasavi Seva Trust (R.)*

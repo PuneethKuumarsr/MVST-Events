@@ -15,13 +15,18 @@ import { donorPaymentVerified } from '../server/donorEligibility.js';
 const trusteeMessage = buildEventInvitationMessage('Sri Trustee');
 assert.match(trusteeMessage, /Dear Sri Trustee,/);
 assert.match(trusteeMessage, /Esteemed Members/);
+assert.match(trusteeMessage, /immense pleasure and heartfelt respect/);
 assert.match(trusteeMessage, /sign the attendance register and collect your food coupon/);
+assert.match(trusteeMessage, /Ashoka T N - 9449653053/);
+assert.match(trusteeMessage, /Kedarnath M\.N - 95350 56868/);
+assert.doesNotMatch(trusteeMessage, /This is a message from/);
 assert.doesNotMatch(trusteeMessage, /\{\{Name\}\}/);
 
 const donorMessage = buildEventInvitationMessage('Sri Donor', DEFAULT_DONOR_INVITATION_MESSAGE);
 assert.match(donorMessage, /Dear Sri Donor,/);
 assert.match(donorMessage, /Esteemed Donors/);
 assert.match(donorMessage, /Kindly collect your food coupon upon arrival/);
+assert.match(donorMessage, /Kedarnath M\.N - 95350 56868/);
 assert.doesNotMatch(donorMessage, /sign the attendance register/);
 assert.equal(buildEventInvitationMessage('', DEFAULT_TRUSTEE_MESSAGE).includes('Dear Esteemed Member,'), true);
 assert.equal(buildEventInvitationMessage('Lower Token', 'Dear {{name}}'), 'Dear Lower Token');
