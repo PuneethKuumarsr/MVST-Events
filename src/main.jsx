@@ -4428,6 +4428,7 @@ function TrusteesSection({ trusteeState, user }) {
   const [queueIndex, setQueueIndex] = useState(0);
   const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
   const [message, setMessage] = useState('');
+  const [issueFilter, setIssueFilter] = useState('');
 
   const visibleTrustees = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -4443,6 +4444,11 @@ function TrusteesSection({ trusteeState, user }) {
   const currentTrustee = queue[queueIndex];
   const progress = queueCounts(queue, statusMap);
   const retryTrustees = queue.filter((trustee) => ['Skipped', 'Failed'].includes(statusMap[trustee.id]?.status));
+  const issueTrustees = useMemo(() => {
+    if (issueFilter === 'invalid') return trustees.filter((trustee) => !trustee.validWhatsApp);
+    if (issueFilter === 'duplicate') return trustees.filter((trustee) => trustee.duplicateMobile);
+    return [];
+  }, [trustees, issueFilter]);
   const summary = useMemo(() => ({
     total: trustees.length,
     valid: trustees.filter((trustee) => trustee.validWhatsApp).length,
@@ -4564,9 +4570,37 @@ function TrusteesSection({ trusteeState, user }) {
       <div className="stats-grid">
         <StatCard icon={UsersRound} label="Trustees" value={summary.total} />
         <StatCard icon={MessageCircle} label="WhatsApp Ready" value={summary.valid} tone="success" />
-        <StatCard icon={AlertTriangle} label="Missing / Invalid" value={summary.invalid} tone="danger" />
-        <StatCard icon={AlertTriangle} label="Duplicate Numbers" value={summary.duplicates} tone="warning" />
+        <StatCard icon={AlertTriangle} label="Missing / Invalid" value={summary.invalid} tone="danger" onClick={() => setIssueFilter(issueFilter === 'invalid' ? '' : 'invalid')} />
+        <StatCard icon={AlertTriangle} label="Duplicate Numbers" value={summary.duplicates} tone="warning" onClick={() => setIssueFilter(issueFilter === 'duplicate' ? '' : 'duplicate')} />
       </div>
+
+      {issueFilter ? (
+        <div className="mobile-report-card">
+          <div className="mobile-report-summary">
+            <span>{issueFilter === 'invalid' ? 'Missing / Invalid mobile numbers' : 'Duplicate mobile numbers'}</span>
+            <span>{issueTrustees.length} trustees</span>
+            <button type="button" onClick={() => setIssueFilter('')}>Close</button>
+          </div>
+          <div className="mobile-report-table">
+            <div className="mobile-report-row heading">
+              <span>Sl No.</span>
+              <span>Name</span>
+              <span>Original Number</span>
+              <span>Issue</span>
+            </div>
+            {issueTrustees.length ? issueTrustees.map((trustee) => (
+              <div className="mobile-report-row" key={`trustee-issue-${trustee.id}`}>
+                <span>{trustee.slNo || '-'}</span>
+                <span>{trustee.name || 'Trustee'}</span>
+                <span>{trustee.originalNumber || 'Missing'}</span>
+                <span>{trustee.notes || (trustee.validWhatsApp ? 'Duplicate mobile number' : 'Missing / invalid mobile number')}</span>
+              </div>
+            )) : (
+              <div className="mobile-report-empty">No trustees found for this issue.</div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="filters-grid">
         <label className="search-field">
