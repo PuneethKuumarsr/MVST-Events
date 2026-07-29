@@ -156,6 +156,7 @@ const EXPENSE_HEADERS = [
   'Created By',
 ];
 const MANDALI_CONTACTS_CSV = process.env.MANDALI_CONTACTS_CSV || path.join(projectRoot, 'server', 'private-data', 'bangalore-arya-vysya-mandali-final.csv');
+const TRUSTEE_CONTACTS_CSV = process.env.TRUSTEE_CONTACTS_CSV || path.join(projectRoot, 'server', 'private-data', 'mvst-trustees-2026.csv');
 const FREE_SPONSORSHIP_STATUS = 'free sponsorship';
 const QR_TOKEN_VERSION = 'mvstqr:v1';
 const MANGALYA_EVENT_YEAR = process.env.MANGALYA_EVENT_YEAR || process.env.VITE_ACTIVE_EVENT_YEAR || '2026';
@@ -2101,6 +2102,56 @@ function normalizeMandaliCsvRows(values) {
   }));
 }
 
+function trusteeContactId(slNo, mobile, name) {
+  return crypto
+    .createHash('sha256')
+    .update(['trustee', slNo, mobile, name].join('|'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function normalizeTrusteeCsvRows(values) {
+  if (!values || values.length < 2) return [];
+  const [headers = [], ...rows] = values;
+  const headerMap = buildHeaderMap(headers);
+  const contacts = rows
+    .map((row, rowIndex) => {
+      const slNo = getCell(row, headerMap, ['Sl No', 'Sl No.', 'Sl. No.']) || String(rowIndex + 1);
+      const name = getCell(row, headerMap, ['Name', 'Trustee Name', 'Member Name']);
+      const originalNumber = getCell(row, headerMap, ['Mobile Number', 'Mob No', 'Mobile', 'Phone']);
+      const normalizedMobile = validWhatsAppMobile(originalNumber);
+      if (!name && !originalNumber) return null;
+      return {
+        id: trusteeContactId(slNo, normalizedMobile || originalNumber, name),
+        slNo,
+        name: String(name || 'Trustee').trim(),
+        role: 'Trustee',
+        originalNumber: String(originalNumber || '').trim(),
+        mobileNumber: normalizedMobile,
+        maskedMobile: maskMobile(normalizedMobile || originalNumber),
+        validWhatsApp: Boolean(normalizedMobile),
+        active: true,
+        notes: normalizedMobile ? '' : 'Missing / invalid mobile number',
+        sourceFile: getCell(row, headerMap, ['Source File']) || 'mvst-trustees-2026.csv',
+      };
+    })
+    .filter(Boolean);
+
+  const mobileCounts = contacts.reduce((counts, contact) => {
+    if (contact.mobileNumber) counts.set(contact.mobileNumber, (counts.get(contact.mobileNumber) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  return contacts.map((contact) => ({
+    ...contact,
+    duplicateMobile: Boolean(contact.mobileNumber && mobileCounts.get(contact.mobileNumber) > 1),
+    notes: [
+      contact.notes,
+      contact.mobileNumber && mobileCounts.get(contact.mobileNumber) > 1 ? 'Duplicate mobile number' : '',
+    ].filter(Boolean).join('; '),
+  }));
+}
+
 async function loadMandaliContacts() {
   if (!fs.existsSync(MANDALI_CONTACTS_CSV)) {
     return {
@@ -2114,6 +2165,25 @@ async function loadMandaliContacts() {
   const csv = await fs.promises.readFile(MANDALI_CONTACTS_CSV, 'utf8');
   return {
     rows: normalizeMandaliCsvRows(parseCsv(csv)),
+    refreshedAt: new Date().toISOString(),
+    source: 'private-csv',
+    notice: null,
+  };
+}
+
+async function loadTrusteeContacts() {
+  if (!fs.existsSync(TRUSTEE_CONTACTS_CSV)) {
+    return {
+      rows: [],
+      refreshedAt: new Date().toISOString(),
+      source: 'not-configured',
+      notice: 'Trustee contacts CSV is not available on this server.',
+    };
+  }
+
+  const csv = await fs.promises.readFile(TRUSTEE_CONTACTS_CSV, 'utf8');
+  return {
+    rows: normalizeTrusteeCsvRows(parseCsv(csv)),
     refreshedAt: new Date().toISOString(),
     source: 'private-csv',
     notice: null,
@@ -3337,6 +3407,21 @@ app.get('/api/mandali-contacts', requirePst, async (req, res) => {
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to load Mandali contacts' });
+  }
+});
+
+app.get('/api/trustees', requirePst, async (req, res) => {
+  try {
+    const result = await loadTrusteeContacts();
+    res.json({
+      ok: true,
+      rows: result.rows,
+      refreshedAt: result.refreshedAt,
+      source: result.source,
+      notice: result.notice,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to load trustees' });
   }
 });
 

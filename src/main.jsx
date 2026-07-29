@@ -2503,6 +2503,28 @@ function makeMandaliWhatsAppUrl(contact) {
   return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
 }
 
+const DEFAULT_TRUSTEE_MESSAGE = `🙏 Jai Vasavi 🙏
+
+Dear {{name}},
+
+This is a message from *Manemanege Vasavi Seva Trust (R.)*.
+
+Regards,
+*Manemanege Vasavi Seva Trust (R.)*`;
+
+function buildTrusteeMessage(contact, template = DEFAULT_TRUSTEE_MESSAGE) {
+  return String(template || DEFAULT_TRUSTEE_MESSAGE)
+    .replaceAll('{{name}}', contact.name || 'Trustee')
+    .replaceAll('{{mobile}}', contact.mobileNumber ? `+${contact.mobileNumber}` : '')
+    .replaceAll('{{role}}', contact.role || 'Trustee');
+}
+
+function makeTrusteeWhatsAppUrl(contact, template = DEFAULT_TRUSTEE_MESSAGE) {
+  const normalizedMobile = normalizeIndianMobileNumber(contact.mobileNumber);
+  const encodedText = encodeURIComponent(buildTrusteeMessage(contact, template));
+  return `https://wa.me/${normalizedMobile}?text=${encodedText}`;
+}
+
 function linkLabel(url) {
   return url ? 'Open' : 'Missing';
 }
@@ -3000,6 +3022,50 @@ function useMandaliContacts(enabled = true) {
 
   return {
     contacts,
+    status,
+    error,
+    isRefreshing,
+    refresh: () => load(),
+  };
+}
+
+function useTrustees(enabled = true) {
+  const [trustees, setTrustees] = useState([]);
+  const [status, setStatus] = useState('Loading trustees...');
+  const [error, setError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function load(aliveRef = { current: true }) {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/trustees', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || `Trustees API returned ${response.status}`);
+      if (!aliveRef.current) return;
+      setTrustees(payload.rows || []);
+      setStatus(`Private CSV. Last refreshed: ${formatRefreshTime(payload.refreshedAt || new Date().toISOString())}`);
+      setError(payload.notice || '');
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setTrustees([]);
+      setError(loadError.message || 'Unable to load trustees');
+    } finally {
+      if (aliveRef.current) setIsRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const aliveRef = { current: true };
+    load(aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [enabled]);
+
+  return {
+    trustees,
     status,
     error,
     isRefreshing,
@@ -4352,6 +4418,232 @@ const MANDALI_RECIPIENT_FILTERS = [
   { id: 'representatives', label: 'Representatives only', test: (contact) => contact.role === 'Representative' },
   { id: 'all', label: 'All contacts', test: () => true },
 ];
+
+function TrusteesSection({ trusteeState, user }) {
+  const { trustees, status, error, isRefreshing, refresh } = trusteeState;
+  const campaignName = 'MVST Trustees WhatsApp Campaign';
+  const [query, setQuery] = useState('');
+  const [messageTemplate, setMessageTemplate] = useState(DEFAULT_TRUSTEE_MESSAGE);
+  const [queue, setQueue] = useState([]);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [statusMap, setStatusMap] = useState(() => readQueueStatus(campaignName));
+  const [message, setMessage] = useState('');
+
+  const visibleTrustees = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return trustees.filter((trustee) => {
+      if (!search) return true;
+      return [trustee.name, trustee.mobileNumber, trustee.maskedMobile, trustee.slNo]
+        .join(' ')
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [trustees, query]);
+  const readyTrustees = visibleTrustees.filter((trustee) => trustee.validWhatsApp && !trustee.duplicateMobile);
+  const currentTrustee = queue[queueIndex];
+  const progress = queueCounts(queue, statusMap);
+  const retryTrustees = queue.filter((trustee) => ['Skipped', 'Failed'].includes(statusMap[trustee.id]?.status));
+  const summary = useMemo(() => ({
+    total: trustees.length,
+    valid: trustees.filter((trustee) => trustee.validWhatsApp).length,
+    invalid: trustees.filter((trustee) => !trustee.validWhatsApp).length,
+    duplicates: trustees.filter((trustee) => trustee.duplicateMobile).length,
+  }), [trustees]);
+
+  function prepareQueue() {
+    const latestStatus = readQueueStatus(campaignName);
+    setStatusMap(latestStatus);
+    setQueue(readyTrustees);
+    setQueueIndex(firstPendingQueueIndex(readyTrustees, latestStatus));
+    setMessage(readyTrustees.length ? 'Trustee WhatsApp queue ready.' : 'No WhatsApp-ready trustees for this search.');
+  }
+
+  function recordQueueStatus(trustee, nextQueueStatus, remarks = '') {
+    const stamp = queueAuditStamp(user);
+    const nextStatus = writeQueueStatus(campaignName, trustee.id, {
+      campaign: campaignName,
+      recipient: trustee.name,
+      status: nextQueueStatus,
+      date: stamp.date,
+      time: stamp.time,
+      at: stamp.at,
+      user: stamp.user,
+      remarks,
+    });
+    setStatusMap(nextStatus);
+    return nextStatus;
+  }
+
+  function advanceToNextPending(nextStatusMap, startIndex = queueIndex + 1) {
+    const nextIndex = queue.findIndex((trustee, index) => index >= startIndex && !['Sent', 'Skipped'].includes(nextStatusMap[trustee.id]?.status));
+    if (nextIndex >= 0) {
+      setQueueIndex(nextIndex);
+      return;
+    }
+    setMessage('Trustee WhatsApp queue completed.');
+  }
+
+  function failTrustee(trustee, reason) {
+    const nextStatus = recordQueueStatus(trustee, 'Failed', reason);
+    setStatusMap(nextStatus);
+    setMessage(reason);
+  }
+
+  function openTrustee(index) {
+    const trustee = queue[index];
+    if (!trustee) return;
+    if (!trustee.validWhatsApp) {
+      failTrustee(trustee, 'Invalid or missing WhatsApp mobile.');
+      return;
+    }
+    if (trustee.duplicateMobile) {
+      failTrustee(trustee, 'Duplicate mobile number. Review before sending.');
+      return;
+    }
+    let url = '';
+    try {
+      const personalizedMessage = buildTrusteeMessage(trustee, messageTemplate);
+      if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
+      url = makeTrusteeWhatsAppUrl(trustee, messageTemplate);
+      if (!url.startsWith('https://wa.me/')) throw new Error('WhatsApp URL generation failed.');
+    } catch (queueError) {
+      failTrustee(trustee, queueError.message || 'WhatsApp message validation failed.');
+      return;
+    }
+    const nextStatus = recordQueueStatus(trustee, 'Sent', 'Opened WhatsApp for manual sending.');
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setMessage('Marked Sent and opened WhatsApp. Queue advanced to the next pending trustee.');
+    advanceToNextPending(nextStatus, index + 1);
+  }
+
+  function skipCurrent() {
+    if (!currentTrustee) return;
+    const nextStatus = recordQueueStatus(currentTrustee, 'Skipped', 'Skipped by operator.');
+    setMessage('Skipped. Queue advanced to the next pending trustee.');
+    advanceToNextPending(nextStatus);
+  }
+
+  async function copyCurrentMessage() {
+    if (!currentTrustee) return;
+    try {
+      await navigator.clipboard.writeText(buildTrusteeMessage(currentTrustee, messageTemplate));
+      setMessage('Current trustee message copied.');
+    } catch {
+      setMessage('Automatic copy is blocked in this browser.');
+    }
+  }
+
+  function retryTrustee(trustee) {
+    const nextStatus = { ...statusMap };
+    delete nextStatus[trustee.id];
+    sessionStorage.setItem(queueStatusKey(campaignName), JSON.stringify(nextStatus));
+    setStatusMap(nextStatus);
+    const index = queue.findIndex((item) => item.id === trustee.id);
+    if (index >= 0) setQueueIndex(index);
+    setMessage('Retry ready. Open WhatsApp when ready.');
+  }
+
+  return (
+    <section className="sponsorship-section">
+      <div className="section-heading">
+        <div>
+          <p>Trustees</p>
+          <h2>MVST trustee contact list</h2>
+        </div>
+        <button className="refresh-button" type="button" onClick={refresh} disabled={isRefreshing}>
+          <RefreshCw size={16} className={isRefreshing ? 'spin' : ''} />
+          {isRefreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+      </div>
+      <div className="event-note">
+        <b>{status}</b>
+        <span>Search trustees, call directly, or send WhatsApp messages one by one.</span>
+      </div>
+      {error ? <div className="error-strip"><AlertTriangle size={18} /><span>{error}</span></div> : null}
+
+      <div className="stats-grid">
+        <StatCard icon={UsersRound} label="Trustees" value={summary.total} />
+        <StatCard icon={MessageCircle} label="WhatsApp Ready" value={summary.valid} tone="success" />
+        <StatCard icon={AlertTriangle} label="Missing / Invalid" value={summary.invalid} tone="danger" />
+        <StatCard icon={AlertTriangle} label="Duplicate Numbers" value={summary.duplicates} tone="warning" />
+      </div>
+
+      <div className="filters-grid">
+        <label className="search-field">
+          <Search size={17} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search trustee name or mobile" />
+        </label>
+      </div>
+
+      <div className="bulk-whatsapp-panel donor-bulk-panel">
+        <label className="field-block">
+          <span>Bulk WhatsApp Message</span>
+          <textarea rows="8" value={messageTemplate} onChange={(event) => setMessageTemplate(event.target.value)} />
+        </label>
+        <div className="bulk-actions">
+          <button type="button" onClick={prepareQueue}>Generate Queue</button>
+          <span>Visible: {visibleTrustees.length} · WhatsApp-ready: {readyTrustees.length}</span>
+        </div>
+        {queue.length ? (
+          <div className="bulk-preview">
+            <div className="bulk-preview-head">
+              <div>
+                <p>{campaignName}</p>
+                <h3>{progress.total} Total · {progress.sent} Sent · {progress.skipped} Skipped · {progress.failed} Failed · {progress.remaining} Remaining</h3>
+              </div>
+              <button type="button" onClick={() => setQueue([])}>Clear</button>
+            </div>
+            {currentTrustee ? (
+              <div className="donor-current-preview">
+                <div><p>Current Message Preview</p><strong>{currentTrustee.name}</strong></div>
+                <textarea readOnly rows="8" value={buildTrusteeMessage(currentTrustee, messageTemplate)} />
+              </div>
+            ) : null}
+            <div className="bulk-queue-controls">
+              <button type="button" onClick={() => openTrustee(queueIndex)}>Open WhatsApp</button>
+              <button type="button" onClick={skipCurrent}>Skip</button>
+              <button type="button" onClick={copyCurrentMessage}>Copy Message</button>
+            </div>
+            {retryTrustees.length ? (
+              <div className="receipt-skipped-list">
+                <strong>Skipped / Failed</strong>
+                {retryTrustees.slice(0, 8).map((trustee) => (
+                  <span key={`trustee-retry-${trustee.id}`}>{trustee.name} - {statusMap[trustee.id]?.status} <button type="button" onClick={() => retryTrustee(trustee)}>Retry</button></span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {message ? <small>{message}</small> : null}
+      </div>
+
+      <div className="donor-card-grid">
+        {visibleTrustees.map((trustee) => (
+          <article className="donor-card" key={trustee.id}>
+            <p className="donor-kicker">Trustee</p>
+            <h3>{trustee.name}</h3>
+            <p>{trustee.mobileNumber ? `+${trustee.mobileNumber}` : 'Mobile number missing'}</p>
+            <div className="receipt-meta-grid">
+              <p><span>Sl No.</span>{trustee.slNo || '-'}</p>
+              <p><span>Mobile</span>{trustee.validWhatsApp ? 'Ready' : 'Invalid / missing'}</p>
+              <p><span>Status</span>{trustee.duplicateMobile ? 'Duplicate warning' : trustee.validWhatsApp ? 'WhatsApp Ready' : 'Needs mobile'}</p>
+            </div>
+            <div className="donor-actions">
+              <button type="button" onClick={() => window.location.href = `tel:+${trustee.mobileNumber}`} disabled={!trustee.validWhatsApp}>
+                <Phone size={17} />
+                Call
+              </button>
+              <button type="button" onClick={() => window.open(makeTrusteeWhatsAppUrl(trustee, messageTemplate), '_blank', 'noopener,noreferrer')} disabled={!trustee.validWhatsApp || trustee.duplicateMobile}>
+                <MessageCircle size={17} />
+                WhatsApp
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function MandaliDetailsSection({ mandaliState, user }) {
   const { contacts, status, error, isRefreshing, refresh } = mandaliState;
@@ -7747,6 +8039,7 @@ function App({ auth }) {
   const donorState = useMangalyaDonors(isPst);
   const requirementState = useSponsorshipRequirements(isPst);
   const mandaliState = useMandaliContacts(isPst);
+  const trusteeState = useTrustees(isPst);
   const expenseState = useExpenses(isPst);
   const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
@@ -8329,6 +8622,10 @@ function App({ auth }) {
                 <UsersRound size={18} />
                 <span>Mandali Details</span>
               </button>
+              <button className={activeView === 'trustees' ? 'active' : ''} type="button" onClick={() => setActiveView('trustees')}>
+                <UsersRound size={18} />
+                <span>Trustees</span>
+              </button>
               <button className={activeView === 'user-access' ? 'active' : ''} type="button" onClick={() => setActiveView('user-access')}>
                 <ShieldCheck size={18} />
                 <span>User Access</span>
@@ -8501,6 +8798,8 @@ function App({ auth }) {
           {activeView === 'expenses' && isPst && !mustChangePassword ? <ExpensesSection expenseState={expenseState} /> : null}
 
           {activeView === 'mandali-details' && isPst && !mustChangePassword ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
+
+          {activeView === 'trustees' && isPst && !mustChangePassword ? <TrusteesSection trusteeState={trusteeState} user={user} /> : null}
 
           {activeView === 'user-access' && isPst && !mustChangePassword ? <UserAccessSection /> : null}
 
