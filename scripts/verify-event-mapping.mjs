@@ -1260,4 +1260,14 @@ assert.ok(mangalyaOperationModel.includes('honourStatus'), 'Mangalya operation m
 assert.ok(mangalyaAuditModel.includes('mangalya_donor_audits'), 'Mangalya donor audit model must use a separate audit collection');
 assert.ok(mangalyaAuditModel.includes('eventYear: 1, donorSourceId: 1, createdAt: -1'), 'Mangalya audit must support donor timeline lookup');
 assert.ok(mangalyaAuditModel.includes('eventYear: 1, eventType: 1, createdAt: -1'), 'Mangalya audit must support action lookup');
+assert.ok(frontend.includes('function AiVoiceInvitationPrototype'), 'Frontend must include the free AI voice invitation prototype');
+assert.ok(frontend.includes('AI Voice Invite'), 'PST navigation must expose the AI voice invitation prototype');
+assert.ok(frontend.includes("normalizedGroup('trustees'"), 'Voice prototype must include Trustees');
+assert.ok(frontend.includes("normalizedGroup('general-donors'"), 'Voice prototype must include General Donors');
+assert.ok(frontend.includes("normalizedGroup('mangalya-donors'"), 'Voice prototype must include Mangalya Donors');
+assert.ok(frontend.includes("normalizedGroup('participants'"), 'Voice prototype must include Participants');
+assert.ok(frontend.includes('window.speechSynthesis'), 'Voice prototype must use browser speech playback');
+assert.ok(frontend.includes('window.SpeechRecognition || window.webkitSpeechRecognition'), 'Voice prototype must support browser speech recognition');
+assert.ok(frontend.includes('window.sessionStorage.setItem(VOICE_PROTOTYPE_HISTORY_KEY'), 'Prototype RSVP history must be session-only');
+assert.ok(frontend.includes('This screen does not place a telephone call.'), 'Prototype must clearly explain that it does not place telephone calls');
 console.log('Event mapping and WhatsApp message regression checks passed.');

@@ -20,6 +20,12 @@ import {
   GENERAL_DONOR_QR_PREFIX,
 } from '../server/generalDonorIdentity.js';
 import { donorPaymentVerified, ensurePaymentCollector } from '../server/donorEligibility.js';
+import {
+  buildVoiceInvitationScript,
+  buildVoiceInvitationSegments,
+  classifyVoiceRsvp,
+  voiceRsvpAcknowledgement,
+} from '../src/voiceInvitation.js';
 
 const trusteeMessage = buildEventInvitationMessage('Sri Trustee');
 assert.match(trusteeMessage, /Dear Sri Trustee,/);
@@ -167,5 +173,20 @@ assert.equal(ensurePaymentCollector({
 }, {
   confirmationSent: true,
 }, 'Puneeth Kumar S R').collectedBy, undefined, 'Non-payment updates must not modify Collected By');
+
+const englishVoiceInvite = buildVoiceInvitationScript('Sri Trustee', 'en-IN');
+assert.match(englishVoiceInvite, /Namaskara Sri Trustee/);
+assert.match(englishVoiceInvite, /2 August 2026/);
+assert.match(englishVoiceInvite, /Shubh Convention Hall/);
+assert.equal(buildVoiceInvitationSegments('Sri Trustee', 'bilingual').length, 2);
+assert.match(buildVoiceInvitationScript('ಶ್ರೀ ದಾನಿಗಳು', 'kn-IN'), /ಶ್ರೀ ದಾನಿಗಳು/);
+assert.equal(classifyVoiceRsvp('Yes, we will attend'), 'Attending');
+assert.equal(classifyVoiceRsvp('Sorry, we cannot attend'), 'Not Attending');
+assert.equal(classifyVoiceRsvp('Please call me later'), 'Call Later');
+assert.equal(classifyVoiceRsvp('ಹೌದು, ಬರುತ್ತೇವೆ'), 'Attending');
+assert.equal(classifyVoiceRsvp('ನಂತರ ಕರೆ ಮಾಡಿ'), 'Call Later');
+assert.equal(classifyVoiceRsvp('I am not sure yet'), 'Needs Follow-up');
+assert.equal(classifyVoiceRsvp('I have a question about parking'), 'Needs Follow-up');
+assert.match(voiceRsvpAcknowledgement('Attending', 'en-IN'), /attendance is noted/);
 
 console.log('Event invitation, queue status, and donor QR identity behavior checks passed.');

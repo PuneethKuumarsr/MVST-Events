@@ -11,6 +11,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   AlertTriangle,
+  ArrowRight,
   ClipboardList,
   Download,
   ExternalLink,
@@ -23,7 +24,9 @@ import {
   Keyboard,
   LogOut,
   MessageCircle,
+  Mic,
   Phone,
+  RotateCcw,
   QrCode,
   RefreshCw,
   Save,
@@ -31,7 +34,9 @@ import {
   Share2,
   ShieldCheck,
   Sparkles,
+  Square,
   UsersRound,
+  Volume2,
   X,
 } from 'lucide-react';
 import { buildWhatsAppMessage, normalizeWhatsAppMessage } from './whatsappMessages.js';
@@ -46,6 +51,13 @@ import {
   frontendBundlePathFromScripts,
 } from './appFreshness.js';
 import { firstPendingQueueIndex, markQueueSentThroughRecipient, queueCounts } from './queueStatus.js';
+import {
+  buildVoiceInvitationScript,
+  buildVoiceInvitationSegments,
+  classifyVoiceRsvp,
+  VOICE_INVITATION_LANGUAGE_OPTIONS,
+  voiceRsvpAcknowledgement,
+} from './voiceInvitation.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
 import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mangalya_Donor_Receipt.jpeg';
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
@@ -8410,6 +8422,525 @@ function CollectionDrilldownModal({ title, breakdown, onClose, donorTypeLabel })
   );
 }
 
+const VOICE_PROTOTYPE_HISTORY_KEY = 'mvst-ai-voice-invite-prototype-v1';
+
+function readVoicePrototypeHistory() {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(VOICE_PROTOTYPE_HISTORY_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildVoicePrototypeGroups(rows = [], trustees = [], donors = []) {
+  const normalizedGroup = (id, label, recipients) => ({
+    id,
+    label,
+    recipients: recipients
+      .filter((recipient) => recipient.name)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  });
+
+  return [
+    normalizedGroup('trustees', 'Trustees', trustees.map((trustee, index) => ({
+      id: `trustee-${trustee.id || trustee.slNo || index}`,
+      name: textValue(trustee.name, 'Esteemed Trustee'),
+      mobile: textValue(trustee.maskedMobile || trustee.mobileNumber, ''),
+      detail: textValue(trustee.role, 'Trustee'),
+    }))),
+    normalizedGroup('general-donors', 'General Donors', donors
+      .filter(isConfirmedCurrentGeneralDonor)
+      .map((donor, index) => ({
+        id: `general-donor-${donor.id || donor.rowNumber || index}`,
+        name: sponsorDisplayName(donor),
+        mobile: textValue(donor.contactNo, ''),
+        detail: textValue(donor.category || donor.contributionType, 'General Donor'),
+      }))),
+    normalizedGroup('mangalya-donors', 'Mangalya Donors', donors
+      .filter(isVisibleCurrentMangalyaSponsor)
+      .map((donor, index) => ({
+        id: `mangalya-donor-${donor.id || donor.rowNumber || index}`,
+        name: sponsorDisplayName(donor),
+        mobile: textValue(donor.contactNo, ''),
+        detail: textValue(donor.category || donor.contributionType, 'Mangalya Donor'),
+      }))),
+    normalizedGroup('participants', 'Participants', rows.map((participant, index) => ({
+      id: `participant-${participant.id || participant.mobileNumber || index}`,
+      name: participantDisplayName(participant),
+      mobile: textValue(participant.mobileNumber, ''),
+      detail: `${eventDisplayName(participant.eventType)}${participant.seatNo ? ` · Seat ${participant.seatNo}` : ''}`,
+    }))),
+  ];
+}
+
+function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
+  const groups = useMemo(
+    () => buildVoicePrototypeGroups(rows, trustees, donors),
+    [rows, trustees, donors],
+  );
+  const firstAvailableGroup = groups.find((group) => group.recipients.length)?.id || 'trustees';
+  const [groupId, setGroupId] = useState(firstAvailableGroup);
+  const [query, setQuery] = useState('');
+  const [recipientId, setRecipientId] = useState('');
+  const [language, setLanguage] = useState('en-IN');
+  const [phase, setPhase] = useState('idle');
+  const [transcript, setTranscript] = useState('');
+  const [typedResponse, setTypedResponse] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [notice, setNotice] = useState('Select a recipient and start the free browser demo.');
+  const [history, setHistory] = useState(readVoicePrototypeHistory);
+  const [voices, setVoices] = useState([]);
+  const recognitionRef = useRef(null);
+  const runTokenRef = useRef(0);
+
+  const activeGroup = groups.find((group) => group.id === groupId)
+    || groups.find((group) => group.recipients.length)
+    || groups[0];
+  const filteredRecipients = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    if (!search) return activeGroup?.recipients || [];
+    return (activeGroup?.recipients || []).filter((recipient) => (
+      [recipient.name, recipient.mobile, recipient.detail].join(' ').toLowerCase().includes(search)
+    ));
+  }, [activeGroup, query]);
+  const selectedRecipient = filteredRecipients.find((recipient) => recipient.id === recipientId)
+    || filteredRecipients[0]
+    || null;
+  const selectedIndex = selectedRecipient
+    ? filteredRecipients.findIndex((recipient) => recipient.id === selectedRecipient.id)
+    : -1;
+  const script = buildVoiceInvitationScript(selectedRecipient?.name, language);
+  const speechSupported = typeof window !== 'undefined'
+    && 'speechSynthesis' in window
+    && typeof window.SpeechSynthesisUtterance === 'function';
+  const recognitionSupported = typeof window !== 'undefined'
+    && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const selectedVoiceLanguage = language === 'bilingual' ? 'kn-IN' : language;
+  const matchingVoice = voices.find((voice) => voice.lang.toLowerCase() === selectedVoiceLanguage.toLowerCase())
+    || voices.find((voice) => voice.lang.toLowerCase().startsWith(selectedVoiceLanguage.slice(0, 2).toLowerCase()));
+
+  useEffect(() => {
+    if (!filteredRecipients.length) {
+      setRecipientId('');
+      return;
+    }
+    if (!filteredRecipients.some((recipient) => recipient.id === recipientId)) {
+      setRecipientId(filteredRecipients[0].id);
+    }
+  }, [filteredRecipients, recipientId]);
+
+  useEffect(() => {
+    const currentGroup = groups.find((group) => group.id === groupId);
+    if (!currentGroup?.recipients.length && firstAvailableGroup !== groupId) {
+      setGroupId(firstAvailableGroup);
+    }
+  }, [firstAvailableGroup, groupId, groups]);
+
+  useEffect(() => {
+    if (!speechSupported) return undefined;
+    const updateVoices = () => setVoices(window.speechSynthesis.getVoices());
+    updateVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', updateVoices);
+    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', updateVoices);
+  }, [speechSupported]);
+
+  useEffect(() => () => {
+    runTokenRef.current += 1;
+    recognitionRef.current?.abort?.();
+    window.speechSynthesis?.cancel?.();
+  }, []);
+
+  function persistHistory(nextHistoryOrUpdater) {
+    setHistory((currentHistory) => {
+      const nextHistory = typeof nextHistoryOrUpdater === 'function'
+        ? nextHistoryOrUpdater(currentHistory)
+        : nextHistoryOrUpdater;
+      try {
+        window.sessionStorage.setItem(VOICE_PROTOTYPE_HISTORY_KEY, JSON.stringify(nextHistory));
+      } catch {
+        // The prototype remains usable when browser storage is unavailable.
+      }
+      return nextHistory;
+    });
+  }
+
+  function cancelActiveVoice(nextNotice = 'Voice demo stopped.') {
+    runTokenRef.current += 1;
+    recognitionRef.current?.abort?.();
+    recognitionRef.current = null;
+    window.speechSynthesis?.cancel?.();
+    setPhase('idle');
+    setNotice(nextNotice);
+  }
+
+  function voiceForLanguage(segmentLanguage) {
+    return voices.find((voice) => voice.lang.toLowerCase() === segmentLanguage.toLowerCase())
+      || voices.find((voice) => voice.lang.toLowerCase().startsWith(segmentLanguage.slice(0, 2).toLowerCase()))
+      || null;
+  }
+
+  function speakSegment(segment, runToken) {
+    return new Promise((resolve, reject) => {
+      if (!speechSupported) {
+        reject(new Error('Speech playback is unavailable in this browser.'));
+        return;
+      }
+      const utterance = new window.SpeechSynthesisUtterance(segment.text);
+      utterance.lang = segment.lang;
+      utterance.rate = 0.94;
+      utterance.pitch = 1;
+      const voice = voiceForLanguage(segment.lang);
+      if (voice) utterance.voice = voice;
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => {
+        if (runToken !== runTokenRef.current || event.error === 'canceled' || event.error === 'interrupted') {
+          resolve();
+          return;
+        }
+        reject(new Error(`Voice playback failed: ${event.error || 'unknown error'}`));
+      };
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+
+  function speakAcknowledgement(status) {
+    if (!speechSupported) return;
+    const acknowledgementLanguage = language === 'en-IN' ? 'en-IN' : 'kn-IN';
+    const utterance = new window.SpeechSynthesisUtterance(
+      voiceRsvpAcknowledgement(status, language),
+    );
+    utterance.lang = acknowledgementLanguage;
+    utterance.rate = 0.96;
+    const voice = voiceForLanguage(acknowledgementLanguage);
+    if (voice) utterance.voice = voice;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function recordResponse(responseText, source = 'voice') {
+    if (!selectedRecipient) return;
+    const result = classifyVoiceRsvp(responseText);
+    const entry = {
+      id: `${Date.now()}-${selectedRecipient.id}`,
+      recipientId: selectedRecipient.id,
+      recipient: selectedRecipient.name,
+      group: activeGroup.label,
+      status: result,
+      transcript: responseText || 'Manual response',
+      source,
+      recordedAt: new Date().toISOString(),
+    };
+    persistHistory((currentHistory) => [entry, ...currentHistory].slice(0, 100));
+    setTranscript(responseText || 'Manual response');
+    setTypedResponse('');
+    setOutcome(result);
+    setPhase('complete');
+    setNotice(`${result} recorded locally for ${selectedRecipient.name}.`);
+    speakAcknowledgement(result);
+  }
+
+  function startListening() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setPhase('awaiting');
+      setNotice('Microphone speech recognition is unavailable. Use the response buttons or type a reply.');
+      return;
+    }
+    const recognition = new Recognition();
+    recognitionRef.current = recognition;
+    recognition.lang = language === 'kn-IN' ? 'kn-IN' : 'en-IN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
+    let captured = false;
+    recognition.onstart = () => {
+      setPhase('listening');
+      setNotice('Listening now. Say yes, no, or call me later.');
+    };
+    recognition.onresult = (event) => {
+      captured = true;
+      const responseText = event.results?.[0]?.[0]?.transcript || '';
+      recordResponse(responseText, 'voice');
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'aborted') return;
+      setPhase('awaiting');
+      setNotice(`Microphone response was not captured (${event.error || 'unknown error'}). Use a response button or type a reply.`);
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      if (!captured) {
+        setPhase((current) => (current === 'complete' ? current : 'awaiting'));
+      }
+    };
+    try {
+      recognition.start();
+    } catch (error) {
+      setPhase('awaiting');
+      setNotice(error.message || 'Unable to start microphone recognition. Use a response button.');
+    }
+  }
+
+  async function startVoiceDemo() {
+    if (!selectedRecipient) {
+      setNotice('No recipient is available in this category.');
+      return;
+    }
+    runTokenRef.current += 1;
+    const runToken = runTokenRef.current;
+    recognitionRef.current?.abort?.();
+    recognitionRef.current = null;
+    window.speechSynthesis?.cancel?.();
+    setTranscript('');
+    setTypedResponse('');
+    setOutcome('');
+    if (!speechSupported) {
+      setPhase('awaiting');
+      setNotice('Speech playback is unavailable. Read the script and use a response button to test the RSVP flow.');
+      return;
+    }
+    setPhase('speaking');
+    setNotice(`Speaking the invitation to ${selectedRecipient.name}...`);
+    try {
+      const segments = buildVoiceInvitationSegments(selectedRecipient.name, language);
+      for (const segment of segments) {
+        if (runToken !== runTokenRef.current) return;
+        await speakSegment(segment, runToken);
+      }
+      if (runToken !== runTokenRef.current) return;
+      if (recognitionSupported) {
+        startListening();
+      } else {
+        setPhase('awaiting');
+        setNotice('Invitation finished. Use a response button or type the recipient’s reply.');
+      }
+    } catch (error) {
+      setPhase('awaiting');
+      setNotice(error.message || 'Voice playback failed. Use the manual test controls.');
+    }
+  }
+
+  function goToNextRecipient() {
+    if (!filteredRecipients.length) return;
+    const nextIndex = selectedIndex >= 0 && selectedIndex < filteredRecipients.length - 1
+      ? selectedIndex + 1
+      : 0;
+    cancelActiveVoice('Ready for the next recipient.');
+    setRecipientId(filteredRecipients[nextIndex].id);
+    setTranscript('');
+    setTypedResponse('');
+    setOutcome('');
+  }
+
+  function clearHistory() {
+    persistHistory([]);
+    setNotice('Local prototype history cleared.');
+  }
+
+  const phaseLabel = {
+    idle: 'Ready',
+    speaking: 'Speaking',
+    listening: 'Listening',
+    awaiting: 'Awaiting response',
+    complete: 'Response recorded',
+  }[phase] || 'Ready';
+
+  return (
+    <section className="management-section voice-prototype-section">
+      <div className="section-heading">
+        <div>
+          <p>Free Browser Prototype</p>
+          <h2>AI Voice Invitation Assistant</h2>
+        </div>
+        <span className="voice-prototype-badge"><Sparkles size={16} /> No calling account required</span>
+      </div>
+
+      <div className="event-note voice-prototype-note">
+        <b>This screen does not place a telephone call.</b>
+        <span>It demonstrates the complete personalized voice conversation and RSVP capture using this browser. Results last only for this browser session and do not update Google Sheets.</span>
+      </div>
+
+      <div className="voice-prototype-grid">
+        <article className="voice-prototype-controls">
+          <div className="voice-control-heading">
+            <div className={`voice-orb ${phase}`}>
+              {phase === 'listening' ? <Mic size={28} /> : <Volume2 size={28} />}
+            </div>
+            <div>
+              <small>Assistant status</small>
+              <strong>{phaseLabel}</strong>
+            </div>
+          </div>
+
+          <label>
+            <span>Recipient group</span>
+            <select
+              value={activeGroup?.id || ''}
+              onChange={(event) => {
+                cancelActiveVoice('Recipient group changed.');
+                setGroupId(event.target.value);
+                setQuery('');
+                setRecipientId('');
+                setTranscript('');
+                setOutcome('');
+              }}
+            >
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.label} ({group.recipients.length})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Find recipient</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name, mobile or seat"
+            />
+          </label>
+
+          <label>
+            <span>Recipient</span>
+            <select
+              value={selectedRecipient?.id || ''}
+              onChange={(event) => {
+                cancelActiveVoice('Recipient changed.');
+                setRecipientId(event.target.value);
+                setTranscript('');
+                setOutcome('');
+              }}
+              disabled={!filteredRecipients.length}
+            >
+              {filteredRecipients.map((recipient) => (
+                <option key={recipient.id} value={recipient.id}>
+                  {recipient.name}{recipient.detail ? ` — ${recipient.detail}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Speaking language</span>
+            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+              {VOICE_INVITATION_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="voice-browser-readiness">
+            <span className={speechSupported ? 'ready' : 'limited'}>
+              <Volume2 size={15} /> Voice playback: {speechSupported ? 'Ready' : 'Unavailable'}
+            </span>
+            <span className={recognitionSupported ? 'ready' : 'limited'}>
+              <Mic size={15} /> Microphone recognition: {recognitionSupported ? 'Ready' : 'Manual fallback'}
+            </span>
+            <span className={matchingVoice ? 'ready' : 'limited'}>
+              <Sparkles size={15} /> Selected voice: {matchingVoice?.name || 'Browser default'}
+            </span>
+          </div>
+
+          <div className="voice-primary-actions">
+            <button type="button" onClick={startVoiceDemo} disabled={!selectedRecipient || phase === 'speaking' || phase === 'listening'}>
+              <Mic size={18} /> Start Voice Demo
+            </button>
+            <button className="secondary" type="button" onClick={() => cancelActiveVoice()} disabled={phase === 'idle'}>
+              <Square size={16} /> Stop
+            </button>
+          </div>
+          <small className="voice-permission-note">The browser will request microphone permission only after you start the demo.</small>
+        </article>
+
+        <article className="voice-conversation-panel">
+          <div className="voice-recipient-card">
+            <div>
+              <small>Current recipient</small>
+              <h3>{selectedRecipient?.name || 'No recipient found'}</h3>
+              <p>{activeGroup?.label}{selectedRecipient?.detail ? ` · ${selectedRecipient.detail}` : ''}</p>
+            </div>
+            <span>{selectedIndex >= 0 ? `${selectedIndex + 1} of ${filteredRecipients.length}` : `0 of ${filteredRecipients.length}`}</span>
+          </div>
+
+          <div className="voice-script-preview">
+            <small>Invitation script preview</small>
+            <p>{script}</p>
+          </div>
+
+          <div className="voice-transcript-card">
+            <small>Recipient response</small>
+            <strong>{transcript || 'Waiting for a spoken or manual response...'}</strong>
+            {outcome ? <span className={`voice-outcome ${outcome.toLowerCase().replaceAll(' ', '-')}`}>{outcome}</span> : null}
+          </div>
+
+          <div className="voice-manual-actions">
+            <span>Quick response test</span>
+            <div>
+              <button type="button" onClick={() => recordResponse('Yes, we will attend.', 'button')}>Attending</button>
+              <button type="button" onClick={() => recordResponse('No, we cannot attend.', 'button')}>Not Attending</button>
+              <button type="button" onClick={() => recordResponse('Please call me later.', 'button')}>Call Later</button>
+              <button type="button" onClick={() => recordResponse('I have a question.', 'button')}>Needs Follow-up</button>
+            </div>
+          </div>
+
+          <form
+            className="voice-typed-response"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (typedResponse.trim()) recordResponse(typedResponse.trim(), 'typed');
+            }}
+          >
+            <input
+              value={typedResponse}
+              onChange={(event) => setTypedResponse(event.target.value)}
+              placeholder="Or type a sample response"
+            />
+            <button type="submit" disabled={!typedResponse.trim()}>Classify</button>
+          </form>
+
+          <div className="voice-notice" role="status">{notice}</div>
+          <button className="voice-next-button" type="button" onClick={goToNextRecipient} disabled={!selectedRecipient}>
+            Next Recipient <ArrowRight size={17} />
+          </button>
+        </article>
+      </div>
+
+      <div className="voice-history-panel">
+        <div className="voice-history-heading">
+          <div>
+            <p>Prototype Results</p>
+            <h3>{history.length} locally recorded response{history.length === 1 ? '' : 's'}</h3>
+          </div>
+          <button type="button" onClick={clearHistory} disabled={!history.length}>
+            <RotateCcw size={16} /> Clear Test Results
+          </button>
+        </div>
+        {history.length ? (
+          <div className="voice-history-list">
+            {history.slice(0, 12).map((entry) => (
+              <article key={entry.id}>
+                <div>
+                  <strong>{entry.recipient}</strong>
+                  <span>{entry.group} · {new Date(entry.recordedAt).toLocaleString('en-IN')}</span>
+                </div>
+                <p>{entry.transcript}</p>
+                <b className={`voice-outcome ${entry.status.toLowerCase().replaceAll(' ', '-')}`}>{entry.status}</b>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact-empty">
+            <Phone size={24} />
+            <p>No prototype responses recorded yet.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function App({ auth }) {
   const user = auth.user;
   const isPst = user?.role === ROLE_PST;
@@ -9013,6 +9544,10 @@ function App({ auth }) {
                 <UsersRound size={18} />
                 <span>Trustees</span>
               </button>
+              <button className={activeView === 'ai-voice-invite' ? 'active' : ''} type="button" onClick={() => setActiveView('ai-voice-invite')}>
+                <Phone size={18} />
+                <span>AI Voice Invite</span>
+              </button>
               <button className={activeView === 'user-access' ? 'active' : ''} type="button" onClick={() => setActiveView('user-access')}>
                 <ShieldCheck size={18} />
                 <span>User Access</span>
@@ -9193,6 +9728,14 @@ function App({ auth }) {
           {activeView === 'mandali-details' && isPst && !mustChangePassword ? <MandaliDetailsSection mandaliState={mandaliState} user={user} /> : null}
 
           {activeView === 'trustees' && isPst && !mustChangePassword ? <TrusteesSection trusteeState={trusteeState} user={user} /> : null}
+
+          {activeView === 'ai-voice-invite' && isPst && !mustChangePassword ? (
+            <AiVoiceInvitationPrototype
+              rows={rows}
+              trustees={trusteeState.trustees}
+              donors={donorState.donors}
+            />
+          ) : null}
 
           {activeView === 'user-access' && isPst && !mustChangePassword ? <UserAccessSection /> : null}
 
