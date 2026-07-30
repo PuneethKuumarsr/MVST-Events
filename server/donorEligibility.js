@@ -21,3 +21,30 @@ export function donorPaymentVerified(donor) {
   if (isDirectBottuDonor(donor) && isConfirmedDonor(donor)) return true;
   return Boolean(donor?.treasurerVerified) || status.includes('received');
 }
+
+const PAYMENT_COLLECTION_FIELDS = [
+  'status',
+  'treasurerVerified',
+  'receivedAmount',
+  'receivedQuantity',
+  'paymentMode',
+  'bankOrCash',
+  'paymentDate',
+  'transactionReference',
+  'collectedBy',
+];
+
+export function ensurePaymentCollector(donor, updates, actor) {
+  const next = { ...(updates || {}) };
+  const touchesPayment = PAYMENT_COLLECTION_FIELDS.some((field) =>
+    Object.prototype.hasOwnProperty.call(next, field));
+  if (!touchesPayment) return next;
+
+  const effectiveDonor = { ...(donor || {}), ...next };
+  if (isDirectBottuDonor(effectiveDonor) || !donorPaymentVerified(effectiveDonor)) return next;
+
+  const collector = String(effectiveDonor.collectedBy || '').trim();
+  const recorder = String(actor || '').trim();
+  if (!collector && recorder) next.collectedBy = recorder;
+  return next;
+}

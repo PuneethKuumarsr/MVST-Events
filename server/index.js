@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectMongo, isMongoConfigured } from './db/mongo.js';
-import { donorPaymentVerified } from './donorEligibility.js';
+import { donorPaymentVerified, ensurePaymentCollector } from './donorEligibility.js';
 import {
   extractGeneralDonorQrToken,
   generalDonorFingerprint,
@@ -2794,7 +2794,7 @@ function normalizeDonorPatchValue(field, value) {
   return String(value ?? '');
 }
 
-async function updateMangalyaDonor(donorId, updates) {
+async function updateMangalyaDonor(donorId, updates, user) {
   if (!hasDonorConfig()) {
     const error = new Error('Mangalya donor sheet is not configured for write-back.');
     error.statusCode = 403;
@@ -2819,7 +2819,8 @@ async function updateMangalyaDonor(donorId, updates) {
     currentRow = matches[0];
   }
 
-  const data = Object.entries(updates || {})
+  const paymentUpdates = ensurePaymentCollector(currentRow, updates, actorName(user));
+  const data = Object.entries(paymentUpdates)
     .filter(([field]) => Object.prototype.hasOwnProperty.call(DONOR_FIELDS, field))
     .map(([field, value]) => {
       const columnIndex = currentRow.adminColumns?.[field];
@@ -3822,7 +3823,7 @@ app.post('/api/expenses', requirePst, async (req, res) => {
 
 app.patch(['/api/mangalya-sponsorship/:id', '/api/mangalya-donors/:id'], requirePst, async (req, res) => {
   try {
-    const next = await updateMangalyaDonor(req.params.id, req.body);
+    const next = await updateMangalyaDonor(req.params.id, req.body, req.user);
     res.json({
       ok: true,
       message: 'Saved to Google Sheet',

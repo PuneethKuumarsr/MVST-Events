@@ -1136,7 +1136,14 @@ assert.ok(frontend.includes('await saveRegistration(item.participant.id, updates
 assert.ok(frontend.includes('await markInvitationPrepared(donor.id'), 'Mangalya invitation bulk queue must save Prepared status after opening or sharing the package');
 assert.ok(backend.includes('/api/mandali-contacts'), 'Backend must expose protected Mandali contacts endpoint');
 assert.ok(backend.includes("import { GeneralDonorOperation }"), 'Backend must import the General Donor Mongo operation model');
-assert.ok(backend.includes("import { donorPaymentVerified } from './donorEligibility.js'"), 'Backend QR generation must use the tested donor payment eligibility contract');
+assert.ok(
+  backend.includes("from './donorEligibility.js'") && backend.includes('donorPaymentVerified'),
+  'Backend QR generation must use the tested donor payment eligibility contract',
+);
+assert.ok(
+  backend.includes('ensurePaymentCollector(currentRow, updates, actorName(user))'),
+  'Backend payment updates must backfill Collected By from the logged-in PST member',
+);
 assert.ok(donorEligibility.includes('isDirectBottuDonor(donor) && isConfirmedDonor(donor)'), 'Backend must treat confirmed Direct Bottu sponsors as QR eligible');
 assert.ok(generalDonorIdentity.includes("GENERAL_DONOR_QR_PREFIX = '/qr/donor/'"), 'Backend must define the General Donor QR URL namespace');
 assert.ok(backend.includes('async function resolveGeneralDonorToken'), 'Backend must resolve General Donor QR tokens');

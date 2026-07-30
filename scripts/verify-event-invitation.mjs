@@ -19,7 +19,7 @@ import {
   generalDonorFingerprint,
   GENERAL_DONOR_QR_PREFIX,
 } from '../server/generalDonorIdentity.js';
-import { donorPaymentVerified } from '../server/donorEligibility.js';
+import { donorPaymentVerified, ensurePaymentCollector } from '../server/donorEligibility.js';
 
 const trusteeMessage = buildEventInvitationMessage('Sri Trustee');
 assert.match(trusteeMessage, /Dear Sri Trustee,/);
@@ -118,5 +118,54 @@ assert.equal(donorPaymentVerified({
   contributionNature: 'Monetary',
   status: 'Payment Received',
 }), true);
+
+assert.deepEqual(ensurePaymentCollector({
+  contributionNature: 'Monetary',
+  paymentMode: 'Bank Transfer',
+  collectedBy: '',
+}, {
+  status: 'Received',
+  receivedAmount: 45000,
+}, 'Puneeth Kumar S R'), {
+  status: 'Received',
+  receivedAmount: 45000,
+  collectedBy: 'Puneeth Kumar S R',
+}, 'Bank payment updates must record the logged-in PST member when Collected By is blank');
+
+assert.deepEqual(ensurePaymentCollector({
+  contributionNature: 'Monetary',
+  status: 'Received',
+  paymentMode: 'Cheque',
+  collectedBy: '',
+}, {
+  paymentDate: '30/07/2026',
+}, 'Puneeth Kumar S R'), {
+  paymentDate: '30/07/2026',
+  collectedBy: 'Puneeth Kumar S R',
+}, 'Cheque payment updates must record the logged-in PST member when Collected By is blank');
+
+assert.equal(ensurePaymentCollector({
+  contributionNature: 'Monetary',
+  status: 'Received',
+  collectedBy: 'Hari Prasad Varada',
+}, {
+  receivedAmount: 15000,
+}, 'Puneeth Kumar S R').collectedBy, undefined, 'An existing collector must be preserved');
+
+assert.equal(ensurePaymentCollector({
+  contributionNature: 'Material / In Kind',
+  status: 'Confirmed',
+  collectedBy: '',
+}, {
+  treasurerVerified: true,
+}, 'Puneeth Kumar S R').collectedBy, undefined, 'Direct material sponsorship must not invent a payment collector');
+
+assert.equal(ensurePaymentCollector({
+  contributionNature: 'Monetary',
+  status: 'Received',
+  collectedBy: '',
+}, {
+  confirmationSent: true,
+}, 'Puneeth Kumar S R').collectedBy, undefined, 'Non-payment updates must not modify Collected By');
 
 console.log('Event invitation, queue status, and donor QR identity behavior checks passed.');
