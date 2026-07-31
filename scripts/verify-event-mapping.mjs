@@ -1191,6 +1191,8 @@ assert.ok(generalDonorOperationModel.includes("collection: 'general_donor_operat
 assert.ok(generalDonorOperationModel.includes('tokenHash'), 'General donor operation must store QR token hash');
 assert.ok(generalDonorOperationModel.includes('campaignStatus'), 'General donor operation must store campaign status');
 assert.ok(generalDonorOperationModel.includes('donorFingerprint'), 'General donor operation must bind QR tokens to a donor fingerprint');
+assert.ok(generalDonorOperationModel.includes('qrEligibilityOverrideReason'), 'General donor operations must persist organizer-approved QR eligibility exceptions');
+assert.ok(backend.includes('Organizer-approved General Donor QR exception'), 'General Donor QR generation must support explicit audited event-day payment exceptions');
 assert.ok(generalDonorOperationModel.includes("'Prepared'"), 'General donor campaign status must support Prepared without claiming delivery');
 assert.ok(generalDonorOperationModel.includes('eventYear: 1, donorSourceId: 1'), 'General donor operation must declare unique event/donor identity index');
 assert.ok(generalDonorOperationModel.includes('eventYear: 1, campaignName: 1, campaignStatus: 1'), 'General donor operation must support campaign resume lookups');

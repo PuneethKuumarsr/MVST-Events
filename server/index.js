@@ -1900,6 +1900,8 @@ function mergeGeneralDonorOperations(rows, operationsMap) {
       identityReady: Boolean(sourceId),
       eventYear: donorEventYear(row),
       qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
+      qrEligibilityOverride: Boolean(operation.qrEligibilityOverride),
+      qrEligibilityOverrideReason: operation.qrEligibilityOverrideReason || '',
       previousDonorCampaignName: operation.campaignName || '',
       previousDonorCampaignStatus: operation.campaignStatus || 'Pending',
       previousDonorCampaignStatusAt: operation.campaignStatusAt || null,
@@ -3027,7 +3029,14 @@ async function findGeneralDonorById(donorId) {
   return matches[0];
 }
 
-async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = false, req }) {
+async function generateOrResolveGeneralDonorQr({
+  donorId,
+  user,
+  regenerate = false,
+  eligibilityOverride = false,
+  overrideReason = '',
+  req,
+}) {
   if (!isMongoConfigured()) {
     const error = new Error('MongoDB is required for donor QR operations.');
     error.statusCode = 503;
@@ -3036,23 +3045,35 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
   const donor = await findGeneralDonorById(donorId);
   const donorSourceId = generalDonorSourceId(donor);
   if (!donorSourceId) throw donorIdentityError();
-  if (!donorPaymentVerified(donor)) {
+
+  await connectMongo();
+  const eventYear = donorEventYear(donor);
+  const donorFingerprint = generalDonorFingerprint(donor);
+  const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId });
+  const identityMatches = operation?.donorFingerprint === donorFingerprint;
+  const approvedOverride = Boolean(eligibilityOverride) || Boolean(identityMatches && operation?.qrEligibilityOverride);
+  const paymentVerified = donorPaymentVerified(donor);
+  if (!paymentVerified && !approvedOverride) {
     const error = new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
     error.statusCode = 403;
     throw error;
   }
 
-  await connectMongo();
-  const eventYear = donorEventYear(donor);
-  const operation = await GeneralDonorOperation.findOne({ eventYear, donorSourceId });
-  const donorFingerprint = generalDonorFingerprint(donor);
-  const identityMatches = operation?.donorFingerprint === donorFingerprint;
   const clearToken = operation?.tokenRef && identityMatches && !regenerate ? operation.tokenRef : createMangalyaToken();
+  const resolvedOverrideReason = String(
+    overrideReason || operation?.qrEligibilityOverrideReason || 'Organizer-approved General Donor QR exception',
+  ).trim();
   const update = {
     donorFingerprint,
     qrStatus: 'ACTIVE',
     tokenRef: clearToken,
     tokenHash: tokenHash(clearToken),
+    ...(eligibilityOverride ? {
+      qrEligibilityOverride: true,
+      qrEligibilityOverrideReason: resolvedOverrideReason,
+      qrEligibilityOverrideAt: new Date(),
+      qrEligibilityOverrideBy: actorName(user),
+    } : {}),
   };
   const next = await GeneralDonorOperation.findOneAndUpdate(
     { eventYear, donorSourceId },
@@ -3067,6 +3088,7 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
     eventYear,
     eventType: regenerate ? 'GENERAL_DONOR_QR_REGENERATED' : 'GENERAL_DONOR_QR_GENERATED',
     user,
+    remarks: approvedOverride && !paymentVerified ? `Eligibility override: ${resolvedOverrideReason}` : '',
   });
   return {
     donor: {
@@ -3075,6 +3097,8 @@ async function generateOrResolveGeneralDonorQr({ donorId, user, regenerate = fal
       generalDonorSourceId: donorSourceId,
       donorType: 'DONOR',
       qrStatus: next.qrStatus,
+      qrEligibilityOverride: Boolean(next.qrEligibilityOverride),
+      qrEligibilityOverrideReason: next.qrEligibilityOverrideReason || '',
       qrUrl: `${publicOrigin(req)}${GENERAL_DONOR_QR_PREFIX}${clearToken}`,
     },
     token: clearToken,
@@ -3630,6 +3654,8 @@ app.post('/api/previous-donors/:id/qr', requirePst, async (req, res) => {
       donorId: req.params.id,
       user: req.user,
       regenerate: false,
+      eligibilityOverride: boolFrom(req.body?.eligibilityOverride),
+      overrideReason: req.body?.overrideReason,
       req,
     });
     res.json({ ok: true, message: 'Donor QR generated', donor: result.donor, token: result.token });
@@ -3644,6 +3670,8 @@ app.post('/api/previous-donors/:id/regenerate-qr', requirePst, async (req, res) 
       donorId: req.params.id,
       user: req.user,
       regenerate: true,
+      eligibilityOverride: boolFrom(req.body?.eligibilityOverride),
+      overrideReason: req.body?.overrideReason,
       req,
     });
     res.json({ ok: true, message: 'Donor QR regenerated', donor: result.donor, token: result.token });
