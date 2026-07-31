@@ -1273,4 +1273,7 @@ assert.ok(frontend.includes('This screen does not place a telephone call.'), 'Pr
 assert.ok(frontend.includes('Voice modulation'), 'Voice prototype must expose voice modulation selection');
 assert.ok(frontend.includes("useState('soothing')"), 'Voice prototype must default to a soothing voice style');
 assert.ok(frontend.includes('preferredBrowserVoice'), 'Voice prototype must prefer a softer installed browser voice');
+assert.ok(frontend.includes('Automatic — prefer Natural voice'), 'Voice prototype must expose installed Natural voice selection');
+assert.ok(frontend.includes('isNaturalBrowserVoice'), 'Voice prototype must prioritize Natural, Online, or Neural voices');
+assert.ok(frontend.includes('activeVoiceStyle.pauseMs'), 'Voice prototype must pause calmly between invitation sentences');
 console.log('Event mapping and WhatsApp message regression checks passed.');

@@ -190,8 +190,10 @@ assert.equal(classifyVoiceRsvp('I am not sure yet'), 'Needs Follow-up');
 assert.equal(classifyVoiceRsvp('I have a question about parking'), 'Needs Follow-up');
 assert.match(voiceRsvpAcknowledgement('Attending', 'en-IN'), /attendance is noted/);
 assert.equal(voiceInvitationStyle().value, 'soothing');
-assert.equal(voiceInvitationStyle().rate, 0.82);
+assert.equal(voiceInvitationStyle().rate, 0.78);
+assert.equal(voiceInvitationStyle().pitch, 0.94);
 assert.equal(voiceInvitationStyle().volume, 1);
+assert.equal(voiceInvitationStyle().pauseMs, 220);
 assert.equal(voiceInvitationStyle('natural').rate, 0.94);
 assert.equal(voiceInvitationStyle('missing').value, 'soothing');
 

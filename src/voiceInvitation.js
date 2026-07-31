@@ -8,10 +8,11 @@ export const VOICE_INVITATION_STYLE_OPTIONS = [
   {
     value: 'soothing',
     label: 'Soothing (Recommended)',
-    description: 'Gentle pace with a warmer, calmer delivery.',
-    rate: 0.82,
-    pitch: 1.02,
+    description: 'Slower pace, warmer pitch and calm pauses between sentences.',
+    rate: 0.78,
+    pitch: 0.94,
     volume: 1,
+    pauseMs: 220,
   },
   {
     value: 'natural',
@@ -20,6 +21,7 @@ export const VOICE_INVITATION_STYLE_OPTIONS = [
     rate: 0.94,
     pitch: 1,
     volume: 1,
+    pauseMs: 90,
   },
   {
     value: 'ceremonial',
@@ -28,6 +30,7 @@ export const VOICE_INVITATION_STYLE_OPTIONS = [
     rate: 0.86,
     pitch: 0.96,
     volume: 0.96,
+    pauseMs: 180,
   },
 ];
 

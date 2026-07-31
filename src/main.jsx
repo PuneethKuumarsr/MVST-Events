@@ -8488,6 +8488,16 @@ const SOOTHING_VOICE_HINTS = [
   'samantha',
 ];
 
+function isNaturalBrowserVoice(voice) {
+  return /(natural|online|neural)/i.test(`${voice?.name || ''} ${voice?.voiceURI || ''}`);
+}
+
+function voiceMatchesLanguage(voice, language) {
+  const targetLanguage = String(language || 'en-IN').toLowerCase();
+  const voiceLanguage = String(voice?.lang || '').toLowerCase();
+  return voiceLanguage === targetLanguage || voiceLanguage.startsWith(targetLanguage.slice(0, 2));
+}
+
 function preferredBrowserVoice(voices, language) {
   const targetLanguage = String(language || 'en-IN').toLowerCase();
   const languagePrefix = targetLanguage.slice(0, 2);
@@ -8502,6 +8512,7 @@ function preferredBrowserVoice(voices, language) {
       return {
         voice,
         score: (voiceLanguage === targetLanguage ? 100 : 50)
+          + (isNaturalBrowserVoice(voice) ? 120 : 0)
           + (soothingHintIndex >= 0 ? 30 - soothingHintIndex : 0)
           + (voice.default ? 1 : 0),
       };
@@ -8509,6 +8520,13 @@ function preferredBrowserVoice(voices, language) {
     .filter((candidate) => candidate.score >= 0)
     .sort((a, b) => b.score - a.score)[0]?.voice
     || null;
+}
+
+function selectedBrowserVoice(voices, language, voiceUri = 'auto') {
+  const selectedVoice = voiceUri === 'auto'
+    ? null
+    : voices.find((voice) => voice.voiceURI === voiceUri && voiceMatchesLanguage(voice, language));
+  return selectedVoice || preferredBrowserVoice(voices, language);
 }
 
 function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
@@ -8522,6 +8540,7 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   const [recipientId, setRecipientId] = useState('');
   const [language, setLanguage] = useState('en-IN');
   const [voiceStyleId, setVoiceStyleId] = useState('soothing');
+  const [voiceUri, setVoiceUri] = useState('auto');
   const [phase, setPhase] = useState('idle');
   const [transcript, setTranscript] = useState('');
   const [typedResponse, setTypedResponse] = useState('');
@@ -8556,7 +8575,18 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
     && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
   const selectedVoiceLanguage = language === 'bilingual' ? 'kn-IN' : language;
   const activeVoiceStyle = voiceInvitationStyle(voiceStyleId);
-  const matchingVoice = preferredBrowserVoice(voices, selectedVoiceLanguage);
+  const selectableVoices = voices
+    .filter((voice) => (
+      language === 'bilingual'
+        ? voiceMatchesLanguage(voice, 'kn-IN') || voiceMatchesLanguage(voice, 'en-IN')
+        : voiceMatchesLanguage(voice, language)
+    ))
+    .sort((a, b) => (
+      Number(isNaturalBrowserVoice(b)) - Number(isNaturalBrowserVoice(a))
+      || a.name.localeCompare(b.name)
+    ));
+  const matchingVoice = selectedBrowserVoice(voices, selectedVoiceLanguage, voiceUri);
+  const naturalVoiceAvailable = selectableVoices.some(isNaturalBrowserVoice);
 
   useEffect(() => {
     if (!filteredRecipients.length) {
@@ -8582,6 +8612,13 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
     window.speechSynthesis.addEventListener?.('voiceschanged', updateVoices);
     return () => window.speechSynthesis.removeEventListener?.('voiceschanged', updateVoices);
   }, [speechSupported]);
+
+  useEffect(() => {
+    if (voiceUri === 'auto') return;
+    if (!selectableVoices.some((voice) => voice.voiceURI === voiceUri)) {
+      setVoiceUri('auto');
+    }
+  }, [selectableVoices, voiceUri]);
 
   useEffect(() => () => {
     runTokenRef.current += 1;
@@ -8613,21 +8650,21 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   }
 
   function voiceForLanguage(segmentLanguage) {
-    return preferredBrowserVoice(voices, segmentLanguage);
+    return selectedBrowserVoice(voices, segmentLanguage, voiceUri);
   }
 
-  function speakSegment(segment, runToken) {
+  function speakSentence(sentence, segmentLanguage, runToken) {
     return new Promise((resolve, reject) => {
       if (!speechSupported) {
         reject(new Error('Speech playback is unavailable in this browser.'));
         return;
       }
-      const utterance = new window.SpeechSynthesisUtterance(segment.text);
-      utterance.lang = segment.lang;
+      const utterance = new window.SpeechSynthesisUtterance(sentence);
+      utterance.lang = segmentLanguage;
       utterance.rate = activeVoiceStyle.rate;
       utterance.pitch = activeVoiceStyle.pitch;
       utterance.volume = activeVoiceStyle.volume;
-      const voice = voiceForLanguage(segment.lang);
+      const voice = voiceForLanguage(segmentLanguage);
       if (voice) utterance.voice = voice;
       utterance.onend = () => resolve();
       utterance.onerror = (event) => {
@@ -8639,6 +8676,20 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
       };
       window.speechSynthesis.speak(utterance);
     });
+  }
+
+  async function speakSegment(segment, runToken) {
+    const sentences = segment.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+      ?.map((sentence) => sentence.trim())
+      .filter(Boolean)
+      || [segment.text];
+    for (let index = 0; index < sentences.length; index += 1) {
+      if (runToken !== runTokenRef.current) return;
+      await speakSentence(sentences[index], segment.lang, runToken);
+      if (index < sentences.length - 1 && activeVoiceStyle.pauseMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, activeVoiceStyle.pauseMs));
+      }
+    }
   }
 
   function speakAcknowledgement(status) {
@@ -8885,8 +8936,26 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
             </select>
           </label>
           <small className="voice-style-note">
-            {activeVoiceStyle.description} The assistant prefers a softer Indian voice when one is installed.
+            {activeVoiceStyle.description}
           </small>
+
+          <label>
+            <span>Installed voice</span>
+            <select
+              value={voiceUri}
+              onChange={(event) => {
+                cancelActiveVoice('Voice changed. Start the demo to hear it.');
+                setVoiceUri(event.target.value);
+              }}
+            >
+              <option value="auto">Automatic — prefer Natural voice</option>
+              {selectableVoices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name}{isNaturalBrowserVoice(voice) ? ' — Natural' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div className="voice-browser-readiness">
             <span className={speechSupported ? 'ready' : 'limited'}>
@@ -8897,6 +8966,9 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
             </span>
             <span className={matchingVoice ? 'ready' : 'limited'}>
               <Sparkles size={15} /> Selected voice: {matchingVoice?.name || 'Browser default'} · {activeVoiceStyle.label}
+            </span>
+            <span className={naturalVoiceAvailable ? 'ready' : 'limited'}>
+              <Sparkles size={15} /> Voice quality: {naturalVoiceAvailable ? 'Natural voice available' : 'Standard device voice only'}
             </span>
           </div>
 
