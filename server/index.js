@@ -1820,7 +1820,10 @@ function generalDonorSourceId(row) {
 }
 
 function donorMatchesPatchId(row, donorId) {
-  if (!isGeneralPreviousDonor(row) && row?.donorId === donorId) return true;
+  if (!isGeneralPreviousDonor(row) && (
+    row?.donorId === donorId ||
+    (!row?.donorId && row?.id === donorId)
+  )) return true;
   return isGeneralPreviousDonor(row) && (row?.id === donorId || generalDonorSourceId(row) === donorId);
 }
 
@@ -1867,6 +1870,8 @@ function mergeMangalyaOperations(rows, operationsMap) {
       quantity,
       totalAmount: quantity * MANGALYA_RATE,
       qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
+      qrEligibilityOverride: Boolean(operation.qrEligibilityOverride),
+      qrEligibilityOverrideReason: operation.qrEligibilityOverrideReason || '',
       invitationPreparedAt: operation.invitationPreparedAt || null,
       invitationPreparedBy: operation.invitationPreparedBy || '',
       whatsappDestination: operation.whatsappDestination || '',
@@ -1975,6 +1980,8 @@ function publicMangalyaDonor(donor, operation = {}, user = null, includeTokenUrl
     receiptNumber,
     paymentStatus: donor.status || '',
     qrStatus: operation.qrStatus || (operation.tokenHash ? 'ACTIVE' : 'NOT_GENERATED'),
+    qrEligibilityOverride: Boolean(operation.qrEligibilityOverride),
+    qrEligibilityOverrideReason: operation.qrEligibilityOverrideReason || '',
     invitationPreparedAt: operation.invitationPreparedAt || null,
     arrivalStatus: operation.arrivalStatus || 'NOT_ARRIVED',
     arrivedAt: operation.arrivedAt || null,
@@ -2814,6 +2821,17 @@ async function updateMangalyaDonor(donorId, updates, user) {
   let matches = donorCache.rows.filter((row) => donorMatchesPatchId(row, donorId));
   if (matches.length !== 1) throw donorIdentityError();
   let currentRow = matches[0];
+  const requestedDonorId = !isGeneralPreviousDonor(currentRow) && Object.prototype.hasOwnProperty.call(updates || {}, 'donorId')
+    ? normalizeMangalyaDonorId(updates.donorId)
+    : '';
+  if (!isGeneralPreviousDonor(currentRow) && Object.prototype.hasOwnProperty.call(updates || {}, 'donorId') && !requestedDonorId) {
+    const error = new Error('Donor ID must use the MD26-0001 format.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (requestedDonorId && donorCache.rows.some((row) => row.rowNumber !== currentRow.rowNumber && row.donorId === requestedDonorId)) {
+    throw donorIdentityError();
+  }
   const donorSourceId = currentRow.donorId || generalDonorSourceId(currentRow);
 
   if (!isGeneralPreviousDonor(currentRow) && Object.prototype.hasOwnProperty.call(updates || {}, 'receiptNumber')) {
@@ -2860,7 +2878,8 @@ async function updateMangalyaDonor(donorId, updates, user) {
   });
 
   const verified = await loadMangalyaDonors();
-  const verifiedMatches = verified.rows.filter((row) => donorMatchesPatchId(row, donorId));
+  const verificationId = requestedDonorId || donorId;
+  const verifiedMatches = verified.rows.filter((row) => donorMatchesPatchId(row, verificationId));
   if (verifiedMatches.length !== 1) throw donorIdentityError();
   return verified;
 }
@@ -2919,31 +2938,50 @@ async function getMangalyaOperationForDonor(donor, { create = false } = {}) {
   return operation;
 }
 
-async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, req }) {
+async function generateOrResolveMangalyaQr({
+  donorId,
+  user,
+  regenerate = false,
+  eligibilityOverride = false,
+  overrideReason = '',
+  req,
+}) {
   const donor = await findMangalyaDonorById(donorId);
   const quantity = mangalyaDonorQuantity(donor);
-  if (!quantity) {
+  const eventYear = donorEventYear(donor);
+  if (!donor.donorId) throw donorIdentityError();
+
+  await connectMongo();
+  let operation = await MangalyaDonorOperation.findOne({ eventYear, donorSourceId: donor.donorId });
+  const approvedOverride = Boolean(operation?.qrEligibilityOverride) || Boolean(eligibilityOverride);
+  const paymentVerified = donorPaymentVerified(donor);
+  if (!quantity && !approvedOverride) {
     const error = new Error('Number of Mangalyas must be at least 1 before QR generation.');
     error.statusCode = 400;
     throw error;
   }
-  const eventYear = donorEventYear(donor);
-  if (!donor.donorId) throw donorIdentityError();
-  if (!donorPaymentVerified(donor)) {
+  if (!paymentVerified && !approvedOverride) {
     const error = new Error('QR generation is enabled only after Treasurer Verified / Payment Received.');
     error.statusCode = 403;
     throw error;
   }
   const sheetReceipt = donorSheetReceiptNumber(donor);
 
-  await connectMongo();
-  let operation = await MangalyaDonorOperation.findOne({ eventYear, donorSourceId: donor.donorId });
   const clearToken = operation?.tokenRef && !regenerate ? operation.tokenRef : createMangalyaToken();
+  const resolvedOverrideReason = String(
+    overrideReason || operation?.qrEligibilityOverrideReason || 'Organizer-approved donor QR exception',
+  ).trim();
   const update = {
     qrStatus: 'ACTIVE',
     ...(sheetReceipt ? {
       receiptNumber: sheetReceipt,
       receiptNumberNormalized: sheetReceipt,
+    } : {}),
+    ...(eligibilityOverride ? {
+      qrEligibilityOverride: true,
+      qrEligibilityOverrideReason: resolvedOverrideReason,
+      qrEligibilityOverrideAt: new Date(),
+      qrEligibilityOverrideBy: actorName(user),
     } : {}),
   };
   if (clearToken) {
@@ -2968,7 +3006,10 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
     eventYear,
     eventType: regenerate ? 'MANGALYA_QR_REGENERATED' : 'MANGALYA_QR_GENERATED',
     user,
-    remarks: sheetReceipt ? `Receipt ${sheetReceipt}` : 'QR generated without physical receipt number',
+    remarks: [
+      sheetReceipt ? `Receipt ${sheetReceipt}` : 'QR generated without physical receipt number',
+      approvedOverride && (!quantity || !paymentVerified) ? `Eligibility override: ${resolvedOverrideReason}` : '',
+    ].filter(Boolean).join('; '),
   });
   return {
     donor: publicMangalyaDonor(donor, { ...operation, clearToken }, user, true, req),
@@ -3541,6 +3582,8 @@ app.post(['/api/mangalya-sponsorship/:id/qr', '/api/mangalya-donors/:id/qr'], re
       donorId: req.params.id,
       user: req.user,
       regenerate: false,
+      eligibilityOverride: boolFrom(req.body?.eligibilityOverride),
+      overrideReason: req.body?.overrideReason,
       req,
     });
     res.json({ ok: true, message: 'Mangalya donor QR generated', donor: result.donor, token: result.token });
@@ -3555,6 +3598,8 @@ app.post(['/api/mangalya-sponsorship/:id/regenerate-qr', '/api/mangalya-donors/:
       donorId: req.params.id,
       user: req.user,
       regenerate: true,
+      eligibilityOverride: boolFrom(req.body?.eligibilityOverride),
+      overrideReason: req.body?.overrideReason,
       req,
     });
     res.json({ ok: true, message: 'Mangalya donor QR regenerated', donor: result.donor, token: result.token });

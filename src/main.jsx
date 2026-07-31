@@ -1295,6 +1295,7 @@ function donorDonationType(donor) {
 }
 
 function donorPaymentVerified(donor) {
+  if (boolValue(donor?.qrEligibilityOverride)) return true;
   const status = textValue(donor?.status || donor?.paymentStatus, '').trim().toLowerCase();
   if (isDirectBottuSponsor(donor) && isConfirmedSponsor(donor)) return true;
   return boolValue(donor?.treasurerVerified) || status.includes('received');
@@ -1309,10 +1310,11 @@ function generalDonorInvitationPackageReady(donor) {
 function mangalyaDonorInvitationPackageReady(donor) {
   const identityReady = donor.identityReady !== false
     && Boolean(donor.donorId || !String(donor.id || '').startsWith('missing-donor-id:'));
+  const eligibilityOverride = boolValue(donor?.qrEligibilityOverride);
   return donorMobileIsValid(donor)
     && donorPaymentVerified(donor)
     && identityReady
-    && sponsorQuantity(donor) > 0;
+    && (sponsorQuantity(donor) > 0 || eligibilityOverride);
 }
 
 function donorQrPayload(donor, donationType) {
