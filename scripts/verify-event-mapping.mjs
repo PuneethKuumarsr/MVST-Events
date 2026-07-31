@@ -869,12 +869,19 @@ for (const [label, message] of messageFormattingCases) {
   assert.equal(decodeURIComponent(encoded), message.replace(/\r\n?/g, '\n'), label + ' must decode back to the multiline template');
 }
 assert.ok(frontend.includes('QR Operations'), 'Sidebar must expose QR Operations module');
-assert.ok(frontend.includes('Kit Distribution Day'), 'QR module must separate Kit Distribution Day operations');
-assert.ok(frontend.includes('Mahotsava Event Day'), 'QR module must separate Mahotsava Event Day operations');
-assert.ok(frontend.includes('meetingAttendance'), 'QR module must track Meeting Attendance separately');
-assert.ok(frontend.includes('kitCollection'), 'QR module must track Kit Collection separately');
-assert.ok(frontend.includes("statusField: 'kitIssued'"), 'Kit Collection must reuse existing Kit Issued column');
-assert.ok(!frontend.includes("'Kit Collected'"), 'Frontend must not propose a new Kit Collected column');
+const qrOperationsBody = frontend.slice(
+  frontend.indexOf('function QRDistributionModule'),
+  frontend.indexOf('function CollectionDrilldownModal'),
+);
+assert.ok(qrOperationsBody.includes('Mahotsava Event Day'), 'QR module must show Mahotsava Event Day operations');
+assert.ok(qrOperationsBody.includes('Donors QR Scan'), 'QR module must expose a donor-specific QR scan operation');
+assert.ok(!qrOperationsBody.includes('Kit Distribution Day'), 'QR module must hide the completed Kit Distribution Day workflow');
+assert.ok(!qrOperationsBody.includes("setActiveOperation('meetingAttendance')"), 'QR module must hide Meeting Attendance');
+assert.ok(!qrOperationsBody.includes("setActiveOperation('kitCollection')"), 'QR module must hide Kit Collection');
+assert.ok(frontend.includes("const DONOR_SCAN_OPERATION_KEY = 'donorScan'"), 'Frontend must identify donor-only QR scans');
+assert.ok(backend.includes("const DONOR_SCAN_OPERATION_KEY = 'donorScan'"), 'Backend must accept donor-only QR scans');
+assert.ok(backend.includes("app.post('/api/distribution/scan', requireAuth"), 'Donor QR scan must be open to every logged-in user role');
+assert.ok(backend.includes('This QR is not a donor QR.'), 'Donor-only mode must reject participant QR codes');
 assert.ok(frontend.includes('eventAttendance'), 'QR module must track Event Attendance separately');
 assert.ok(frontend.includes('madalakkiDistribution'), 'QR module must track Madalakki Distribution separately');
 assert.ok(frontend.includes('photoFrameDistribution'), 'QR module must track Photo Frame Distribution separately');
@@ -889,12 +896,10 @@ assert.ok(frontend.includes("setScannerMode('html5')"), 'QR scanner fallback mus
 assert.ok(frontend.includes('await waitForScannerRegion()'), 'QR scanner fallback must wait for the visible scanner region before starting');
 assert.ok(frontend.includes('Manual QR token entry'), 'QR module must provide owner/admin manual fallback');
 assert.ok(frontend.includes('scanDistributionQr'), 'QR scans must call the backend scan endpoint');
-assert.ok(frontend.includes('Saving scan to Google Sheet'), 'QR scan must not show success until save is in progress/confirmed');
+assert.ok(frontend.includes("setScanState({ type: 'saving'"), 'QR scan must enter a saving/verifying state before success');
 assert.ok(frontend.includes('Already Completed'), 'QR duplicate scans must show Already Completed');
 assert.ok(frontend.includes('Login required before scanning.'), 'QR scan must require logged-in identity before saving');
 assert.ok(frontend.includes('VolunteerDistributionMonitor'), 'QR Operations must include volunteer distribution monitor');
-assert.ok(frontend.includes('Meeting Attendance Pending'), 'Volunteer monitor must filter Meeting Attendance pending');
-assert.ok(frontend.includes('Kit Pending'), 'Volunteer monitor must filter Kit pending');
 assert.ok(frontend.includes('Event Attendance Pending'), 'Volunteer monitor must filter Event Attendance pending');
 assert.ok(frontend.includes('Madalakki Pending'), 'Volunteer monitor must filter Madalakki pending');
 assert.ok(frontend.includes('Photo Frame Pending'), 'Volunteer monitor must filter Photo Frame pending');
@@ -904,6 +909,8 @@ const volunteerMonitorBody = frontend.slice(
   frontend.indexOf('function VolunteerDistributionMonitor'),
   frontend.indexOf('function QRVideoScanner'),
 );
+assert.ok(!volunteerMonitorBody.includes('Meeting Attendance Pending'), 'Volunteer monitor must hide Meeting Attendance');
+assert.ok(!volunteerMonitorBody.includes('Kit Pending'), 'Volunteer monitor must hide Kit Distribution');
 assert.ok(volunteerMonitorBody.includes('participant.groomName'), 'Volunteer monitor must show husband name');
 assert.ok(volunteerMonitorBody.includes('participant.brideName'), 'Volunteer monitor must show wife name');
 assert.ok(volunteerMonitorBody.includes('participant.mobileNumber'), 'Volunteer monitor must show mobile number');

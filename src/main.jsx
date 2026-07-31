@@ -225,11 +225,18 @@ const DISTRIBUTION_OPERATIONS = {
     completedLabel: 'Photo Frame Given',
   },
 };
+const DONOR_SCAN_OPERATION_KEY = 'donorScan';
+const DONOR_SCAN_OPERATION = {
+  label: 'Donors QR Scan',
+  completedLabel: 'Donor Verified',
+};
+const EVENT_DAY_OPERATION_KEYS = [
+  'eventAttendance',
+  'madalakkiDistribution',
+  'photoFrameDistribution',
+];
 const DISTRIBUTION_REQUIRED_COLUMNS = [
   'QR Token',
-  'Meeting Attendance',
-  'Meeting Attendance Time',
-  'Meeting Attendance By',
   'Event Attendance',
   'Event Attendance Time',
   'Event Attendance By',
@@ -242,8 +249,6 @@ const DISTRIBUTION_REQUIRED_COLUMNS = [
 ];
 const VOLUNTEER_STATUS_FILTERS = [
   { value: 'all', label: 'All Participants' },
-  { value: 'meetingAttendance', label: 'Meeting Attendance Pending' },
-  { value: 'kitCollection', label: 'Kit Pending' },
   { value: 'eventAttendance', label: 'Event Attendance Pending' },
   { value: 'madalakkiDistribution', label: 'Madalakki Pending' },
   { value: 'photoFrameDistribution', label: 'Photo Frame Pending' },
@@ -2836,7 +2841,7 @@ function useParticipants() {
     scanDistribution: async ({ token, operation }) => {
       const payload = await scanDistributionQr({ token, operation });
       applyPayload(payload);
-      setStatus(`Distribution scan saved. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
+      setStatus(`QR scan completed. Data Source: ${sourceText(payload.source, payload.writeEnabled)}. Last refreshed: ${formatRefreshTime(payload.refreshedAt)}`);
       return payload;
     },
     refresh: () => load(true),
@@ -7742,11 +7747,14 @@ function VolunteerDistributionMonitor({ rows }) {
                 {validMobile ? <a href={`tel:+${mobile}`}><Phone size={16} /> Call</a> : <small>Valid mobile required</small>}
               </div>
               <div className="volunteer-status-grid">
-                {Object.entries(DISTRIBUTION_OPERATIONS).map(([key, operation]) => (
-                  <span key={key} className={distributionCompleted(participant, key) ? 'done' : 'pending'}>
-                    {operation.completedLabel}: {distributionCompleted(participant, key) ? 'Done' : 'Pending'}
-                  </span>
-                ))}
+                {EVENT_DAY_OPERATION_KEYS.map((key) => {
+                  const operation = DISTRIBUTION_OPERATIONS[key];
+                  return (
+                    <span key={key} className={distributionCompleted(participant, key) ? 'done' : 'pending'}>
+                      {operation.completedLabel}: {distributionCompleted(participant, key) ? 'Done' : 'Pending'}
+                    </span>
+                  );
+                })}
               </div>
             </article>
           );
@@ -7980,7 +7988,7 @@ function ScanResultPopup({ result, onClose }) {
 }
 
 function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPst, initialScanToken = '' }) {
-  const [activeOperation, setActiveOperation] = useState('meetingAttendance');
+  const [activeOperation, setActiveOperation] = useState('eventAttendance');
   const operatorName = user?.name || user?.mobile || '';
   const [manualToken, setManualToken] = useState('');
   const [search, setSearch] = useState('');
@@ -7993,7 +8001,9 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
   const [scannedMangalyaDonor, setScannedMangalyaDonor] = useState(null);
   const [scannedGeneralDonor, setScannedGeneralDonor] = useState(null);
   const [donorActionSaving, setDonorActionSaving] = useState(false);
-  const operation = DISTRIBUTION_OPERATIONS[activeOperation];
+  const operation = activeOperation === DONOR_SCAN_OPERATION_KEY
+    ? DONOR_SCAN_OPERATION
+    : DISTRIBUTION_OPERATIONS[activeOperation];
   const searchableRows = rows.filter((row) => {
     const text = [participantDisplayName(row), row.seatNo, row.mobileNumber, EVENTS[row.eventType]?.shortLabel].join(' ').toLowerCase();
     return !search.trim() || text.includes(search.trim().toLowerCase());
@@ -8029,11 +8039,11 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       return;
     }
     if (!writeEnabled) {
-      setScanState({ type: 'error', message: 'Read-only mode. Distribution scan cannot be saved.' });
+      setScanState({ type: 'error', message: 'Read-only mode. QR scanning is unavailable.' });
       return;
     }
     setIsSaving(true);
-    setScanState({ type: 'saving', message: 'Saving scan to Google Sheet...' });
+    setScanState({ type: 'saving', message: 'Checking QR...' });
     try {
       const result = await scanDistribution({ token: String(token || '').trim(), operation: activeOperation });
       if (result.recordType === 'MANGALYA') {
@@ -8192,15 +8202,15 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       <div className="section-heading">
         <div>
           <p>QR Operations</p>
-          <h2>Scan and auto-save volunteer operations</h2>
+          <h2>Scan participant and donor QR codes</h2>
         </div>
       </div>
 
       <div className="distribution-audit-card">
-        <strong>Read-only Sheet audit completed</strong>
-        <span>Current sheets already have Kit Issued and Remarks. Kit Collection reuses those fields. Only genuinely missing QR/attendance/event-day columns are listed below.</span>
+        <strong>Event-day QR setup</strong>
+        <span>Participant event operations use the columns below. Donor QR Scan verifies General Donors and Mangalya Donors from their existing QR records.</span>
         <details>
-          <summary>Required columns</summary>
+          <summary>Participant event-day columns</summary>
           <div className="distribution-column-list">
             {DISTRIBUTION_REQUIRED_COLUMNS.map((column) => <span key={column}>{column}</span>)}
           </div>
@@ -8209,9 +8219,8 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
 
       <div className="distribution-groups">
         <article className="distribution-group-card">
-          <p>📅 Kit Distribution Day</p>
-          <button className={activeOperation === 'meetingAttendance' ? 'active' : ''} type="button" onClick={() => setActiveOperation('meetingAttendance')}>Meeting Attendance</button>
-          <button className={activeOperation === 'kitCollection' ? 'active' : ''} type="button" onClick={() => setActiveOperation('kitCollection')}>Kit Collection</button>
+          <p>🎁 Donors</p>
+          <button className={activeOperation === DONOR_SCAN_OPERATION_KEY ? 'active' : ''} type="button" onClick={() => setActiveOperation(DONOR_SCAN_OPERATION_KEY)}>Donors QR Scan</button>
         </article>
         <article className="distribution-group-card">
           <p>🌸 Mahotsava Day</p>
@@ -8222,9 +8231,6 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       </div>
 
       <div className="distribution-dashboard-block">
-        <p className="event-label">Kit Distribution Day</p>
-        <DistributionDashboard rows={rows} operationKey="meetingAttendance" onOpenList={openList} />
-        <DistributionDashboard rows={rows} operationKey="kitCollection" onOpenList={openList} />
         <p className="event-label">Mahotsava Event Day</p>
         <DistributionDashboard rows={rows} operationKey="eventAttendance" onOpenList={openList} />
         <DistributionDashboard rows={rows} operationKey="madalakkiDistribution" onOpenList={openList} />

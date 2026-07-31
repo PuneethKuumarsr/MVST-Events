@@ -169,6 +169,7 @@ const MANGALYA_EVENT_YEAR = process.env.MANGALYA_EVENT_YEAR || process.env.VITE_
 const MANGALYA_RATE = 15000;
 const MANGALYA_QR_PREFIX = '/qr/mangalya/';
 const PUBLIC_PORTAL_ORIGIN = (process.env.PUBLIC_PORTAL_ORIGIN || process.env.VITE_PUBLIC_PORTAL_ORIGIN || process.env.VITE_PUBLIC_APP_URL || 'https://mvst-events.onrender.com').replace(/\/+$/, '');
+const DONOR_SCAN_OPERATION_KEY = 'donorScan';
 const DISTRIBUTION_OPERATIONS = {
   meetingAttendance: {
     label: 'Meeting Attendance',
@@ -2618,8 +2619,9 @@ async function scanDistributionToken({ token, operationKey, actorUser }) {
     throw error;
   }
 
+  const donorOnlyScan = operationKey === DONOR_SCAN_OPERATION_KEY;
   const operation = DISTRIBUTION_OPERATIONS[operationKey];
-  if (!operation) {
+  if (!donorOnlyScan && !operation) {
     const error = new Error('Invalid distribution operation.');
     error.statusCode = 400;
     throw error;
@@ -2662,6 +2664,12 @@ async function scanDistributionToken({ token, operationKey, actorUser }) {
       donor: generalDonorMatch.publicDonor,
       rows: cache.rows,
     };
+  }
+
+  if (donorOnlyScan) {
+    const error = new Error('This QR is not a donor QR. Use a Mahotsava operation for participant QR codes.');
+    error.statusCode = 404;
+    throw error;
   }
 
   const parsedQr = parseFixedReceiptQr(token);
