@@ -2935,27 +2935,16 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
     throw error;
   }
   const sheetReceipt = donorSheetReceiptNumber(donor);
-  const finalReceipt = sheetReceipt;
-  if (!finalReceipt) {
-    const error = new Error('Save the physical receipt number to Google Sheets before generating QR.');
-    error.statusCode = 400;
-    throw error;
-  }
 
   await connectMongo();
   let operation = await MangalyaDonorOperation.findOne({ eventYear, donorSourceId: donor.donorId });
-  const existingReceipt = normalizeMangalyaReceiptNumber(operation?.receiptNumber);
-  if (existingReceipt && existingReceipt !== finalReceipt && !sheetReceipt) {
-    const error = new Error(`Existing receipt number ${existingReceipt} is already preserved for this donor.`);
-    error.statusCode = 409;
-    throw error;
-  }
-
   const clearToken = operation?.tokenRef && !regenerate ? operation.tokenRef : createMangalyaToken();
   const update = {
-    receiptNumber: finalReceipt,
-    receiptNumberNormalized: finalReceipt,
     qrStatus: 'ACTIVE',
+    ...(sheetReceipt ? {
+      receiptNumber: sheetReceipt,
+      receiptNumberNormalized: sheetReceipt,
+    } : {}),
   };
   if (clearToken) {
     update.tokenRef = clearToken;
@@ -2979,7 +2968,7 @@ async function generateOrResolveMangalyaQr({ donorId, user, regenerate = false, 
     eventYear,
     eventType: regenerate ? 'MANGALYA_QR_REGENERATED' : 'MANGALYA_QR_GENERATED',
     user,
-    remarks: `Receipt ${finalReceipt}`,
+    remarks: sheetReceipt ? `Receipt ${sheetReceipt}` : 'QR generated without physical receipt number',
   });
   return {
     donor: publicMangalyaDonor(donor, { ...operation, clearToken }, user, true, req),

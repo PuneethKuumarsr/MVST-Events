@@ -1312,8 +1312,7 @@ function mangalyaDonorInvitationPackageReady(donor) {
   return donorMobileIsValid(donor)
     && donorPaymentVerified(donor)
     && identityReady
-    && sponsorQuantity(donor) > 0
-    && Boolean(normalizeMangalyaReceiptNumber(donor.receiptNumber));
+    && sponsorQuantity(donor) > 0;
 }
 
 function donorQrPayload(donor, donationType) {
@@ -4233,10 +4232,6 @@ function MangalyaSponsorCard({ sponsor, writeEnabled, onSave }) {
       setMessage('QR will be enabled after Treasurer Verified / Payment Received.');
       return null;
     }
-    if (!sponsor.receiptNumber) {
-      setMessage('Save the physical receipt number to Google Sheets before generating QR.');
-      return null;
-    }
     setQrSaving(true);
     setMessage('');
     try {
@@ -6425,7 +6420,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
     let deliveryStarted = false;
     try {
       if (!mangalyaDonorInvitationPackageReady(donor)) {
-        throw new Error('Valid mobile, donor identity, receipt number, quantity and Treasurer Verified / Payment Received status are required.');
+        throw new Error('Valid mobile, donor identity, quantity and Treasurer Verified / Payment Received status are required.');
       }
       const personalizedMessage = buildMangalyaDonorInvitationMessage(donor);
       if (!personalizedMessage.trim()) throw new Error('Personalized message generation failed.');
@@ -6804,7 +6799,7 @@ function MangalyaDonorsSection({ donorState, requirementState, requiredBottus = 
                   </button>
                 </div>
               </>
-            ) : <p className="bulk-empty">No eligible sponsors found. A valid mobile, donor identity, physical receipt number, quantity and Treasurer Verified / Payment Received status are required.</p>}
+            ) : <p className="bulk-empty">No eligible sponsors found. A valid mobile, donor identity, quantity and Treasurer Verified / Payment Received status are required.</p>}
           </div>
         ) : null}
         {bulkMessage ? <small className="donor-note">{bulkMessage}</small> : null}

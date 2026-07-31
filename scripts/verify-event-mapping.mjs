@@ -332,7 +332,7 @@ assert.ok(frontend.includes('Download Invite + QR + Open Recipient'), 'Donor bul
 assert.ok(frontend.includes('buildGeneralDonorInvitationMessage'), 'General Donor bulk queue must personalize the approved event invitation');
 assert.ok(frontend.includes('buildMangalyaDonorInvitationMessage'), 'Mangalya Donor bulk queue must personalize the approved event invitation');
 assert.ok(frontend.includes('generalDonorInvitationPackageReady'), 'General Donor queue must exclude donors whose personal QR is not eligible');
-assert.ok(frontend.includes('mangalyaDonorInvitationPackageReady'), 'Mangalya Donor queue must require receipt, identity, quantity and QR eligibility');
+assert.ok(frontend.includes('mangalyaDonorInvitationPackageReady'), 'Mangalya Donor queue must require identity, quantity and QR eligibility');
 assert.ok(frontend.includes('downloadEventInvitationPackage'), 'Donor recipient flow must download the invite card and personal QR pass');
 assert.ok(frontend.includes("markInvitationPrepared(donor.id"), 'Mangalya bulk invitation must record Prepared status without claiming delivery');
 assert.ok(backend.includes('SPONSORSHIP_REQUIREMENTS_RANGE'), 'Backend must support Sponsorship Requirements master range');
@@ -1238,7 +1238,9 @@ assert.ok(!backend.includes('donorSourceId: donor.id'), 'Operational records mus
 assert.ok(backend.includes('row.donorId !== donorSourceId'), 'Receipt duplicate checks must compare stable donor IDs');
 assert.ok(backend.includes('receiptNumberNormalized'), 'Backend must store normalized Mangalya receipt numbers for duplicate protection');
 assert.ok(backend.includes('donorSheetReceiptNumber'), 'Backend must preserve existing donor receipt numbers from Google Sheets');
-assert.ok(backend.includes('Save the physical receipt number to Google Sheets before generating QR.'), 'Backend must block QR until receipt number is saved in Google Sheets');
+assert.ok(!backend.includes('Save the physical receipt number to Google Sheets before generating QR.'), 'Backend must allow Mangalya QR generation without a physical receipt number');
+assert.ok(backend.includes('QR generated without physical receipt number'), 'Backend must audit Mangalya QR generation when no receipt number exists');
+assert.ok(!frontend.includes('physical receipt number, quantity'), 'Frontend Mangalya QR eligibility must not require a physical receipt number');
 assert.ok(backend.includes('QR generation is enabled only after Treasurer Verified / Payment Received.'), 'Backend must block donor QR until payment is verified');
 assert.ok(frontend.includes('QR enabled only after Treasurer Verified / Payment Received.'), 'Frontend must explain donor QR verification requirement');
 assert.ok(backend.includes('assertMangalyaReceiptUnique'), 'Backend must reject duplicate Mangalya receipt numbers');
