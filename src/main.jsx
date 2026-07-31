@@ -52,6 +52,11 @@ import {
 } from './appFreshness.js';
 import { firstPendingQueueIndex, markQueueSentThroughRecipient, queueCounts } from './queueStatus.js';
 import {
+  isWhatsAppGroupNewParticipant,
+  WHATSAPP_GROUP_NEW_CONTACT_START_DATE,
+  WHATSAPP_GROUP_REASSIGNED_SEAT,
+} from './whatsappGroupEligibility.js';
+import {
   buildVoiceInvitationScript,
   buildVoiceInvitationSegments,
   classifyVoiceRsvp,
@@ -69,7 +74,6 @@ import './styles.css';
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
 const DEVELOPER_MODE = import.meta.env.VITE_DEVELOPER_MODE === 'true';
 const ACTIVE_EVENT_YEAR = import.meta.env.VITE_ACTIVE_EVENT_YEAR || '2026';
-const WHATSAPP_GROUP_HANDLED_SEAT_BASELINE = import.meta.env.VITE_WHATSAPP_GROUP_HANDLED_SEAT_BASELINE || 'D-01';
 const RECEIPT_TEMPLATES = {
   shashtipoorthi: shashtipoorthiReceiptTemplate,
   bhimaratha: bhimarathaReceiptTemplate,
@@ -1818,12 +1822,6 @@ function seatConflictMessage(rows, participant, seatNo) {
   return `Seat ${parsed.normalized} is already allotted. Suggested next available seat: ${seatAuditForEvent(rows, participant.eventType).suggestedNextSeat}`;
 }
 
-function isSeatAfterBaseline(seatNo, baseline = WHATSAPP_GROUP_HANDLED_SEAT_BASELINE) {
-  const seatValue = seatRank(seatNo);
-  const baselineValue = seatRank(baseline);
-  return seatValue !== null && baselineValue !== null && seatValue > baselineValue;
-}
-
 function buildBulkQueue(rows, queueType) {
   const sourceRows =
     queueType === 'welcome'
@@ -1845,13 +1843,13 @@ function buildBulkQueue(rows, queueType) {
 
 function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
   const eventRows = sortParticipants(rows.filter((row) => row.eventType === eventType), 'latest');
-  const futureRows = sortParticipants(eventRows.filter((row) => isSeatAfterBaseline(row.seatNo)), 'latest');
+  const newContactRows = sortParticipants(eventRows.filter(isWhatsAppGroupNewParticipant), 'latest');
   const seenMobiles = new Map();
   const validParticipants = [];
   const missingMobileParticipants = [];
   let duplicateCount = 0;
 
-  futureRows.forEach((participant) => {
+  newContactRows.forEach((participant) => {
     const validation = mobileValidationStatus(participant.mobileNumber);
     const name = participantDisplayName(participant);
     if (validation.status !== 'ok' || !validation.normalized) {
@@ -1884,8 +1882,9 @@ function buildWhatsAppGroupPreview(rows, eventType, pstAdmins = []) {
     groupName: WHATSAPP_GROUP_NAMES[eventType],
     eventLabel: eventDisplayName(eventType),
     totalParticipants: eventRows.length,
-    handledSeatBaseline: WHATSAPP_GROUP_HANDLED_SEAT_BASELINE,
-    futureRegistrations: futureRows.length,
+    newContactStartDate: WHATSAPP_GROUP_NEW_CONTACT_START_DATE,
+    reassignedSeat: WHATSAPP_GROUP_REASSIGNED_SEAT,
+    eligibleRegistrations: newContactRows.length,
     validParticipants,
     missingMobileParticipants,
     duplicateCount,
@@ -1972,7 +1971,7 @@ function downloadTextFile(fileName, content, type = 'text/plain;charset=utf-8') 
 }
 
 function groupContactFileName(preview) {
-  return `${preview.eventType}-new-whatsapp-contacts-after-${preview.handledSeatBaseline}.vcf`
+  return `${preview.eventType}-new-whatsapp-contacts-after-26-july-2026.vcf`
     .replace(/[^a-z0-9.-]+/gi, '-')
     .toLowerCase();
 }
@@ -1989,7 +1988,7 @@ function buildGroupClipboardText(preview) {
     ...participantNames,
     '',
     'Manual steps:',
-    `Existing participants handled through Seat No. ${preview.handledSeatBaseline}.`,
+    `Includes registrations after 26 July 2026${preview.eventType === 'bhimaratha' ? ` and reassigned BS ${preview.reassignedSeat}` : ''}.`,
     '1. Download and import the new-participant VCF contacts.',
     '2. Wait briefly for WhatsApp contacts to sync.',
     `3. Open the existing WhatsApp group: ${preview.groupName}`,
@@ -7187,7 +7186,7 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
     if (!preview || !canProceed) return;
     const contacts = buildGroupContactRows(preview);
     downloadTextFile(groupContactFileName(preview), buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
-    setMessage(`Downloaded ${contacts.length} new contacts after Seat No. ${preview.handledSeatBaseline}. Import the VCF, wait for WhatsApp sync, then add them to the existing group.`);
+    setMessage(`Downloaded ${contacts.length} new contacts registered after 26 July 2026${preview.eventType === 'bhimaratha' ? `, including reassigned BS ${preview.reassignedSeat}` : ''}. Import the VCF, wait for WhatsApp sync, then add them to the existing group.`);
   }
 
   function downloadBothGroupContacts() {
@@ -7196,8 +7195,8 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
       setMessage('No valid contacts are available for download.');
       return;
     }
-    downloadTextFile('mvst-new-whatsapp-contacts-after-' + WHATSAPP_GROUP_HANDLED_SEAT_BASELINE.toLowerCase() + '.vcf', buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
-    setMessage(`Downloaded ${contacts.length} new contacts for both groups after Seat No. ${WHATSAPP_GROUP_HANDLED_SEAT_BASELINE}.`);
+    downloadTextFile('mvst-new-whatsapp-contacts-after-26-july-2026.vcf', buildContactsVcf(contacts), 'text/vcard;charset=utf-8');
+    setMessage(`Downloaded ${contacts.length} new contacts for both groups. The list covers registrations after 26 July 2026 and reassigned BS ${WHATSAPP_GROUP_REASSIGNED_SEAT}.`);
   }
 
   async function copyParticipantNames() {
@@ -7241,8 +7240,8 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
       </div>
 
       <div className="whatsapp-group-note">
-        <b>Current groups are already created. Existing participants up to Seat No. {WHATSAPP_GROUP_HANDLED_SEAT_BASELINE} are treated as handled.</b>
-        <span>Use this section only for future registrations after Seat No. {WHATSAPP_GROUP_HANDLED_SEAT_BASELINE}. No WhatsApp-added status is written back to Google Sheets.</span>
+        <b>Current groups are already created. This section shows registrations after 26 July 2026.</b>
+        <span>Bheemaratha Seat {WHATSAPP_GROUP_REASSIGNED_SEAT} is also included because it was allotted to new participants. Future registrations will appear automatically. No WhatsApp-added status is written back to Google Sheets.</span>
         {groupConfig.error ? <small>{groupConfig.error}</small> : null}
       </div>
 
@@ -7274,8 +7273,8 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
           <div className="group-preview-grid">
             <div><span>Event</span><strong>{preview.eventLabel}</strong></div>
             <div><span>Total participants</span><strong>{preview.totalParticipants}</strong></div>
-            <div><span>Handled through seat</span><strong>{preview.handledSeatBaseline}</strong></div>
-            <div><span>Future registrations</span><strong>{preview.futureRegistrations}</strong></div>
+            <div><span>New-contact start date</span><strong>{preview.newContactStartDate}</strong></div>
+            <div><span>Eligible registrations</span><strong>{preview.eligibleRegistrations}</strong></div>
             <div><span>New valid contacts</span><strong>{preview.validParticipants.length}</strong></div>
             <div><span>New missing-mobile participants</span><strong>{preview.missingMobileParticipants.length}</strong></div>
             <div><span>Duplicate entries skipped</span><strong>{preview.duplicateCount}</strong></div>
@@ -7283,13 +7282,13 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
 
           <div className="group-preview-lists">
             <div>
-              <h4>Future / New Participants</h4>
+              <h4>New Participants</h4>
               {preview.validParticipants.length ? (
                 preview.validParticipants.map((participant, index) => (
                   <span key={`${participant.name}-${index}`}>{participant.seatNo || 'Seat pending'} - {contactDisplayName(WHATSAPP_CONTACT_PREFIXES[preview.eventType], participant.name)}</span>
                 ))
               ) : (
-                <span>No new participants after Seat No. {preview.handledSeatBaseline}.</span>
+                <span>No registrations after 26 July 2026.</span>
               )}
             </div>
             <div>
@@ -7305,7 +7304,7 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
           </div>
 
           <div className="group-manual-steps">
-            <h4>Future registration steps</h4>
+            <h4>New-contact steps</h4>
             <ol>
               <li>Download the new-participant VCF contact file.</li>
               <li>Open or import it into Google Contacts, Windows contacts, or phone contacts.</li>
@@ -7331,7 +7330,7 @@ function WhatsAppGroupSetup({ rows, groupConfig }) {
               Open WhatsApp Web
             </button>
           </div>
-          {!canProceed ? <small className="group-warning">No valid new participant contacts found after Seat No. {preview.handledSeatBaseline}.</small> : null}
+          {!canProceed ? <small className="group-warning">No valid participant contacts found for registrations after 26 July 2026.</small> : null}
           {message ? <small className="group-message">{message}</small> : null}
         </div>
       ) : null}

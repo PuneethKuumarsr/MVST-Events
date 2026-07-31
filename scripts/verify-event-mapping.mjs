@@ -6,6 +6,11 @@ import {
   buildWhatsAppMessage,
   encodeWhatsAppMessage,
 } from '../src/whatsappMessages.js';
+import {
+  googleFormRegistrationDateKey,
+  isWhatsAppGroupNewParticipant,
+  WHATSAPP_GROUP_NEW_CONTACT_DATE_KEY,
+} from '../src/whatsappGroupEligibility.js';
 
 const frontend = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
 const backend = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
@@ -108,10 +113,9 @@ assert.ok(backend.includes('FREE_SPONSORSHIP_STATUS'), 'Backend must support Fre
 assert.ok(backend.includes('isFreeSponsorshipStatus(paymentStatus) ? 0'), 'Backend must set Free Sponsorship balance to zero');
 assert.ok(frontend.includes('Duplicate mobile number'), 'Mobile report must flag duplicate mobile numbers');
 assert.ok(frontend.includes('WhatsApp Groups'), 'Dashboard must show WhatsApp group setup section');
-assert.ok(frontend.includes('Existing participants up to Seat No.'), 'WhatsApp group workflow must explain the handled seat baseline');
-assert.ok(frontend.includes('VITE_WHATSAPP_GROUP_HANDLED_SEAT_BASELINE'), 'WhatsApp group handled baseline must be configurable');
-assert.ok(frontend.includes("|| 'D-01'"), 'WhatsApp group handled baseline must default to D-01');
-assert.ok(frontend.includes('isSeatAfterBaseline'), 'WhatsApp group workflow must detect only seats after the baseline');
+assert.ok(frontend.includes('registrations after 26 July 2026'), 'WhatsApp group workflow must explain the registration-date cutoff');
+assert.ok(frontend.includes('WHATSAPP_GROUP_REASSIGNED_SEAT'), 'WhatsApp group workflow must show the reassigned-seat exception');
+assert.ok(frontend.includes('isWhatsAppGroupNewParticipant'), 'WhatsApp group workflow must use the shared new-contact eligibility rule');
 assert.ok(frontend.includes('buildWhatsAppGroupPreview'), 'Frontend must build event-specific WhatsApp group previews');
 assert.ok(frontend.includes('row.eventType === eventType'), 'WhatsApp group preview must filter participants by event type');
 assert.ok(frontend.includes('Duplicate entries skipped'), 'WhatsApp group preview must prevent duplicate participant contacts');
@@ -132,6 +136,13 @@ assert.ok(frontend.includes('https://web.whatsapp.com/'), 'Assisted workflow mus
 assert.ok(!frontend.includes('Mark Group Created'), 'Future registration WhatsApp workflow must not write group-created status');
 assert.ok(!frontend.includes('/api/whatsapp-groups'), 'Frontend must not write WhatsApp group-added status to Google Sheets');
 assert.ok(frontend.includes('/api/whatsapp-group-config'), 'Frontend must load PST admins from backend/private sheet');
+assert.equal(WHATSAPP_GROUP_NEW_CONTACT_DATE_KEY, 20260727, 'New WhatsApp contacts must start on 27 July 2026');
+assert.equal(googleFormRegistrationDateKey('7/27/2026 00:00:00'), 20260727, 'Google Form M/D/YYYY timestamps must be parsed correctly');
+assert.equal(googleFormRegistrationDateKey('2026-07-28T10:30:00+05:30'), 20260728, 'ISO registration timestamps must be parsed correctly');
+assert.equal(isWhatsAppGroupNewParticipant({ eventType: 'shashtipoorthi', seatNo: 'E-01', timestamp: '7/26/2026 23:59:59' }), false, 'Registrations on 26 July must remain handled');
+assert.equal(isWhatsAppGroupNewParticipant({ eventType: 'shashtipoorthi', seatNo: 'A-01', timestamp: '7/27/2026 00:00:00' }), true, 'Registrations from 27 July must be included regardless of seat number');
+assert.equal(isWhatsAppGroupNewParticipant({ eventType: 'bhimaratha', seatNo: 'C 06', timestamp: '7/11/2026 10:41:03' }), true, 'Reassigned BS C-06 must be included despite its earlier timestamp');
+assert.equal(isWhatsAppGroupNewParticipant({ eventType: 'shashtipoorthi', seatNo: 'C-06', timestamp: '7/11/2026 10:41:03' }), false, 'The C-06 exception must apply only to Bheemaratha');
 assert.ok(frontend.includes('New Registrations'), 'Dashboard must show New Registrations section');
 assert.ok(frontend.includes('Awaiting treasurer payment confirmation'), 'New Registrations section must explain treasurer confirmation status');
 assert.ok(frontend.includes('newRegistrationRows'), 'Frontend must keep unverified registrations in a separate list');
@@ -146,7 +157,7 @@ assert.ok(frontend.includes("const [participantSort, setParticipantSort] = useSt
 assert.ok(frontend.includes('function sortParticipants(rows, sortMode = \'latest\')'), 'Frontend must sort participants through a reusable helper');
 assert.ok(frontend.includes('timestampValue(a.timestamp)'), 'Latest Registration sort must use Google Form timestamp');
 assert.ok(frontend.includes("return compareSeatNumbers(a, b, 'desc')"), 'Latest Registration sort must fall back to descending seat number');
-assert.ok(frontend.includes('sortParticipants(eventRows.filter((row) => isSeatAfterBaseline(row.seatNo)), \'latest\')'), 'WhatsApp future participants must use latest-first ordering');
+assert.ok(frontend.includes("sortParticipants(eventRows.filter(isWhatsAppGroupNewParticipant), 'latest')"), 'WhatsApp new participants must use latest-first ordering');
 assert.ok(frontend.includes('sortParticipants(rows.filter((row) =>'), 'Bulk receipt participant selection must use sorted eligible rows');
 assert.ok(frontend.includes('function parseSeatValue(seatNo)'), 'Frontend must parse normalized seat values');
 assert.ok(frontend.includes('function nextSeatAfter(parsedSeat)'), 'Frontend must calculate next seat transitions');
