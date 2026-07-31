@@ -227,7 +227,7 @@ const DISTRIBUTION_OPERATIONS = {
 };
 const DONOR_SCAN_OPERATION_KEY = 'donorScan';
 const DONOR_SCAN_OPERATION = {
-  label: 'Donors QR Scan',
+  label: 'MD + GD Donors QR Scan',
   completedLabel: 'Donor Verified',
 };
 const EVENT_DAY_OPERATION_KEYS = [
@@ -8208,7 +8208,7 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
 
       <div className="distribution-audit-card">
         <strong>Event-day QR setup</strong>
-        <span>Participant event operations use the columns below. Donor QR Scan verifies General Donors and Mangalya Donors from their existing QR records.</span>
+        <span>Participant event operations use the columns below. The single donor scanner accepts both Mangalya Donor (MD) and General Donor (GD) QR codes and identifies the type automatically.</span>
         <details>
           <summary>Participant event-day columns</summary>
           <div className="distribution-column-list">
@@ -8220,7 +8220,8 @@ function QRDistributionModule({ rows, writeEnabled, scanDistribution, user, isPs
       <div className="distribution-groups">
         <article className="distribution-group-card">
           <p>🎁 Donors</p>
-          <button className={activeOperation === DONOR_SCAN_OPERATION_KEY ? 'active' : ''} type="button" onClick={() => setActiveOperation(DONOR_SCAN_OPERATION_KEY)}>Donors QR Scan</button>
+          <button className={activeOperation === DONOR_SCAN_OPERATION_KEY ? 'active' : ''} type="button" onClick={() => setActiveOperation(DONOR_SCAN_OPERATION_KEY)}>MD + GD Donors QR Scan</button>
+          <small>Scan either donor QR. The system identifies MD or GD automatically.</small>
         </article>
         <article className="distribution-group-card">
           <p>🌸 Mahotsava Day</p>

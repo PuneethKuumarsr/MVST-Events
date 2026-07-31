@@ -874,7 +874,13 @@ const qrOperationsBody = frontend.slice(
   frontend.indexOf('function CollectionDrilldownModal'),
 );
 assert.ok(qrOperationsBody.includes('Mahotsava Event Day'), 'QR module must show Mahotsava Event Day operations');
-assert.ok(qrOperationsBody.includes('Donors QR Scan'), 'QR module must expose a donor-specific QR scan operation');
+assert.ok(qrOperationsBody.includes('MD + GD Donors QR Scan'), 'QR module must expose one combined MD and GD donor scanner');
+assert.equal(
+  (qrOperationsBody.match(/setActiveOperation\(DONOR_SCAN_OPERATION_KEY\)/g) || []).length,
+  1,
+  'QR module must use a single donor scanner button for both MD and GD',
+);
+assert.ok(qrOperationsBody.includes('identifies MD or GD automatically'), 'Combined donor scanner must explain automatic donor-type detection');
 assert.ok(!qrOperationsBody.includes('Kit Distribution Day'), 'QR module must hide the completed Kit Distribution Day workflow');
 assert.ok(!qrOperationsBody.includes("setActiveOperation('meetingAttendance')"), 'QR module must hide Meeting Attendance');
 assert.ok(!qrOperationsBody.includes("setActiveOperation('kitCollection')"), 'QR module must hide Kit Collection');
