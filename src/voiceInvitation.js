@@ -4,6 +4,38 @@ export const VOICE_INVITATION_LANGUAGE_OPTIONS = [
   { value: 'bilingual', label: 'Kannada + English' },
 ];
 
+export const VOICE_INVITATION_STYLE_OPTIONS = [
+  {
+    value: 'soothing',
+    label: 'Soothing (Recommended)',
+    description: 'Gentle pace with a warmer, calmer delivery.',
+    rate: 0.82,
+    pitch: 1.02,
+    volume: 1,
+  },
+  {
+    value: 'natural',
+    label: 'Natural',
+    description: 'Normal conversational pace and tone.',
+    rate: 0.94,
+    pitch: 1,
+    volume: 1,
+  },
+  {
+    value: 'ceremonial',
+    label: 'Ceremonial',
+    description: 'Measured pace with a slightly deeper formal tone.',
+    rate: 0.86,
+    pitch: 0.96,
+    volume: 0.96,
+  },
+];
+
+export function voiceInvitationStyle(value = 'soothing') {
+  return VOICE_INVITATION_STYLE_OPTIONS.find((option) => option.value === value)
+    || VOICE_INVITATION_STYLE_OPTIONS[0];
+}
+
 const EVENT_DETAILS = {
   date: 'Sunday, 2 August 2026',
   venue: 'Shubh Convention Hall, J. P. Nagar, Bengaluru',

@@ -56,6 +56,8 @@ import {
   buildVoiceInvitationSegments,
   classifyVoiceRsvp,
   VOICE_INVITATION_LANGUAGE_OPTIONS,
+  VOICE_INVITATION_STYLE_OPTIONS,
+  voiceInvitationStyle,
   voiceRsvpAcknowledgement,
 } from './voiceInvitation.js';
 import bhimarathaReceiptTemplate from '../assets/receipts/bhimaratha-receipt.jpeg';
@@ -8474,6 +8476,41 @@ function buildVoicePrototypeGroups(rows = [], trustees = [], donors = []) {
   ];
 }
 
+const SOOTHING_VOICE_HINTS = [
+  'neerja',
+  'heera',
+  'priya',
+  'swara',
+  'female',
+  'natural',
+  'aria',
+  'zira',
+  'samantha',
+];
+
+function preferredBrowserVoice(voices, language) {
+  const targetLanguage = String(language || 'en-IN').toLowerCase();
+  const languagePrefix = targetLanguage.slice(0, 2);
+  return voices
+    .map((voice) => {
+      const voiceLanguage = String(voice.lang || '').toLowerCase();
+      if (voiceLanguage !== targetLanguage && !voiceLanguage.startsWith(languagePrefix)) {
+        return { voice, score: -1 };
+      }
+      const voiceName = String(voice.name || '').toLowerCase();
+      const soothingHintIndex = SOOTHING_VOICE_HINTS.findIndex((hint) => voiceName.includes(hint));
+      return {
+        voice,
+        score: (voiceLanguage === targetLanguage ? 100 : 50)
+          + (soothingHintIndex >= 0 ? 30 - soothingHintIndex : 0)
+          + (voice.default ? 1 : 0),
+      };
+    })
+    .filter((candidate) => candidate.score >= 0)
+    .sort((a, b) => b.score - a.score)[0]?.voice
+    || null;
+}
+
 function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   const groups = useMemo(
     () => buildVoicePrototypeGroups(rows, trustees, donors),
@@ -8484,6 +8521,7 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   const [query, setQuery] = useState('');
   const [recipientId, setRecipientId] = useState('');
   const [language, setLanguage] = useState('en-IN');
+  const [voiceStyleId, setVoiceStyleId] = useState('soothing');
   const [phase, setPhase] = useState('idle');
   const [transcript, setTranscript] = useState('');
   const [typedResponse, setTypedResponse] = useState('');
@@ -8517,8 +8555,8 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   const recognitionSupported = typeof window !== 'undefined'
     && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
   const selectedVoiceLanguage = language === 'bilingual' ? 'kn-IN' : language;
-  const matchingVoice = voices.find((voice) => voice.lang.toLowerCase() === selectedVoiceLanguage.toLowerCase())
-    || voices.find((voice) => voice.lang.toLowerCase().startsWith(selectedVoiceLanguage.slice(0, 2).toLowerCase()));
+  const activeVoiceStyle = voiceInvitationStyle(voiceStyleId);
+  const matchingVoice = preferredBrowserVoice(voices, selectedVoiceLanguage);
 
   useEffect(() => {
     if (!filteredRecipients.length) {
@@ -8575,9 +8613,7 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
   }
 
   function voiceForLanguage(segmentLanguage) {
-    return voices.find((voice) => voice.lang.toLowerCase() === segmentLanguage.toLowerCase())
-      || voices.find((voice) => voice.lang.toLowerCase().startsWith(segmentLanguage.slice(0, 2).toLowerCase()))
-      || null;
+    return preferredBrowserVoice(voices, segmentLanguage);
   }
 
   function speakSegment(segment, runToken) {
@@ -8588,8 +8624,9 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
       }
       const utterance = new window.SpeechSynthesisUtterance(segment.text);
       utterance.lang = segment.lang;
-      utterance.rate = 0.94;
-      utterance.pitch = 1;
+      utterance.rate = activeVoiceStyle.rate;
+      utterance.pitch = activeVoiceStyle.pitch;
+      utterance.volume = activeVoiceStyle.volume;
       const voice = voiceForLanguage(segment.lang);
       if (voice) utterance.voice = voice;
       utterance.onend = () => resolve();
@@ -8611,7 +8648,9 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
       voiceRsvpAcknowledgement(status, language),
     );
     utterance.lang = acknowledgementLanguage;
-    utterance.rate = 0.96;
+    utterance.rate = Math.min(activeVoiceStyle.rate + 0.04, 1);
+    utterance.pitch = activeVoiceStyle.pitch;
+    utterance.volume = activeVoiceStyle.volume;
     const voice = voiceForLanguage(acknowledgementLanguage);
     if (voice) utterance.voice = voice;
     window.speechSynthesis.speak(utterance);
@@ -8831,6 +8870,24 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
             </select>
           </label>
 
+          <label>
+            <span>Voice modulation</span>
+            <select
+              value={voiceStyleId}
+              onChange={(event) => {
+                cancelActiveVoice('Voice modulation changed. Start the demo to hear it.');
+                setVoiceStyleId(event.target.value);
+              }}
+            >
+              {VOICE_INVITATION_STYLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <small className="voice-style-note">
+            {activeVoiceStyle.description} The assistant prefers a softer Indian voice when one is installed.
+          </small>
+
           <div className="voice-browser-readiness">
             <span className={speechSupported ? 'ready' : 'limited'}>
               <Volume2 size={15} /> Voice playback: {speechSupported ? 'Ready' : 'Unavailable'}
@@ -8839,7 +8896,7 @@ function AiVoiceInvitationPrototype({ rows, trustees, donors }) {
               <Mic size={15} /> Microphone recognition: {recognitionSupported ? 'Ready' : 'Manual fallback'}
             </span>
             <span className={matchingVoice ? 'ready' : 'limited'}>
-              <Sparkles size={15} /> Selected voice: {matchingVoice?.name || 'Browser default'}
+              <Sparkles size={15} /> Selected voice: {matchingVoice?.name || 'Browser default'} · {activeVoiceStyle.label}
             </span>
           </div>
 

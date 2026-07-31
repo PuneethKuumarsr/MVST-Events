@@ -1270,4 +1270,7 @@ assert.ok(frontend.includes('window.speechSynthesis'), 'Voice prototype must use
 assert.ok(frontend.includes('window.SpeechRecognition || window.webkitSpeechRecognition'), 'Voice prototype must support browser speech recognition');
 assert.ok(frontend.includes('window.sessionStorage.setItem(VOICE_PROTOTYPE_HISTORY_KEY'), 'Prototype RSVP history must be session-only');
 assert.ok(frontend.includes('This screen does not place a telephone call.'), 'Prototype must clearly explain that it does not place telephone calls');
+assert.ok(frontend.includes('Voice modulation'), 'Voice prototype must expose voice modulation selection');
+assert.ok(frontend.includes("useState('soothing')"), 'Voice prototype must default to a soothing voice style');
+assert.ok(frontend.includes('preferredBrowserVoice'), 'Voice prototype must prefer a softer installed browser voice');
 console.log('Event mapping and WhatsApp message regression checks passed.');

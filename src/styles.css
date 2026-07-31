@@ -3815,6 +3815,15 @@ main {
   line-height: 1.45;
 }
 
+.voice-style-note {
+  border-left: 3px solid rgba(187, 135, 46, 0.7);
+  border-radius: 7px;
+  background: rgba(255, 248, 230, 0.82);
+  color: var(--ink-soft);
+  padding: 9px 10px;
+  line-height: 1.45;
+}
+
 .voice-conversation-panel {
   display: grid;
   gap: 14px;
