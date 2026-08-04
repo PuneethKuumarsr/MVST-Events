@@ -87,6 +87,8 @@ assert.ok(frontend.includes('label="Donors Collection"'), 'Home dashboard must s
 assert.ok(frontend.includes('label="Mangalya Donors Collection"'), 'Home dashboard must show Mangalya Donors Collection summary');
 assert.ok(frontend.includes('function CollectionDrilldownModal'), 'Collection summaries must open a cash/bank drill-down modal');
 assert.ok(frontend.includes('Cash Holding Details'), 'Collection drill-down must show cash holder details');
+assert.ok(frontend.includes('function isReceivedCollectionStatus'), 'Collection summaries must distinguish received payments from promised or pending donations');
+assert.match(frontend, /function buildCollectionBreakdown[\s\S]*?\.filter\(\(row\) => isReceivedCollectionStatus\(row\.status\)\)[\s\S]*?\.filter\(\(row\) => row\.collectionAmount > 0\)/, 'Collection totals must exclude promised and pending donations before grouping payment modes');
 assert.ok(frontend.includes('Welcome Sent Date'), 'Dashboard must show Welcome Sent Date');
 assert.ok(frontend.includes('Payment Sent Date'), 'Dashboard must show Payment Sent Date');
 assert.ok(frontend.includes('Mark as Sent'), 'Dashboard must show Mark as Sent button after WhatsApp open');

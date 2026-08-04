@@ -4033,9 +4033,15 @@ function collectionModeBucket(modeValue) {
   return 'unknown';
 }
 
+function isReceivedCollectionStatus(statusValue) {
+  const status = textValue(statusValue, '').toLowerCase();
+  return ['paid', 'received', 'fully received', 'full paid', 'fully paid'].includes(status);
+}
+
 function buildCollectionBreakdown(rows, amountGetter) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const receivedRows = safeRows
+    .filter((row) => isReceivedCollectionStatus(row.status))
     .map((row) => ({ ...row, collectionAmount: numberValue(amountGetter(row), 0) }))
     .filter((row) => row.collectionAmount > 0);
   const cashRows = receivedRows.filter((row) => collectionModeBucket(row.paymentMode || row.bankOrCash) === 'cash');
