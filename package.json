@@ -5,6 +5,8 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "build:cloudflare": "node scripts/build-cloudflare.mjs",
+        "test:cloudflare": "node --test tests/cloudflare-worker.test.mjs",
         "preview": "vite preview --host 0.0.0.0",
         "test": "node scripts/verify-event-mapping.mjs && node scripts/verify-event-invitation.mjs",
         "verify:mongo": "node scripts/verify-mongo-foundation.mjs",

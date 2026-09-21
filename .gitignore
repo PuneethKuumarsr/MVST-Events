@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-cloudflare
+.wrangler/
 .env
 .env.*
 !.env.example
@@ -16,3 +18,4 @@ output/
 assets/ID_Cards/
 memory/2026-06-23-render-styling.md
 server/data/
+.gstack/

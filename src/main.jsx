@@ -6888,6 +6888,10 @@ function useAuth() {
       const response = await fetch('/api/auth/me', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       setUser(response.ok && payload.ok ? payload.user : null);
+      if (response.status >= 500) setError(payload.error || 'The MVST records service is temporarily unavailable. Please try again shortly.');
+    } catch {
+      setUser(null);
+      setError('Unable to reach the MVST records service. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -6941,7 +6945,7 @@ function useAuth() {
   return { user, loading, error, notice, login, logout, changePassword };
 }
 
-function LoginPage({ auth }) {
+function LoginPage({ auth, onBack }) {
   const [mobile, setMobile] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -6958,6 +6962,7 @@ function LoginPage({ auth }) {
     <main className="login-page">
       <div className="login-shell">
         <form className="login-card" onSubmit={submit}>
+          {onBack ? <button className="login-back-button" type="button" onClick={onBack}>← Back to MVST Seva</button> : null}
           <img className="login-header-image" src="/mvst-login-header.jpg" alt="Mane Manege Vasavi Seva Trust" />
           <div className="login-title">
             <p>MVST Seva Portal</p>
@@ -10233,6 +10238,150 @@ function useFrontendFreshness() {
   }, []);
 }
 
+const PUBLIC_SEVA_NAVIGATION = [
+  ['home', 'Home'],
+  ['about', 'About MVST'],
+  ['gruha-seva', 'Vasavi Mata Gruha Seva'],
+  ['book-seva', 'Book Seva'],
+  ['upcoming-events', 'Upcoming Events'],
+  ['booking-status', 'My Booking'],
+  ['contact', 'Contact MVST'],
+];
+
+function PublicSevaPortal({ auth }) {
+  const [activePage, setActivePage] = useState('home');
+  const [showOfficeLogin, setShowOfficeLogin] = useState(false);
+
+  function openPage(page) {
+    setActivePage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if (showOfficeLogin) return <LoginPage auth={auth} onBack={() => setShowOfficeLogin(false)} />;
+
+  const pageContent = {
+    home: (
+      <>
+        <section className="public-hero">
+          <div className="public-hero-copy">
+            <p className="public-eyebrow">Manemanege Vasavi Seva Trust (R.)</p>
+            <h1>Vasavi Mata Gruha Seva, with care and proper approval.</h1>
+            <p>Invite the MVST Vasavi Mata Silver Idol for your home seva or family function. Every request is first reviewed by the MVST Office so that dates, transport and idol care are properly arranged.</p>
+            <div className="public-action-row">
+              <button type="button" className="public-primary-action" onClick={() => openPage('book-seva')}>Request Gruha Seva <ArrowRight size={18} /></button>
+              <button type="button" className="public-secondary-action" onClick={() => openPage('booking-status')}>Check Booking Status</button>
+            </div>
+          </div>
+          <aside className="public-approval-card">
+            <ShieldCheck size={30} />
+            <p>Every request follows a Pending Approval workflow.</p>
+            <span>A requested date is not confirmed until the MVST Office approves it.</span>
+          </aside>
+        </section>
+
+        <section className="public-section public-process-section">
+          <div className="public-section-heading">
+            <p>How it works</p>
+            <h2>A simple, respectful seva process</h2>
+          </div>
+          <div className="public-process-grid">
+            <article><span>01</span><h3>Send your request</h3><p>Share the preferred date, place and contact details with the MVST Office.</p></article>
+            <article><span>02</span><h3>Office approval</h3><p>The Office checks availability, volunteer support, transport and the seva schedule.</p></article>
+            <article><span>03</span><h3>Confirmation & seva</h3><p>You receive confirmation only after the arrangements are approved by the Office.</p></article>
+          </div>
+        </section>
+      </>
+    ),
+    about: (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">About MVST</p>
+        <h1>Serving the Vasavi community through organised seva.</h1>
+        <p>Manemanege Vasavi Seva Trust (R.) supports community seva, devotional programmes and family-centred initiatives. This portal brings public seva information and MVST Office work into one place without exposing private member or financial records.</p>
+        <div className="public-info-grid">
+          <article><HeartHandshake size={24} /><h2>Seva first</h2><p>Every service is planned with respect for families, volunteers and the trust's responsibilities.</p></article>
+          <article><UsersRound size={24} /><h2>One MVST portal</h2><p>Public visitors see only public information; operational work stays protected inside Office Login.</p></article>
+        </div>
+      </section>
+    ),
+    'gruha-seva': (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">Vasavi Mata Gruha Seva</p>
+        <h1>Silver Idol seva for homes and family functions.</h1>
+        <p>MVST will coordinate the Vasavi Mata Silver Idol visit with an approved schedule, responsible seva team and recorded handover. The idol remains under MVST's custody process throughout its journey.</p>
+        <div className="public-info-grid">
+          <article><CalendarDays size={24} /><h2>Planned dates</h2><p>Availability is checked by the Office before a date is confirmed.</p></article>
+          <article><ClipboardList size={24} /><h2>Clear handover</h2><p>Dispatch, return and seva completion are recorded by the authorised team.</p></article>
+          <article><ShieldCheck size={24} /><h2>Respectful care</h2><p>Transport and seva guidance are shared only after the Office approves the booking.</p></article>
+        </div>
+        <button type="button" className="public-primary-action" onClick={() => openPage('book-seva')}>Request Gruha Seva <ArrowRight size={18} /></button>
+      </section>
+    ),
+    'book-seva': (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">Book Seva</p>
+        <h1>Start a Gruha Seva request.</h1>
+        <p>When the booking service opens, your request will be recorded as <strong>Pending Approval</strong>. It will not reserve an idol or confirm a date automatically.</p>
+        <div className="public-booking-note">
+          <CalendarDays size={26} />
+          <div><h2>What the MVST Office will confirm</h2><p>Preferred date, availability, seva-team assignment, transport, payment details where applicable, dispatch and return arrangements.</p></div>
+        </div>
+        <p className="public-muted">The operational booking form will be enabled only after the MVST approval, availability and custody workflow is ready. Until then, please contact the MVST Office to register your request.</p>
+        <button type="button" className="public-primary-action" onClick={() => openPage('contact')}>Contact MVST Office <MessageCircle size={18} /></button>
+      </section>
+    ),
+    'upcoming-events': (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">Upcoming Events</p>
+        <h1>MVST event announcements.</h1>
+        <p>Published programmes and seva opportunities will appear here. Event registrations, payment records and participant documents remain available only to authorised Office users.</p>
+        <div className="public-empty-card"><CalendarDays size={30} /><h2>New announcements will be shared soon.</h2><p>Please check this page again for the next MVST programme.</p></div>
+      </section>
+    ),
+    'booking-status': (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">My Booking / Booking Status</p>
+        <h1>Booking status will be available after the Office issues a reference.</h1>
+        <p>For privacy, status will not be shown using only a mobile number. Once a request is approved for processing, the MVST Office will issue a booking reference and the status page will use that reference.</p>
+        <div className="public-booking-note"><ShieldCheck size={26} /><div><h2>No automatic confirmation</h2><p>A preferred date means the request is awaiting review; it is not a confirmed appointment.</p></div></div>
+        <button type="button" className="public-secondary-action" onClick={() => openPage('contact')}>Contact MVST Office</button>
+      </section>
+    ),
+    contact: (
+      <section className="public-section public-page-copy">
+        <p className="public-eyebrow">Contact MVST</p>
+        <h1>Contact the MVST Office for seva assistance.</h1>
+        <p>The Office can record a Gruha Seva request, explain the approval process and share the confirmed instructions after approval. Official contact details will be published here by the trust.</p>
+        <div className="public-contact-card"><MessageCircle size={28} /><div><h2>For Gruha Seva requests</h2><p>Share your name, preferred date, locality and a contact number with the authorised MVST Office team. Please wait for written or spoken approval before making arrangements.</p></div></div>
+      </section>
+    ),
+  };
+
+  return (
+    <main className="public-portal">
+      <header className="public-header">
+        <button type="button" className="public-brand" onClick={() => openPage('home')}>
+          <span>MVST</span>
+          <small>Mane Manege Vasavi Seva Trust (R.)</small>
+        </button>
+        <button type="button" className="public-office-button" onClick={() => setShowOfficeLogin(true)}>Office Login</button>
+      </header>
+
+      <nav className="public-nav" aria-label="MVST Seva public navigation">
+        {PUBLIC_SEVA_NAVIGATION.map(([key, label]) => (
+          <button key={key} type="button" className={activePage === key ? 'active' : ''} onClick={() => openPage(key)}>{label}</button>
+        ))}
+      </nav>
+
+      <div className="public-content">{pageContent[activePage]}</div>
+
+      <footer className="public-footer">
+        <span>MVST Seva Portal</span>
+        <span>Public seva information · Protected Office operations</span>
+      </footer>
+    </main>
+  );
+}
+
 function RootApp() {
   useFrontendFreshness();
   const auth = useAuth();
@@ -10243,7 +10392,7 @@ function RootApp() {
       </main>
     );
   }
-  if (!auth.user) return <LoginPage auth={auth} />;
+  if (!auth.user) return <PublicSevaPortal auth={auth} />;
   return <App auth={auth} />;
 }
 

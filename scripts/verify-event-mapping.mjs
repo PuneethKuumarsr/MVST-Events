@@ -973,8 +973,12 @@ assert.ok(frontend.includes('Confirm New Password'), 'Change Password screen mus
 assert.ok(frontend.includes('New password must be at least 4 characters.'), 'Change Password screen must enforce minimum length');
 assert.ok(frontend.includes('New password and confirm password must match.'), 'Change Password screen must validate matching passwords');
 assert.ok(frontend.includes('Password changed successfully. Please login again.'), 'Change Password success must tell the user to login again');
-assert.ok(frontend.includes('function RootApp'), 'Root app must gate content behind auth state');
-assert.ok(frontend.includes('if (!auth.user) return <LoginPage auth={auth} />'), 'Application content must not render before login');
+assert.ok(frontend.includes('function PublicSevaPortal'), 'Frontend must provide a deliberate public Seva portal outside Office operations');
+assert.ok(frontend.includes('Vasavi Mata Gruha Seva'), 'Public Seva portal must explain the Gruha Seva offering');
+assert.ok(frontend.includes('Pending Approval'), 'Public booking guidance must not treat a requested date as confirmed');
+assert.ok(frontend.includes('Office Login'), 'Public portal must offer a separate Office Login entry point');
+assert.ok(frontend.includes('function RootApp'), 'Root app must select the public or authenticated experience from auth state');
+assert.ok(frontend.includes('if (!auth.user) return <PublicSevaPortal auth={auth} />'), 'Protected Office application must remain unavailable before login');
 const queueStorageHelpers = frontend.slice(
   frontend.indexOf('function queueStatusKey'),
   frontend.indexOf('function sponsorCategory'),
