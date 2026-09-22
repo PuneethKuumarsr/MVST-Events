@@ -9641,6 +9641,10 @@ function App({ auth }) {
                 <UsersRound size={18} />
                 <span>WhatsApp Groups</span>
               </button>
+              <button className={activeView === 'seva-bookings' ? 'active' : ''} type="button" onClick={() => setActiveView('seva-bookings')}>
+                <CalendarDays size={18} />
+                <span>Seva Bookings</span>
+              </button>
             </>
           ) : null}
           {!isPst ? (
@@ -9848,6 +9852,8 @@ function App({ auth }) {
           ) : null}
 
           {activeView === 'whatsapp-groups' && isPst && !mustChangePassword ? <WhatsAppGroupSetup rows={rows} groupConfig={groupConfig} /> : null}
+
+          {activeView === 'seva-bookings' && isPst && !mustChangePassword ? <SevaBookingManagementSection /> : null}
 
           {activeView === 'trust-bank-qr' && !mustChangePassword ? <TrustBankQrSection /> : null}
 
@@ -10238,6 +10244,295 @@ function useFrontendFreshness() {
   }, []);
 }
 
+function publicDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function publicDateLabel(dateKey) {
+  if (!dateKey) return '';
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
+function publicSlotLabel(slot) {
+  return slot === 'EVENING' ? '5:00 pm – 9:00 pm' : '9:00 am – 2:00 pm';
+}
+
+function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange }) {
+  const today = useMemo(() => publicDateKey(new Date()), []);
+  const [monthDate, setMonthDate] = useState(() => {
+    if (selectedDate) {
+      const [year, month] = selectedDate.split('-').map(Number);
+      return new Date(year, month - 1, 1);
+    }
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [unavailableDates, setUnavailableDates] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState('');
+  const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonthKey = today.slice(0, 7);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setNotice('');
+    fetch(`/api/seva/availability?month=${monthKey}`, { cache: 'no-store' })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Calendar availability is temporarily unavailable.');
+        if (active) {
+          const slots = payload.slots || [];
+          const slotsByDate = slots.reduce((map, slot) => {
+            if (!map.has(slot.date)) map.set(slot.date, new Set());
+            map.get(slot.date).add(slot.preferredSlot);
+            return map;
+          }, new Map());
+          setUnavailableDates(new Set(Array.from(slotsByDate.entries())
+            .filter(([, values]) => values.has('DAY') && values.has('EVENING'))
+            .map(([date]) => date)));
+          onAvailabilityChange?.(slots);
+        }
+      })
+      .catch((error) => {
+        if (active) setNotice(error.message || 'Calendar availability is temporarily unavailable.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [monthKey, onAvailabilityChange]);
+
+  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const cells = Array.from({ length: firstDay + daysInMonth }, (_, index) => {
+    if (index < firstDay) return null;
+    const day = index - firstDay + 1;
+    const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+    const key = publicDateKey(date);
+    return { day, key, disabled: key < today || unavailableDates.has(key) };
+  });
+
+  function changeMonth(offset) {
+    setMonthDate((value) => new Date(value.getFullYear(), value.getMonth() + offset, 1));
+  }
+
+  return (
+    <section className="seva-calendar" aria-label="Preferred Gruha Seva date">
+      <div className="seva-calendar-heading">
+        <div><span>Choose a preferred date</span><strong>{monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</strong></div>
+        <div className="seva-calendar-controls">
+          <button type="button" onClick={() => changeMonth(-1)} disabled={monthKey <= currentMonthKey} aria-label="Previous month">‹</button>
+          <button type="button" onClick={() => changeMonth(1)} aria-label="Next month">›</button>
+        </div>
+      </div>
+      <div className="seva-calendar-weekdays" aria-hidden="true">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}</div>
+      <div className="seva-calendar-grid">
+        {cells.map((cell, index) => cell ? (
+          <button
+            key={cell.key}
+            type="button"
+            disabled={cell.disabled || loading}
+            className={`${selectedDate === cell.key ? 'selected' : ''} ${unavailableDates.has(cell.key) ? 'unavailable' : ''}`}
+            onClick={() => onSelect(cell.key)}
+            aria-label={`${publicDateLabel(cell.key)}${unavailableDates.has(cell.key) ? ', unavailable' : ''}`}
+          >{cell.day}</button>
+        ) : <span className="seva-calendar-empty" key={`empty-${index}`} />)}
+      </div>
+      <div className="seva-calendar-legend"><span><i className="available" /> At least one seva time available</span><span><i className="unavailable" /> Both times approved</span></div>
+      {notice ? <p className="seva-calendar-notice">{notice}</p> : null}
+    </section>
+  );
+}
+
+function PublicSevaBookingForm({ onComplete }) {
+  const [selectedDate, setSelectedDate] = useState('');
+  const [bookedSlots, setBookedSlots] = useState([]);
+  const [form, setForm] = useState({
+    applicantName: '', mobile: '', email: '', locality: '', address: '', occasion: 'Gruha Seva', preferredSlot: 'DAY', notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [booking, setBooking] = useState(null);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  const selectedDateBookedSlots = useMemo(
+    () => new Set(bookedSlots.filter((slot) => slot.date === selectedDate).map((slot) => slot.preferredSlot)),
+    [bookedSlots, selectedDate],
+  );
+
+  useEffect(() => {
+    if (selectedDateBookedSlots.has(form.preferredSlot)) {
+      update('preferredSlot', selectedDateBookedSlots.has('DAY') ? 'EVENING' : 'DAY');
+    }
+  }, [selectedDate, bookedSlots]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    if (!selectedDate) {
+      setError('Please choose your preferred date from the calendar.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch('/api/seva/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, requestedDate: selectedDate }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to submit your request.');
+      setBooking(payload.booking);
+      onComplete?.(payload.booking);
+    } catch (submitError) {
+      setError(submitError.message || 'Unable to submit your request.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (booking) {
+    return (
+      <section className="seva-booking-success" aria-live="polite">
+        <BadgeCheck size={34} />
+        <p>Request received</p>
+        <h2>Your Gruha Seva request is awaiting MVST Office approval.</h2>
+        <strong>{booking.reference}</strong>
+        <span>Preferred date: {publicDateLabel(booking.requestedDate)}</span>
+        <small>Save this reference. Use it with your mobile number under My Booking to check the status.</small>
+      </section>
+    );
+  }
+
+  return (
+    <form className="seva-booking-form" onSubmit={submit}>
+      <PublicBookingCalendar selectedDate={selectedDate} onSelect={setSelectedDate} onAvailabilityChange={setBookedSlots} />
+      <div className="seva-selected-date"><CalendarDays size={18} /><span>{selectedDate ? `Preferred date: ${publicDateLabel(selectedDate)}` : 'Choose a date from the calendar'}</span></div>
+      <div className="seva-slot-picker" aria-label="Choose seva time">
+        <span>Choose seva time</span>
+        <div>
+          <button type="button" className={form.preferredSlot === 'DAY' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('DAY')} onClick={() => update('preferredSlot', 'DAY')}><strong>9:00 am – 2:00 pm</strong><small>{selectedDateBookedSlots.has('DAY') ? 'Already approved' : 'Day seva'}</small></button>
+          <button type="button" className={form.preferredSlot === 'EVENING' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('EVENING')} onClick={() => update('preferredSlot', 'EVENING')}><strong>5:00 pm – 9:00 pm</strong><small>{selectedDateBookedSlots.has('EVENING') ? 'Already approved' : 'Evening seva'}</small></button>
+        </div>
+      </div>
+      <div className="seva-form-grid">
+        <label><span>Your name</span><input required value={form.applicantName} onChange={(event) => update('applicantName', event.target.value)} autoComplete="name" /></label>
+        <label><span>Mobile number</span><input required value={form.mobile} onChange={(event) => update('mobile', event.target.value)} inputMode="tel" autoComplete="tel" placeholder="10-digit mobile number" /></label>
+        <label><span>Locality / area</span><input required value={form.locality} onChange={(event) => update('locality', event.target.value)} /></label>
+        <label><span>Occasion</span><select value={form.occasion} onChange={(event) => update('occasion', event.target.value)}><option>Gruha Seva</option><option>Family function</option><option>Special pooja</option><option>Other</option></select></label>
+        <label className="seva-form-wide"><span>Seva address</span><textarea required value={form.address} onChange={(event) => update('address', event.target.value)} rows="3" /></label>
+        <label><span>Email (optional)</span><input value={form.email} onChange={(event) => update('email', event.target.value)} inputMode="email" autoComplete="email" /></label>
+        <label className="seva-form-wide"><span>Anything the Office should know? (optional)</span><textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} rows="3" /></label>
+      </div>
+      <p className="seva-pending-note"><ShieldCheck size={17} /> Submitting a request does not confirm the date. The MVST Office will review and approve it.</p>
+      {error ? <p className="seva-form-error" role="alert">{error}</p> : null}
+      <button className="public-primary-action" type="submit" disabled={saving}>{saving ? 'Submitting request…' : 'Submit Seva Request'} <ArrowRight size={18} /></button>
+    </form>
+  );
+}
+
+function PublicBookingStatus() {
+  const [form, setForm] = useState({ reference: '', mobile: '' });
+  const [booking, setBooking] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setBooking(null);
+    setLoading(true);
+    try {
+      const query = `reference=${encodeURIComponent(form.reference)}&mobile=${encodeURIComponent(form.mobile)}`;
+      const response = await fetch(`/api/seva/booking-status?${query}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to check booking status.');
+      setBooking(payload.booking);
+    } catch (statusError) {
+      setError(statusError.message || 'Unable to check booking status.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="public-section public-page-copy">
+      <p className="public-eyebrow">My Booking</p>
+      <h1>Check your Gruha Seva request.</h1>
+      <p>Enter the reference number issued after you submitted your request, along with the same mobile number.</p>
+      <form className="seva-status-form" onSubmit={submit}>
+        <label><span>Booking reference</span><input required value={form.reference} onChange={(event) => setForm({ ...form, reference: event.target.value.toUpperCase() })} placeholder="MVST-SEVA-…" /></label>
+        <label><span>Mobile number</span><input required value={form.mobile} onChange={(event) => setForm({ ...form, mobile: event.target.value })} inputMode="tel" /></label>
+        <button className="public-primary-action" type="submit" disabled={loading}>{loading ? 'Checking…' : 'Check status'}</button>
+      </form>
+      {error ? <p className="seva-form-error" role="alert">{error}</p> : null}
+      {booking ? <div className={`seva-status-result ${booking.status.toLowerCase()}`}><span>{booking.status.replaceAll('_', ' ')}</span><h2>{publicDateLabel(booking.requestedDate)}</h2><p>{booking.occasion} · {publicSlotLabel(booking.preferredSlot)}</p>{booking.decisionNotes ? <small>{booking.decisionNotes}</small> : null}</div> : null}
+    </section>
+  );
+}
+
+function SevaBookingManagementSection() {
+  const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState('PENDING_APPROVAL');
+  const [message, setMessage] = useState('');
+  const [busyId, setBusyId] = useState('');
+
+  async function load(nextStatus = status) {
+    setMessage('');
+    try {
+      const response = await fetch(`/api/seva/bookings?status=${nextStatus}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to load Gruha Seva requests.');
+      setRows(payload.rows || []);
+    } catch (loadError) {
+      setMessage(loadError.message || 'Unable to load Gruha Seva requests.');
+    }
+  }
+
+  useEffect(() => { load(); }, [status]);
+
+  async function decide(booking, decision) {
+    const decisionNotes = decision === 'REJECTED' ? window.prompt('Reason for rejecting this request:') : window.prompt('Approval note for the family (optional):') || '';
+    if (decision === 'REJECTED' && !decisionNotes?.trim()) return;
+    setBusyId(booking.id);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/seva/bookings/${booking.id}/decision`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, decisionNotes }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to update this request.');
+      setRows((current) => current.filter((row) => row.id !== booking.id));
+      setMessage(`${booking.reference} marked ${decision === 'APPROVED' ? 'approved' : 'rejected'}.`);
+    } catch (decisionError) {
+      setMessage(decisionError.message || 'Unable to update this request.');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  return (
+    <section className="management-section seva-office-section">
+      <div className="section-heading"><div><p>Seva Booking Management</p><h2>Gruha Seva requests</h2></div><button className="refresh-button" type="button" onClick={() => load()}><RefreshCw size={16} /> Refresh</button></div>
+      <div className="seva-office-filters">{['PENDING_APPROVAL', 'APPROVED', 'REJECTED'].map((value) => <button key={value} type="button" className={status === value ? 'active' : ''} onClick={() => setStatus(value)}>{value.replaceAll('_', ' ')}</button>)}</div>
+      {message ? <p className="save-message">{message}</p> : null}
+      <div className="seva-office-list">
+        {rows.length ? rows.map((booking) => <article key={booking.id}><div><span>{booking.status.replaceAll('_', ' ')}</span><h3>{booking.applicantName}</h3><p>{booking.reference} · {booking.mobile}</p><p>{publicDateLabel(booking.requestedDate)} · {publicSlotLabel(booking.preferredSlot)} · {booking.occasion}</p><p>{booking.locality} · {booking.address}</p>{booking.notes ? <small>{booking.notes}</small> : null}</div>{booking.status === 'PENDING_APPROVAL' ? <div className="seva-office-actions"><button type="button" onClick={() => decide(booking, 'APPROVED')} disabled={busyId === booking.id}>Approve</button><button type="button" onClick={() => decide(booking, 'REJECTED')} disabled={busyId === booking.id}>Reject</button></div> : null}</article>) : <div className="empty-state"><CalendarDays size={26} /><p>No {status.toLowerCase().replaceAll('_', ' ')} requests.</p></div>}
+      </div>
+    </section>
+  );
+}
+
 const PUBLIC_SEVA_NAVIGATION = [
   ['home', 'Home'],
   ['about', 'About MVST'],
@@ -10319,14 +10614,9 @@ function PublicSevaPortal({ auth }) {
     'book-seva': (
       <section className="public-section public-page-copy">
         <p className="public-eyebrow">Book Seva</p>
-        <h1>Start a Gruha Seva request.</h1>
-        <p>When the booking service opens, your request will be recorded as <strong>Pending Approval</strong>. It will not reserve an idol or confirm a date automatically.</p>
-        <div className="public-booking-note">
-          <CalendarDays size={26} />
-          <div><h2>What the MVST Office will confirm</h2><p>Preferred date, availability, seva-team assignment, transport, payment details where applicable, dispatch and return arrangements.</p></div>
-        </div>
-        <p className="public-muted">The operational booking form will be enabled only after the MVST approval, availability and custody workflow is ready. Until then, please contact the MVST Office to register your request.</p>
-        <button type="button" className="public-primary-action" onClick={() => openPage('contact')}>Contact MVST Office <MessageCircle size={18} /></button>
+        <h1>Choose your date and seva time.</h1>
+        <p>Each date has two seva times: 9:00 am–2:00 pm and 5:00 pm–9:00 pm. Your request will remain <strong>Pending Approval</strong> until the MVST Office confirms it.</p>
+        <PublicSevaBookingForm onComplete={() => {}} />
       </section>
     ),
     'upcoming-events': (
@@ -10338,13 +10628,7 @@ function PublicSevaPortal({ auth }) {
       </section>
     ),
     'booking-status': (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">My Booking / Booking Status</p>
-        <h1>Booking status will be available after the Office issues a reference.</h1>
-        <p>For privacy, status will not be shown using only a mobile number. Once a request is approved for processing, the MVST Office will issue a booking reference and the status page will use that reference.</p>
-        <div className="public-booking-note"><ShieldCheck size={26} /><div><h2>No automatic confirmation</h2><p>A preferred date means the request is awaiting review; it is not a confirmed appointment.</p></div></div>
-        <button type="button" className="public-secondary-action" onClick={() => openPage('contact')}>Contact MVST Office</button>
-      </section>
+      <PublicBookingStatus />
     ),
     contact: (
       <section className="public-section public-page-copy">

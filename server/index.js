@@ -19,6 +19,8 @@ import { GeneralDonorOperation } from './models/GeneralDonorOperation.js';
 import { MangalyaDonorAudit } from './models/MangalyaDonorAudit.js';
 import { MangalyaDonorOperation } from './models/MangalyaDonorOperation.js';
 import { QrToken } from './models/QrToken.js';
+import { SevaBooking } from './models/SevaBooking.js';
+import { SevaBookingAudit } from './models/SevaBookingAudit.js';
 import { Session } from './models/Session.js';
 import { User } from './models/User.js';
 
@@ -222,6 +224,8 @@ const LEGACY_RECEIPT_PREFIXES = {
   bhimaratha: 'BS26',
   shashtipoorthi: 'SP26',
 };
+
+let sevaBookingIndexesPromise = null;
 
 const SHEETS = [
   {
@@ -3241,6 +3245,102 @@ async function updateMangalyaArrivalOrHonour({ donorId, action, user }) {
   throw error;
 }
 
+function sevaText(value, maxLength = 240) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function sevaMobile(value) {
+  const normalized = normalizeMobileForAuth(value);
+  return /^91\d{10}$/.test(normalized) ? normalized : '';
+}
+
+function sevaDate(value) {
+  const date = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+  const [year, month, day] = date.split('-').map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return '';
+  return date;
+}
+
+function todayInIndia() {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(new Date()).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function sevaBookingReference() {
+  return `MVST-SEVA-${todayInIndia().replaceAll('-', '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+async function ensureSevaBookingStore() {
+  if (!isMongoConfigured()) {
+    const error = new Error('The Gruha Seva booking service is temporarily unavailable. Please contact the MVST Office.');
+    error.statusCode = 503;
+    throw error;
+  }
+  await connectMongo();
+  if (!sevaBookingIndexesPromise) {
+    sevaBookingIndexesPromise = Promise.all([
+      SevaBooking.collection.createIndex(
+        { requestedDate: 1, preferredSlot: 1 },
+        { unique: true, partialFilterExpression: { status: 'APPROVED' }, name: 'one_approved_booking_per_slot' },
+      ),
+      SevaBooking.collection.createIndex({ status: 1, requestedDate: 1 }, { name: 'booking_status_by_date' }),
+      SevaBookingAudit.collection.createIndex({ bookingId: 1, occurredAt: -1 }, { name: 'booking_audit_by_time' }),
+    ]).catch((error) => {
+      sevaBookingIndexesPromise = null;
+      throw error;
+    });
+  }
+  await sevaBookingIndexesPromise;
+}
+
+function publicSevaBooking(booking) {
+  if (!booking) return null;
+  return {
+    reference: booking.reference,
+    requestedDate: booking.requestedDate,
+    preferredSlot: booking.preferredSlot,
+    occasion: booking.occasion,
+    status: booking.status,
+    decisionNotes: booking.decisionNotes || '',
+    submittedAt: booking.createdAt || '',
+    decidedAt: booking.decidedAt || null,
+  };
+}
+
+function officeSevaBooking(booking) {
+  return {
+    ...publicSevaBooking(booking),
+    id: String(booking._id || booking.id || ''),
+    applicantName: booking.applicantName,
+    mobile: booking.mobile,
+    email: booking.email || '',
+    locality: booking.locality,
+    address: booking.address,
+    notes: booking.notes || '',
+    decidedBy: booking.decidedBy || '',
+  };
+}
+
+async function recordSevaBookingAudit({ booking, eventType, user = null, remarks = '' }) {
+  await SevaBookingAudit.create({
+    bookingId: String(booking._id || booking.id),
+    reference: booking.reference,
+    eventType,
+    actorUserId: user?.id || '',
+    actorName: user?.name || 'Public applicant',
+    occurredAt: new Date(),
+    remarks: sevaText(remarks, 500),
+  });
+}
+
 const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
@@ -3308,6 +3408,131 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
   }
   clearSessionCookie(res);
   return res.json({ ok: true });
+});
+
+app.get('/api/seva/availability', async (req, res) => {
+  const month = String(req.query?.month || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ ok: false, error: 'Choose a valid calendar month.' });
+  }
+  const [year, monthNumber] = month.split('-').map(Number);
+  const nextMonth = monthNumber === 12 ? `${year + 1}-01` : `${year}-${String(monthNumber + 1).padStart(2, '0')}`;
+  try {
+    await ensureSevaBookingStore();
+    const rows = await SevaBooking.find({
+      status: 'APPROVED',
+      requestedDate: { $gte: `${month}-01`, $lt: `${nextMonth}-01` },
+    }).select({ requestedDate: 1, preferredSlot: 1 }).lean();
+    return res.json({
+      ok: true,
+      month,
+      unavailableDates: rows.map((row) => row.requestedDate),
+      slots: rows.map((row) => ({ date: row.requestedDate, preferredSlot: row.preferredSlot })),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ ok: false, error: error.message || 'Unable to load calendar availability.' });
+  }
+});
+
+app.post('/api/seva/bookings', async (req, res) => {
+  const applicantName = sevaText(req.body?.applicantName, 100);
+  const mobile = sevaMobile(req.body?.mobile);
+  const email = sevaText(req.body?.email, 160);
+  const locality = sevaText(req.body?.locality, 120);
+  const address = sevaText(req.body?.address, 320);
+  const occasion = sevaText(req.body?.occasion, 100);
+  const requestedDate = sevaDate(req.body?.requestedDate);
+  const preferredSlot = ['DAY', 'EVENING'].includes(req.body?.preferredSlot) ? req.body.preferredSlot : '';
+  const notes = sevaText(req.body?.notes, 500);
+
+  if (!applicantName || !mobile || !locality || !address || !occasion || !requestedDate || !preferredSlot) {
+    return res.status(400).json({ ok: false, error: 'Please enter your name, mobile, locality, address, occasion, preferred date and seva time.' });
+  }
+  if (requestedDate < todayInIndia()) {
+    return res.status(400).json({ ok: false, error: 'Please choose a future date for Gruha Seva.' });
+  }
+
+  try {
+    await ensureSevaBookingStore();
+    let booking;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        booking = await SevaBooking.create({
+          reference: sevaBookingReference(),
+          applicantName,
+          mobile,
+          email,
+          locality,
+          address,
+          occasion,
+          requestedDate,
+          preferredSlot,
+          notes,
+          status: 'PENDING_APPROVAL',
+        });
+        break;
+      } catch (error) {
+        if (error?.code !== 11000 || attempt === 2) throw error;
+      }
+    }
+    await recordSevaBookingAudit({ booking, eventType: 'REQUESTED', remarks: `Public Gruha Seva request for ${requestedDate}` });
+    return res.status(201).json({
+      ok: true,
+      message: 'Your Gruha Seva request has been received and is awaiting MVST Office approval.',
+      booking: publicSevaBooking(booking),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to submit your Gruha Seva request.' });
+  }
+});
+
+app.get('/api/seva/booking-status', async (req, res) => {
+  const reference = sevaText(req.query?.reference, 80).toUpperCase();
+  const mobile = sevaMobile(req.query?.mobile);
+  if (!reference || !mobile) return res.status(400).json({ ok: false, error: 'Enter your booking reference and mobile number.' });
+  try {
+    await ensureSevaBookingStore();
+    const booking = await SevaBooking.findOne({ reference, mobile }).lean();
+    if (!booking) return res.status(404).json({ ok: false, error: 'No booking was found with those details.' });
+    return res.json({ ok: true, booking: publicSevaBooking(booking) });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ ok: false, error: error.message || 'Unable to check booking status.' });
+  }
+});
+
+app.get('/api/seva/bookings', requirePst, async (req, res) => {
+  const status = sevaText(req.query?.status, 40).toUpperCase();
+  const query = ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED', 'COMPLETED'].includes(status) ? { status } : {};
+  try {
+    await ensureSevaBookingStore();
+    const rows = await SevaBooking.find(query).sort({ requestedDate: 1, createdAt: -1 }).lean();
+    return res.json({ ok: true, rows: rows.map(officeSevaBooking) });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ ok: false, error: error.message || 'Unable to load Gruha Seva bookings.' });
+  }
+});
+
+app.patch('/api/seva/bookings/:id/decision', requirePst, async (req, res) => {
+  const id = String(req.params.id || '');
+  const decision = sevaText(req.body?.decision, 24).toUpperCase();
+  const decisionNotes = sevaText(req.body?.decisionNotes, 500);
+  if (!/^[a-f\d]{24}$/i.test(id)) return res.status(400).json({ ok: false, error: 'Invalid booking.' });
+  if (!['APPROVED', 'REJECTED'].includes(decision)) return res.status(400).json({ ok: false, error: 'Choose Approve or Reject.' });
+  if (decision === 'REJECTED' && !decisionNotes) return res.status(400).json({ ok: false, error: 'Please add a reason before rejecting a request.' });
+  try {
+    await ensureSevaBookingStore();
+    const booking = await SevaBooking.findOneAndUpdate(
+      { _id: id, status: 'PENDING_APPROVAL' },
+      { $set: { status: decision, decisionNotes, decidedAt: new Date(), decidedBy: actorName(req.user) } },
+      { new: true },
+    ).lean();
+    if (!booking) return res.status(409).json({ ok: false, error: 'This request was already decided or no longer exists.' });
+    await recordSevaBookingAudit({ booking, eventType: decision, user: req.user, remarks: decisionNotes });
+    return res.json({ ok: true, booking: officeSevaBooking(booking) });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ ok: false, error: 'That seva time is already approved for this date. Please choose the other slot or another date.' });
+    return res.status(error.statusCode || 500).json({ ok: false, error: error.message || 'Unable to update this booking.' });
+  }
 });
 
 app.get('/api/users', requirePst, async (req, res) => {

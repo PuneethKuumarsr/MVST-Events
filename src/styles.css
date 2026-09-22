@@ -2,7 +2,7 @@
   --mvst-ui-build: "2026-06-23-render-style-refresh";
   color-scheme: light;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Aptos, "Segoe UI", "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   background: #fbf6ea;
   color: #331b16;
   --cream: #fbf6ea;
@@ -3761,12 +3761,14 @@ main {
 .public-page-copy h1 {
   max-width: 790px;
   margin: 0;
-  letter-spacing: -0.04em;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 
 .public-hero h1 {
-  font-size: clamp(2.45rem, 5.7vw, 5.3rem);
-  line-height: 0.97;
+  font-size: clamp(2.2rem, 4.5vw, 4.2rem);
+  line-height: 1.08;
 }
 
 .public-hero-copy > p:not(.public-eyebrow) {
@@ -3911,8 +3913,8 @@ main {
 
 .public-page-copy h1 {
   color: var(--maroon-deep);
-  font-size: clamp(2.15rem, 5vw, 4rem);
-  line-height: 1.02;
+  font-size: clamp(2rem, 4.3vw, 3.55rem);
+  line-height: 1.1;
 }
 
 .public-page-copy > p {
@@ -3987,6 +3989,276 @@ main {
   font-weight: 900;
 }
 
+.seva-booking-form {
+  display: grid;
+  gap: 17px;
+  max-width: 780px;
+  margin-top: 28px;
+}
+
+.seva-calendar {
+  border: 1px solid rgba(120, 31, 42, 0.18);
+  border-radius: 14px;
+  background: #fffdf9;
+  padding: clamp(15px, 3vw, 23px);
+  box-shadow: 0 10px 24px rgba(74, 31, 12, 0.06);
+}
+
+.seva-calendar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 19px;
+}
+
+.seva-calendar-heading div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.seva-calendar-heading span,
+.seva-slot-picker > span,
+.seva-booking-form label > span,
+.seva-status-form label > span {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.seva-calendar-heading strong {
+  color: var(--maroon-deep);
+  font-size: 1.3rem;
+}
+
+.seva-calendar-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.seva-calendar-controls button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(120, 31, 42, 0.21);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--maroon);
+  font-size: 1.55rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.seva-calendar-controls button:disabled,
+.seva-calendar-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.seva-calendar-weekdays,
+.seva-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.seva-calendar-weekdays {
+  margin-bottom: 6px;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.seva-calendar-grid button,
+.seva-calendar-empty {
+  min-height: 42px;
+}
+
+.seva-calendar-grid button {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: #fbf4e9;
+  color: var(--maroon-deep);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.seva-calendar-grid button:hover:not(:disabled),
+.seva-calendar-grid button:focus-visible {
+  border-color: var(--gold);
+  background: #f6e6b9;
+  outline: none;
+}
+
+.seva-calendar-grid button.selected {
+  border-color: var(--maroon);
+  background: var(--maroon);
+  color: #fff9eb;
+}
+
+.seva-calendar-grid button.unavailable {
+  background: #eee7e1;
+  color: #876f69;
+  text-decoration: line-through;
+}
+
+.seva-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 15px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.seva-calendar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seva-calendar-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.seva-calendar-legend .available { background: var(--gold); }
+.seva-calendar-legend .unavailable { background: #b6a29d; }
+.seva-calendar-notice { margin: 12px 0 0; color: var(--amber); font-size: 0.82rem; }
+
+.seva-selected-date,
+.seva-pending-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--maroon-deep);
+  font-weight: 800;
+}
+
+.seva-selected-date { min-height: 30px; }
+.seva-pending-note { color: var(--ink-soft); font-size: 0.88rem; font-weight: 700; line-height: 1.45; }
+.seva-pending-note svg { flex: 0 0 auto; color: var(--green); }
+
+.seva-slot-picker {
+  display: grid;
+  gap: 9px;
+}
+
+.seva-slot-picker > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seva-slot-picker button {
+  display: grid;
+  gap: 4px;
+  min-height: 74px;
+  border: 1px solid rgba(120, 31, 42, 0.19);
+  border-radius: 10px;
+  background: #fffdf9;
+  color: var(--maroon-deep);
+  padding: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.seva-slot-picker button strong { font-size: 0.98rem; }
+.seva-slot-picker button small { color: var(--ink-soft); font-size: 0.78rem; }
+.seva-slot-picker button.selected { border-color: var(--maroon); background: rgba(120, 31, 42, 0.09); box-shadow: inset 0 0 0 1px var(--maroon); }
+.seva-slot-picker button:disabled { background: #eee7e1; color: #876f69; cursor: not-allowed; }
+
+.seva-form-grid,
+.seva-status-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.seva-booking-form label,
+.seva-status-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.seva-form-wide { grid-column: 1 / -1; }
+
+.seva-booking-form input,
+.seva-booking-form textarea,
+.seva-booking-form select,
+.seva-status-form input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(120, 31, 42, 0.2);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--maroon-deep);
+  padding: 10px 11px;
+  outline: none;
+}
+
+.seva-booking-form textarea { resize: vertical; min-height: 82px; }
+.seva-booking-form input:focus,
+.seva-booking-form textarea:focus,
+.seva-booking-form select:focus,
+.seva-status-form input:focus { border-color: var(--maroon); box-shadow: 0 0 0 3px rgba(120, 31, 42, 0.11); }
+.seva-form-error { margin: 0; color: var(--red) !important; font-weight: 800; }
+
+.seva-booking-success {
+  display: grid;
+  gap: 9px;
+  justify-items: start;
+  margin-top: 26px;
+  border: 1px solid rgba(45, 122, 79, 0.25);
+  border-radius: 14px;
+  background: #f1fbf4;
+  padding: 25px;
+  color: #1b5135;
+}
+
+.seva-booking-success svg { color: var(--green); }
+.seva-booking-success p,
+.seva-booking-success h2,
+.seva-booking-success span,
+.seva-booking-success small { margin: 0; }
+.seva-booking-success h2 { font-family: Georgia, "Times New Roman", serif; font-size: 1.45rem; }
+.seva-booking-success strong { border-radius: 6px; background: #d9f0df; padding: 7px 9px; font-size: 0.9rem; letter-spacing: 0.04em; }
+.seva-booking-success small { color: #42624d; line-height: 1.5; }
+
+.seva-status-form { max-width: 650px; margin-top: 25px; align-items: end; }
+.seva-status-form .public-primary-action { align-self: end; }
+.seva-status-result { display: grid; gap: 5px; margin-top: 20px; border: 1px solid rgba(120, 31, 42, 0.16); border-radius: 12px; background: #fffdf9; padding: 20px; }
+.seva-status-result span { width: fit-content; border-radius: 999px; background: #f8e8b7; color: #76520d; padding: 5px 9px; font-size: 0.75rem; font-weight: 900; }
+.seva-status-result.approved span { background: #d9f0df; color: #1b6940; }
+.seva-status-result.rejected span { background: #f9dfdd; color: #99332e; }
+.seva-status-result h2,
+.seva-status-result p,
+.seva-status-result small { margin: 0; }
+.seva-status-result h2 { color: var(--maroon-deep); font-size: 1.2rem; }
+.seva-status-result p,
+.seva-status-result small { color: var(--ink-soft); }
+
+.seva-office-section { padding-top: 24px; }
+.seva-office-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.seva-office-filters button { border: 1px solid rgba(120, 31, 42, 0.2); border-radius: 999px; background: #fff; color: var(--maroon-deep); padding: 8px 11px; font-weight: 850; cursor: pointer; }
+.seva-office-filters button.active { background: var(--maroon); color: #fff9eb; }
+.seva-office-list { display: grid; gap: 12px; }
+.seva-office-list article { display: flex; justify-content: space-between; gap: 18px; border: 1px solid var(--line); border-radius: 11px; background: #fffdf9; padding: 17px; }
+.seva-office-list article h3,
+.seva-office-list article p,
+.seva-office-list article small { margin: 0; }
+.seva-office-list article h3 { color: var(--maroon-deep); margin-top: 4px; }
+.seva-office-list article p { color: var(--ink-soft); font-size: 0.88rem; line-height: 1.45; }
+.seva-office-list article span { color: var(--amber); font-size: 0.72rem; font-weight: 950; letter-spacing: 0.06em; }
+.seva-office-list article small { display: block; margin-top: 6px; color: var(--ink-soft); }
+.seva-office-actions { display: flex; align-items: flex-start; gap: 7px; }
+.seva-office-actions button { min-height: 38px; border: 1px solid var(--maroon); border-radius: 7px; background: var(--maroon); color: #fff9eb; padding: 7px 10px; font-weight: 850; cursor: pointer; }
+.seva-office-actions button:last-child { border-color: rgba(163, 55, 55, 0.34); background: #fff; color: var(--red); }
+
 @media (max-width: 760px) {
   .public-header,
   .public-nav,
@@ -4011,7 +4283,7 @@ main {
   }
 
   .public-hero h1 {
-    font-size: clamp(2.25rem, 12vw, 3.8rem);
+    font-size: clamp(2rem, 10vw, 3rem);
   }
 
   .public-process-grid,
@@ -4022,6 +4294,30 @@ main {
   .public-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .seva-slot-picker > div,
+  .seva-form-grid,
+  .seva-status-form {
+    grid-template-columns: 1fr;
+  }
+
+  .seva-form-wide {
+    grid-column: auto;
+  }
+
+  .seva-calendar-grid button,
+  .seva-calendar-empty {
+    min-height: 38px;
+  }
+
+  .seva-office-list article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .seva-office-actions button {
+    flex: 1;
   }
 }
 
