@@ -13,6 +13,7 @@ import {
 } from '../src/whatsappGroupEligibility.js';
 
 const frontend = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+const publicPortal = readFileSync(new URL('../src/SevaPortal.jsx', import.meta.url), 'utf8');
 const backend = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const eventInvitationTemplates = readFileSync(new URL('../src/eventInvitation.js', import.meta.url), 'utf8');
 const generalDonorIdentity = readFileSync(new URL('../server/generalDonorIdentity.js', import.meta.url), 'utf8');
@@ -974,7 +975,9 @@ assert.ok(frontend.includes('New password must be at least 4 characters.'), 'Cha
 assert.ok(frontend.includes('New password and confirm password must match.'), 'Change Password screen must validate matching passwords');
 assert.ok(frontend.includes('Password changed successfully. Please login again.'), 'Change Password success must tell the user to login again');
 assert.ok(frontend.includes('function PublicSevaPortal'), 'Frontend must provide a deliberate public Seva portal outside Office operations');
-assert.ok(frontend.includes('Vasavi Mata Gruha Seva'), 'Public Seva portal must explain the Gruha Seva offering');
+assert.match(publicPortal, /Vasavi Mata Gruha Seva/i, 'Public Seva portal must explain the Gruha Seva offering');
+assert.ok(frontend.includes('import SevaPortal') && frontend.includes('<SevaPortal'), 'Public page layout must remain wired into the authenticated root');
+assert.ok(publicPortal.includes('aria-expanded={menuOpen}'), 'Mobile public navigation must have an accessible expanded state');
 assert.ok(frontend.includes('Pending Approval'), 'Public booking guidance must not treat a requested date as confirmed');
 assert.ok(frontend.includes('Office Login'), 'Public portal must offer a separate Office Login entry point');
 assert.ok(frontend.includes('function RootApp'), 'Root app must select the public or authenticated experience from auth state');

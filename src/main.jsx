@@ -25,6 +25,7 @@ import {
   LogOut,
   MessageCircle,
   Mic,
+  Menu,
   Phone,
   RotateCcw,
   QrCode,
@@ -70,6 +71,8 @@ import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mang
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
 import trusteeInvitationCard from '../assets/invitations/mvst-samoohika-shanti-invitation-2026.jpg';
 import './styles.css';
+import SevaPortal from './SevaPortal.jsx';
+import './portal-theme.css';
 
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
 const DEVELOPER_MODE = import.meta.env.VITE_DEVELOPER_MODE === 'true';
@@ -6883,7 +6886,7 @@ function useAuth() {
   const [notice, setNotice] = useState('');
 
   async function load() {
-    setLoading(true);
+    // Background session checks must not unmount an in-progress booking form.
     try {
       const response = await fetch('/api/auth/me', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
@@ -6950,39 +6953,48 @@ function LoginPage({ auth, onBack }) {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
 
   async function submit(event) {
     event.preventDefault();
     setSubmitting(true);
-    await auth.login({ mobile, pin });
-    setSubmitting(false);
+    setConnectionError('');
+    try {
+      await auth.login({ mobile, pin });
+    } catch {
+      setConnectionError('Unable to connect. Please try signing in again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <main className="login-page">
+    <main className="login-page seva-office-login">
       <div className="login-shell">
+        <aside className="login-welcome"><img src="/MVST_Logo.jpg" alt="MVST Trust logo" /><span>MVST SEVA · OFFICE</span><h2>Behind every seva,<br />a caring team.</h2><p>Your workspace for seva requests, event registrations and Trust operations.</p><small>Authorised access · Manemanege Vasavi Seva Trust (R.)</small></aside>
         <form className="login-card" onSubmit={submit}>
           {onBack ? <button className="login-back-button" type="button" onClick={onBack}>← Back to MVST Seva</button> : null}
           <img className="login-header-image" src="/mvst-login-header.jpg" alt="Mane Manege Vasavi Seva Trust" />
           <div className="login-title">
             <p>MVST Seva Portal</p>
-            <h1>Login</h1>
+            <h1>Office Login</h1>
           </div>
           <label>
             <span>Mobile Number</span>
             <div className="login-mobile-row">
               <b>+91</b>
-              <input value={mobile} onChange={(event) => setMobile(event.target.value)} inputMode="numeric" autoComplete="username" placeholder="Mobile number" />
+              <input required value={mobile} onChange={(event) => setMobile(event.target.value)} inputMode="numeric" autoComplete="username" placeholder="Mobile number" />
             </div>
           </label>
           <label>
             <span>PIN</span>
             <div className="login-pin-row">
-              <input value={pin} onChange={(event) => setPin(event.target.value)} type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" placeholder="••••" />
+              <input required value={pin} onChange={(event) => setPin(event.target.value)} type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" placeholder="••••" />
               <button type="button" onClick={() => setShowPin((value) => !value)}>{showPin ? 'Hide' : 'Show'}</button>
             </div>
           </label>
           {auth.error ? <small>{auth.error}</small> : null}
+          {connectionError ? <small role="alert">{connectionError}</small> : null}
           {auth.notice ? <small className="success-message">{auth.notice}</small> : null}
           <button type="submit" disabled={submitting}>{submitting ? 'Logging in' : 'Login'}</button>
         </form>
@@ -9097,6 +9109,9 @@ function App({ auth }) {
   const expenseState = useExpenses(isPst);
   const groupConfig = useWhatsAppGroupConfig(isPst);
   const [activeView, setActiveView] = useState('home');
+  const [officeMenuOpen, setOfficeMenuOpen] = useState(false);
+
+  useEffect(() => { setOfficeMenuOpen(false); }, [activeView]);
   const [activeEvent, setActiveEvent] = useState('shashtipoorthi');
   const [linkedReceiptQrToken, setLinkedReceiptQrToken] = useState('');
   const [query, setQuery] = useState('');
@@ -9608,29 +9623,15 @@ function App({ auth }) {
   }
 
   return (
-    <main>
-      <section className="hero-band">
-        <div className="hero-content">
-          <div className="hero-title-row">
-            <img className="mvst-logo" src="/MVST_Logo.jpg" alt="MVST Events logo" />
-            <div>
-              <div className="trust-mark">
-                <Sparkles size={18} />
-                Mane Manege Vasavi Seva Trust (R)
-              </div>
-              <h1>MVST Events Dashboard</h1>
-            </div>
-          </div>
-          <p>Phase 1 dashboard for Samoohika Shanthi registrations, payments, verification, KIT issue, and WhatsApp follow-up.</p>
-          <div className="hero-meta">
-            <span><CalendarDays size={17} /> {EVENT_DATE}</span>
-            <span className={isLive ? 'live' : ''}><ShieldCheck size={17} /> {dataSource || 'Google Sheets'} {' \u00b7 '} {writeEnabled ? 'Read + Write' : 'Read-only mode'}</span>
-          </div>
-        </div>
-      </section>
+    <main className={`office-app ${officeMenuOpen ? 'office-nav-open' : ''}`}>
+      <header className="office-topbar">
+        <div className="office-wordmark"><img src="/MVST_Logo.jpg" alt="MVST" /><div><strong>MVST Seva</strong><small>OFFICE WORKSPACE</small></div></div>
+        <div className="office-user"><ShieldCheck size={18} /><span>{user?.name || user?.displayName || 'Authorised Office access'}</span></div>
+        <button type="button" className="office-nav-toggle" aria-label={officeMenuOpen ? 'Close office menu' : 'Open office menu'} aria-expanded={officeMenuOpen} aria-controls="office-navigation" onClick={() => setOfficeMenuOpen(!officeMenuOpen)}>{officeMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+      </header>
 
       <div className="app-shell">
-        <aside className="app-sidebar" aria-label="Dashboard navigation">
+        <aside id="office-navigation" className="app-sidebar" aria-label="Dashboard navigation">
           {isPst ? (
             <>
               <button className={activeView === 'home' ? 'active' : ''} type="button" onClick={() => setActiveView('home')}>
@@ -10274,6 +10275,8 @@ function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange })
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [unavailableDates, setUnavailableDates] = useState(new Set());
+  const [partialDates, setPartialDates] = useState(new Set());
+  const [retryKey, setRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
   const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
@@ -10297,6 +10300,7 @@ function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange })
           setUnavailableDates(new Set(Array.from(slotsByDate.entries())
             .filter(([, values]) => values.has('DAY') && values.has('EVENING'))
             .map(([date]) => date)));
+          setPartialDates(new Set(Array.from(slotsByDate.entries()).filter(([, values]) => values.size === 1).map(([date]) => date)));
           onAvailabilityChange?.(slots);
         }
       })
@@ -10307,7 +10311,7 @@ function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange })
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [monthKey, onAvailabilityChange]);
+  }, [monthKey, onAvailabilityChange, retryKey]);
 
   const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
   const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -10320,13 +10324,15 @@ function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange })
   });
 
   function changeMonth(offset) {
+    onSelect('');
+    setLoading(true);
     setMonthDate((value) => new Date(value.getFullYear(), value.getMonth() + offset, 1));
   }
 
   return (
-    <section className="seva-calendar" aria-label="Preferred Gruha Seva date">
+    <section className="seva-calendar" aria-label="Preferred Gruha Seva date" aria-busy={loading}>
       <div className="seva-calendar-heading">
-        <div><span>Choose a preferred date</span><strong>{monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</strong></div>
+        <div><strong aria-live="polite">{monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</strong></div>
         <div className="seva-calendar-controls">
           <button type="button" onClick={() => changeMonth(-1)} disabled={monthKey <= currentMonthKey} aria-label="Previous month">‹</button>
           <button type="button" onClick={() => changeMonth(1)} aria-label="Next month">›</button>
@@ -10338,15 +10344,17 @@ function PublicBookingCalendar({ selectedDate, onSelect, onAvailabilityChange })
           <button
             key={cell.key}
             type="button"
-            disabled={cell.disabled || loading}
-            className={`${selectedDate === cell.key ? 'selected' : ''} ${unavailableDates.has(cell.key) ? 'unavailable' : ''}`}
+            disabled={cell.disabled || loading || Boolean(notice)}
+            aria-pressed={selectedDate === cell.key}
+            className={`${selectedDate === cell.key ? 'selected' : ''} ${unavailableDates.has(cell.key) ? 'unavailable' : ''} ${partialDates.has(cell.key) ? 'partial' : ''}`}
             onClick={() => onSelect(cell.key)}
-            aria-label={`${publicDateLabel(cell.key)}${unavailableDates.has(cell.key) ? ', unavailable' : ''}`}
+            aria-label={`${publicDateLabel(cell.key)}${unavailableDates.has(cell.key) ? ', unavailable' : partialDates.has(cell.key) ? ', one slot available' : ''}`}
           >{cell.day}</button>
         ) : <span className="seva-calendar-empty" key={`empty-${index}`} />)}
       </div>
-      <div className="seva-calendar-legend"><span><i className="available" /> At least one seva time available</span><span><i className="unavailable" /> Both times approved</span></div>
-      {notice ? <p className="seva-calendar-notice">{notice}</p> : null}
+      <div className="seva-calendar-legend"><span><i className="available" /> Available</span><span><i className="partial" /> One slot left</span><span><i className="unavailable" /> Fully booked</span></div>
+      {loading ? <p className="seva-calendar-notice" role="status">Checking availability…</p> : null}
+      {notice ? <div className="seva-form-error" role="alert">{notice} <button type="button" className="seva-text-link" onClick={() => setRetryKey((value) => value + 1)}>Try again</button></div> : null}
     </section>
   );
 }
@@ -10371,7 +10379,9 @@ function PublicSevaBookingForm({ onComplete }) {
   );
 
   useEffect(() => {
-    if (selectedDateBookedSlots.has(form.preferredSlot)) {
+    if (selectedDateBookedSlots.size === 2) {
+      setSelectedDate('');
+    } else if (selectedDateBookedSlots.has(form.preferredSlot)) {
       update('preferredSlot', selectedDateBookedSlots.has('DAY') ? 'EVENING' : 'DAY');
     }
   }, [selectedDate, bookedSlots]);
@@ -10379,7 +10389,7 @@ function PublicSevaBookingForm({ onComplete }) {
   async function submit(event) {
     event.preventDefault();
     setError('');
-    if (!selectedDate) {
+    if (!selectedDate || selectedDateBookedSlots.has(form.preferredSlot)) {
       setError('Please choose your preferred date from the calendar.');
       return;
     }
@@ -10409,34 +10419,44 @@ function PublicSevaBookingForm({ onComplete }) {
         <h2>Your Gruha Seva request is awaiting MVST Office approval.</h2>
         <strong>{booking.reference}</strong>
         <span>Preferred date: {publicDateLabel(booking.requestedDate)}</span>
+        <span>{publicSlotLabel(booking.preferredSlot || form.preferredSlot)} · Pending Approval</span>
         <small>Save this reference. Use it with your mobile number under My Booking to check the status.</small>
+        <a href="#/booking-status">Go to My Booking →</a>
       </section>
     );
   }
 
   return (
     <form className="seva-booking-form" onSubmit={submit}>
+      <div className="seva-booking-date-panel">
+      <div className="seva-form-step"><span>01</span><h2>Your date & time</h2></div>
       <PublicBookingCalendar selectedDate={selectedDate} onSelect={setSelectedDate} onAvailabilityChange={setBookedSlots} />
       <div className="seva-selected-date"><CalendarDays size={18} /><span>{selectedDate ? `Preferred date: ${publicDateLabel(selectedDate)}` : 'Choose a date from the calendar'}</span></div>
       <div className="seva-slot-picker" aria-label="Choose seva time">
         <span>Choose seva time</span>
         <div>
-          <button type="button" className={form.preferredSlot === 'DAY' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('DAY')} onClick={() => update('preferredSlot', 'DAY')}><strong>9:00 am – 2:00 pm</strong><small>{selectedDateBookedSlots.has('DAY') ? 'Already approved' : 'Day seva'}</small></button>
-          <button type="button" className={form.preferredSlot === 'EVENING' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('EVENING')} onClick={() => update('preferredSlot', 'EVENING')}><strong>5:00 pm – 9:00 pm</strong><small>{selectedDateBookedSlots.has('EVENING') ? 'Already approved' : 'Evening seva'}</small></button>
+          <button type="button" aria-pressed={form.preferredSlot === 'DAY'} className={form.preferredSlot === 'DAY' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('DAY')} onClick={() => update('preferredSlot', 'DAY')}><strong>9:00 am – 2:00 pm</strong><small>{selectedDateBookedSlots.has('DAY') ? 'Already booked' : 'Day seva'}</small></button>
+          <button type="button" aria-pressed={form.preferredSlot === 'EVENING'} className={form.preferredSlot === 'EVENING' ? 'selected' : ''} disabled={!selectedDate || selectedDateBookedSlots.has('EVENING')} onClick={() => update('preferredSlot', 'EVENING')}><strong>5:00 pm – 9:00 pm</strong><small>{selectedDateBookedSlots.has('EVENING') ? 'Already booked' : 'Evening seva'}</small></button>
         </div>
       </div>
+      <p className="seva-booking-guidance">Choose an available time. Final confirmation follows the Office review.</p>
+      </div>
+      <div className="seva-booking-details-panel">
+      <div className="seva-form-step"><span>02</span><h2>A little about your seva</h2></div>
       <div className="seva-form-grid">
         <label><span>Your name</span><input required value={form.applicantName} onChange={(event) => update('applicantName', event.target.value)} autoComplete="name" /></label>
         <label><span>Mobile number</span><input required value={form.mobile} onChange={(event) => update('mobile', event.target.value)} inputMode="tel" autoComplete="tel" placeholder="10-digit mobile number" /></label>
         <label><span>Locality / area</span><input required value={form.locality} onChange={(event) => update('locality', event.target.value)} /></label>
         <label><span>Occasion</span><select value={form.occasion} onChange={(event) => update('occasion', event.target.value)}><option>Gruha Seva</option><option>Family function</option><option>Special pooja</option><option>Other</option></select></label>
         <label className="seva-form-wide"><span>Seva address</span><textarea required value={form.address} onChange={(event) => update('address', event.target.value)} rows="3" /></label>
-        <label><span>Email (optional)</span><input value={form.email} onChange={(event) => update('email', event.target.value)} inputMode="email" autoComplete="email" /></label>
+        <label className="seva-form-wide"><span>Email (optional)</span><input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} inputMode="email" autoComplete="email" /></label>
         <label className="seva-form-wide"><span>Anything the Office should know? (optional)</span><textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} rows="3" /></label>
       </div>
+      <div className="seva-request-summary" aria-live="polite"><CalendarDays size={18} /><div><small>YOUR SEVA REQUEST</small><strong>{selectedDate ? publicDateLabel(selectedDate) : 'No date selected yet'}</strong><p>{selectedDate ? publicSlotLabel(form.preferredSlot) : 'Select your preferred date and time to continue.'}</p></div></div>
       <p className="seva-pending-note"><ShieldCheck size={17} /> Submitting a request does not confirm the date. The MVST Office will review and approve it.</p>
       {error ? <p className="seva-form-error" role="alert">{error}</p> : null}
-      <button className="public-primary-action" type="submit" disabled={saving}>{saving ? 'Submitting request…' : 'Submit Seva Request'} <ArrowRight size={18} /></button>
+      <button className="public-primary-action" type="submit" disabled={saving || !selectedDate}>{saving ? 'Submitting request…' : 'Send Seva Request'} <ArrowRight size={18} /></button>
+      </div>
     </form>
   );
 }
@@ -10502,7 +10522,8 @@ function SevaBookingManagementSection() {
   useEffect(() => { load(); }, [status]);
 
   async function decide(booking, decision) {
-    const decisionNotes = decision === 'REJECTED' ? window.prompt('Reason for rejecting this request:') : window.prompt('Approval note for the family (optional):') || '';
+    const decisionNotes = decision === 'REJECTED' ? window.prompt('Reason for rejecting this request:') : window.prompt('Approval note for the family (optional):');
+    if (decisionNotes === null) return;
     if (decision === 'REJECTED' && !decisionNotes?.trim()) return;
     setBusyId(booking.id);
     setMessage('');
@@ -10533,137 +10554,12 @@ function SevaBookingManagementSection() {
   );
 }
 
-const PUBLIC_SEVA_NAVIGATION = [
-  ['home', 'Home'],
-  ['about', 'About MVST'],
-  ['gruha-seva', 'Vasavi Mata Gruha Seva'],
-  ['book-seva', 'Book Seva'],
-  ['upcoming-events', 'Upcoming Events'],
-  ['booking-status', 'My Booking'],
-  ['contact', 'Contact MVST'],
-];
-
 function PublicSevaPortal({ auth }) {
-  const [activePage, setActivePage] = useState('home');
-  const [showOfficeLogin, setShowOfficeLogin] = useState(false);
-
-  function openPage(page) {
-    setActivePage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  if (showOfficeLogin) return <LoginPage auth={auth} onBack={() => setShowOfficeLogin(false)} />;
-
-  const pageContent = {
-    home: (
-      <>
-        <section className="public-hero">
-          <div className="public-hero-copy">
-            <p className="public-eyebrow">Manemanege Vasavi Seva Trust (R.)</p>
-            <h1>Vasavi Mata Gruha Seva, with care and proper approval.</h1>
-            <p>Invite the MVST Vasavi Mata Silver Idol for your home seva or family function. Every request is first reviewed by the MVST Office so that dates, transport and idol care are properly arranged.</p>
-            <div className="public-action-row">
-              <button type="button" className="public-primary-action" onClick={() => openPage('book-seva')}>Request Gruha Seva <ArrowRight size={18} /></button>
-              <button type="button" className="public-secondary-action" onClick={() => openPage('booking-status')}>Check Booking Status</button>
-            </div>
-          </div>
-          <aside className="public-approval-card">
-            <ShieldCheck size={30} />
-            <p>Every request follows a Pending Approval workflow.</p>
-            <span>A requested date is not confirmed until the MVST Office approves it.</span>
-          </aside>
-        </section>
-
-        <section className="public-section public-process-section">
-          <div className="public-section-heading">
-            <p>How it works</p>
-            <h2>A simple, respectful seva process</h2>
-          </div>
-          <div className="public-process-grid">
-            <article><span>01</span><h3>Send your request</h3><p>Share the preferred date, place and contact details with the MVST Office.</p></article>
-            <article><span>02</span><h3>Office approval</h3><p>The Office checks availability, volunteer support, transport and the seva schedule.</p></article>
-            <article><span>03</span><h3>Confirmation & seva</h3><p>You receive confirmation only after the arrangements are approved by the Office.</p></article>
-          </div>
-        </section>
-      </>
-    ),
-    about: (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">About MVST</p>
-        <h1>Serving the Vasavi community through organised seva.</h1>
-        <p>Manemanege Vasavi Seva Trust (R.) supports community seva, devotional programmes and family-centred initiatives. This portal brings public seva information and MVST Office work into one place without exposing private member or financial records.</p>
-        <div className="public-info-grid">
-          <article><HeartHandshake size={24} /><h2>Seva first</h2><p>Every service is planned with respect for families, volunteers and the trust's responsibilities.</p></article>
-          <article><UsersRound size={24} /><h2>One MVST portal</h2><p>Public visitors see only public information; operational work stays protected inside Office Login.</p></article>
-        </div>
-      </section>
-    ),
-    'gruha-seva': (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">Vasavi Mata Gruha Seva</p>
-        <h1>Silver Idol seva for homes and family functions.</h1>
-        <p>MVST will coordinate the Vasavi Mata Silver Idol visit with an approved schedule, responsible seva team and recorded handover. The idol remains under MVST's custody process throughout its journey.</p>
-        <div className="public-info-grid">
-          <article><CalendarDays size={24} /><h2>Planned dates</h2><p>Availability is checked by the Office before a date is confirmed.</p></article>
-          <article><ClipboardList size={24} /><h2>Clear handover</h2><p>Dispatch, return and seva completion are recorded by the authorised team.</p></article>
-          <article><ShieldCheck size={24} /><h2>Respectful care</h2><p>Transport and seva guidance are shared only after the Office approves the booking.</p></article>
-        </div>
-        <button type="button" className="public-primary-action" onClick={() => openPage('book-seva')}>Request Gruha Seva <ArrowRight size={18} /></button>
-      </section>
-    ),
-    'book-seva': (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">Book Seva</p>
-        <h1>Choose your date and seva time.</h1>
-        <p>Each date has two seva times: 9:00 am–2:00 pm and 5:00 pm–9:00 pm. Your request will remain <strong>Pending Approval</strong> until the MVST Office confirms it.</p>
-        <PublicSevaBookingForm onComplete={() => {}} />
-      </section>
-    ),
-    'upcoming-events': (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">Upcoming Events</p>
-        <h1>MVST event announcements.</h1>
-        <p>Published programmes and seva opportunities will appear here. Event registrations, payment records and participant documents remain available only to authorised Office users.</p>
-        <div className="public-empty-card"><CalendarDays size={30} /><h2>New announcements will be shared soon.</h2><p>Please check this page again for the next MVST programme.</p></div>
-      </section>
-    ),
-    'booking-status': (
-      <PublicBookingStatus />
-    ),
-    contact: (
-      <section className="public-section public-page-copy">
-        <p className="public-eyebrow">Contact MVST</p>
-        <h1>Contact the MVST Office for seva assistance.</h1>
-        <p>The Office can record a Gruha Seva request, explain the approval process and share the confirmed instructions after approval. Official contact details will be published here by the trust.</p>
-        <div className="public-contact-card"><MessageCircle size={28} /><div><h2>For Gruha Seva requests</h2><p>Share your name, preferred date, locality and a contact number with the authorised MVST Office team. Please wait for written or spoken approval before making arrangements.</p></div></div>
-      </section>
-    ),
-  };
-
-  return (
-    <main className="public-portal">
-      <header className="public-header">
-        <button type="button" className="public-brand" onClick={() => openPage('home')}>
-          <span>MVST</span>
-          <small>Mane Manege Vasavi Seva Trust (R.)</small>
-        </button>
-        <button type="button" className="public-office-button" onClick={() => setShowOfficeLogin(true)}>Office Login</button>
-      </header>
-
-      <nav className="public-nav" aria-label="MVST Seva public navigation">
-        {PUBLIC_SEVA_NAVIGATION.map(([key, label]) => (
-          <button key={key} type="button" className={activePage === key ? 'active' : ''} onClick={() => openPage(key)}>{label}</button>
-        ))}
-      </nav>
-
-      <div className="public-content">{pageContent[activePage]}</div>
-
-      <footer className="public-footer">
-        <span>MVST Seva Portal</span>
-        <span>Public seva information · Protected Office operations</span>
-      </footer>
-    </main>
-  );
+  return <SevaPortal
+    bookingForm={<PublicSevaBookingForm />}
+    bookingStatus={<PublicBookingStatus />}
+    renderLogin={(onBack) => <LoginPage auth={auth} onBack={onBack} />}
+  />;
 }
 
 function RootApp() {
