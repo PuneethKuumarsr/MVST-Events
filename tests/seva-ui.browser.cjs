@@ -18,6 +18,8 @@ const output = process.env.MVST_UI_OUTPUT || 'outputs';
     let statusFails = true;
     let loggedIn = false;
     let role = 'PST Admin';
+    let coordinationFails = false;
+    let coordinationReads = 0;
     const submissions = [];
     let decisions = 0;
     const request = { id: 'ui-only', reference: 'MVST-SEVA-TEST', applicantName: 'Test Family', mobile: '9000000000', requestedDate: '2026-09-24', preferredSlot: 'EVENING', occasion: 'Gruha Seva', status: 'PENDING_APPROVAL', locality: 'Test area', address: 'Test address, Bengaluru' };
@@ -28,6 +30,10 @@ const output = process.env.MVST_UI_OUTPUT || 'outputs';
       if (url.pathname === '/api/auth/me') return reply(loggedIn ? {ok:true,user:{name:'MVST Test Office',role}} : {ok:false}, loggedIn ? 200 : 401);
       if (url.pathname === '/api/auth/login') { loggedIn = true; return reply({ok:true,user:{name:'MVST Test Office',role}}); }
       if (url.pathname === '/api/auth/logout') { loggedIn = false; return reply({ok:true}); }
+      if (url.pathname === '/api/seva/coordination') {
+        coordinationReads++;
+        return coordinationFails ? reply({ok:false,error:'Setup temporarily unavailable.'},503) : reply({ok:true,configured:true,delivery:{active:false,message:'WhatsApp is not connected. Automatic messages and driver reply timers are not running.'},settings:{driverReplyTimeoutMinutes:60,groups:{office:[{name:'Test Office Bearer',mobile:'919000000001'}],temple:[{name:'Test Temple Contact',mobile:'919000000002'}],drivers:[{name:'First Test Driver',mobile:'919000000003'},{name:'Second Test Driver',mobile:'919000000004'},{name:'Third Test Driver',mobile:'919000000005'}],poojaBhajan:[{name:'Test Bhajan Head',mobile:'919000000006'}],payment:[{name:'Test Payment Verifier',mobile:'919000000007'}]}}});
+      }
       if (url.pathname === '/api/seva/availability') return availabilityFails ? reply({ok:false,error:'Availability temporarily unavailable.'},503) : reply({ok:true,slots: url.searchParams.get('month') === '2026-09' ? [{date:'2026-09-24',preferredSlot:'DAY'},{date:'2026-09-25',preferredSlot:'DAY'},{date:'2026-09-25',preferredSlot:'EVENING'}] : []});
       if (url.pathname === '/api/seva/bookings' && method === 'POST') {
         submissions.push(route.request().postDataJSON());
@@ -122,6 +128,15 @@ const output = process.env.MVST_UI_OUTPUT || 'outputs';
     await page.getByRole('button',{name:'Open office menu'}).click();
     await page.getByRole('button',{name:'Seva Bookings',exact:true}).click();
     await page.getByRole('heading',{name:'Test Family',exact:true}).waitFor();
+    await page.locator('.seva-coordination summary').click();
+    await page.getByText('60 minutes per driver',{exact:true}).waitFor();
+    await page.getByText('Automatic messaging is not active',{exact:true}).waitFor();
+    const drivers = page.locator('.coordination-group').filter({has:page.getByRole('heading',{name:'Driver priority',exact:true})});
+    assert.deepEqual(await drivers.locator('li strong').allTextContents(),['First Test Driver','Second Test Driver','Third Test Driver']);
+    await page.setViewportSize({width:320,height:844});
+    await noOverflow();
+    await page.setViewportSize({width:390,height:844});
+    await screenshot('seva-coordination-mobile.png');
     await noOverflow();
     await screenshot('seva-office-mobile.png');
     await page.setViewportSize({width:1440,height:1000});
@@ -132,14 +147,23 @@ const output = process.env.MVST_UI_OUTPUT || 'outputs';
     await page.getByRole('button',{name:'Home',exact:true}).click();
     await page.getByRole('heading',{name:'Registration and collection overview'}).waitFor();
     await screenshot('seva-dashboard-desktop.png');
+    coordinationFails = true;
+    await page.getByRole('button',{name:'Seva Bookings',exact:true}).click();
+    await page.locator('.seva-coordination summary').click();
+    await page.getByRole('alert').filter({hasText:'Unable to load booking contact setup.'}).waitFor();
+    coordinationFails = false;
+    await page.getByRole('button',{name:'Retry contact setup',exact:true}).click();
+    await page.getByText('60 minutes per driver',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Logout',exact:true}).click();
     await page.locator('.seva-site').waitFor();
     loggedIn = true; role = 'Volunteer';
+    const readsBeforeVolunteer = coordinationReads;
     await page.reload();
     await page.locator('.office-app').waitFor();
     assert.equal(await page.getByRole('button',{name:'Expenses',exact:true}).count(),0);
     assert.equal(await page.getByRole('button',{name:'Seva Bookings',exact:true}).count(),0);
     assert.equal(await page.getByRole('button',{name:'QR Operations',exact:true}).count(),1);
+    assert.equal(coordinationReads,readsBeforeVolunteer,'Volunteers must not load private booking contacts');
     assert.deepEqual(errors,[],'No browser runtime exceptions');
     console.log('PASS: public pages at 4 widths; two slots; unavailable/past dates; failed availability & retry; request failure & success; status lookup; menus; login; approval cancellation; Office role gates. All data mocked.');
   } finally { await browser.close(); }

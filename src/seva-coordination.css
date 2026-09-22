@@ -1,0 +1,30 @@
+.office-app .seva-coordination { margin: 18px 0; border: 1px solid var(--line, #ded5c9); border-radius: 9px; background: #fffefa; color: #463b37; }
+.seva-coordination > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 18px; cursor: pointer; font-size: 15px; font-weight: 650; }
+.seva-coordination > summary::after { content: '+'; margin-left: auto; font-size: 20px; }
+.seva-coordination[open] > summary::after { content: '−'; }
+.seva-coordination > summary:focus-visible { outline: 3px solid #92703e; outline-offset: 2px; }
+.seva-coordination > summary small { padding: 5px 8px; border-radius: 4px; background: #f8ebd4; color: #72551f; font-size: 12px; }
+.seva-coordination-body { padding: 0 18px 18px; }
+.seva-coordination-body p { font-size: 14px; line-height: 1.65; margin: 7px 0; }
+.coordination-notice, .coordination-timeout { display: flex; gap: 12px; padding: 16px; border-radius: 6px; background: #f8f0df; font-size: 15px; }
+.coordination-notice svg, .coordination-timeout svg { flex-shrink: 0; margin-top: 2px; }
+.coordination-privacy { color: #756760; padding: 8px 0; }
+.coordination-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: 14px; margin: 12px 0 18px; }
+.coordination-group { min-width: 0; border: 1px solid #e6ded3; border-radius: 6px; padding: 16px; }
+.coordination-group h3, .coordination-workflow h3 { margin: 0 0 8px; font-size: 16px; color: #632b37; }
+.coordination-group > p { color: #756760; }
+.coordination-group ol { list-style: none; padding: 0; margin: 14px 0 0; }
+.coordination-group li { display: flex; gap: 10px; align-items: flex-start; margin-top: 13px; font-size: 15px; overflow-wrap: anywhere; }
+.coordination-group li strong { display: block; font-weight: 600; }
+.coordination-group a { display: inline-block; padding: 5px 0; font-size: 14px; color: #632b37; text-decoration: underline; text-underline-offset: 3px; }
+.driver-priority { display: grid; place-items: center; flex: 0 0 27px; height: 27px; border-radius: 50%; background: #f3e8db; color: #632b37; }
+.coordination-timeout { background: #f3efe8; }
+.coordination-workflow { margin: 20px 0 4px; }
+.coordination-workflow ol { padding-left: 20px; font-size: 14px; line-height: 1.8; }
+.coordination-workflow li + li { margin-top: 7px; }
+@media (max-width: 480px) {
+  .seva-coordination > summary { gap: 8px; padding: 14px; }
+  .seva-coordination > summary span { flex: 1; min-width: 150px; }
+  .seva-coordination > summary small { order: 2; }
+  .seva-coordination-body { padding: 0 12px 12px; }
+}

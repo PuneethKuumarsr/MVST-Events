@@ -72,6 +72,7 @@ import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-rece
 import trusteeInvitationCard from '../assets/invitations/mvst-samoohika-shanti-invitation-2026.jpg';
 import './styles.css';
 import SevaPortal, { TrustTagline } from './SevaPortal.jsx';
+import SevaCoordinationPanel from './SevaCoordinationPanel.jsx';
 import './portal-theme.css';
 
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
@@ -10545,6 +10546,7 @@ function SevaBookingManagementSection() {
   return (
     <section className="management-section seva-office-section">
       <div className="section-heading"><div><p>Seva Booking Management</p><h2>Gruha Seva requests</h2></div><button className="refresh-button" type="button" onClick={() => load()}><RefreshCw size={16} /> Refresh</button></div>
+      <SevaCoordinationPanel />
       <div className="seva-office-filters">{['PENDING_APPROVAL', 'APPROVED', 'REJECTED'].map((value) => <button key={value} type="button" className={status === value ? 'active' : ''} onClick={() => setStatus(value)}>{value.replaceAll('_', ' ')}</button>)}</div>
       {message ? <p className="save-message">{message}</p> : null}
       <div className="seva-office-list">

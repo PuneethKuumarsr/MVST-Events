@@ -20,6 +20,8 @@ import { MangalyaDonorAudit } from './models/MangalyaDonorAudit.js';
 import { MangalyaDonorOperation } from './models/MangalyaDonorOperation.js';
 import { QrToken } from './models/QrToken.js';
 import { SevaBooking } from './models/SevaBooking.js';
+import { SevaCoordinationSettings } from './models/SevaCoordinationSettings.js';
+import { createSevaCoordinationRouter } from './routes/seva-coordination.js';
 import { SevaBookingAudit } from './models/SevaBookingAudit.js';
 import { Session } from './models/Session.js';
 import { User } from './models/User.js';
@@ -3511,6 +3513,15 @@ app.get('/api/seva/bookings', requirePst, async (req, res) => {
     return res.status(error.statusCode || 503).json({ ok: false, error: error.message || 'Unable to load Gruha Seva bookings.' });
   }
 });
+
+app.use('/api/seva/coordination', createSevaCoordinationRouter({
+  requirePst,
+  connectStore: async () => {
+    if (!isMongoConfigured()) throw new Error('Private storage is not configured.');
+    await connectMongo();
+  },
+  Settings: SevaCoordinationSettings,
+}));
 
 app.patch('/api/seva/bookings/:id/decision', requirePst, async (req, res) => {
   const id = String(req.params.id || '');
