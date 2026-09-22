@@ -7,11 +7,15 @@ const pages = [
 ];
 const pageFromLocation = () => pages.some(([key]) => location.hash === `#/${key}`) ? location.hash.slice(2) : 'home';
 
+export function TrustTagline() {
+  return <p className="trust-tagline"><span>Mane Manege Vasavi</span><span>Mana Manadali Vasavi</span></p>;
+}
+
 export function SevaPortrait({ compact = false }) {
   return <div className={`seva-portrait ${compact ? 'compact' : ''}`}>
     <div className="seva-portrait-halo" aria-hidden="true" />
     <div className="seva-portrait-window"><img src="/mvst-vasavi-seva.jpg" alt="MVST Vasavi Mata Silver Idol, adorned with flowers" fetchPriority="high" /></div>
-    <div className="portrait-caption"><span>VASAVI MATA</span><p>A sacred presence.<br />A cherished tradition.</p></div>
+    <div className="portrait-caption"><span>VASAVI MATA</span><TrustTagline /></div>
   </div>;
 }
 
@@ -89,7 +93,7 @@ export default function SevaPortal({ bookingForm, bookingStatus, renderLogin }) 
       {page === 'upcoming-events' && <section className="seva-container"><PageHeading eyebrow="TOGETHER IN SEVA" title="Gather. Celebrate. Serve.">Community programmes and devotional gatherings from Manemanege Vasavi Seva Trust.</PageHeading><div className="seva-event-empty"><div className="seva-event-icon"><CalendarDays size={34} /></div><span className="seva-eyebrow">UPCOMING PROGRAMMES</span><h2>Something to look forward to.</h2><p>Our next programme will be announced here.<br />In the meantime, bring seva home with a Vasavi Mata visit.</p>{bookAction('Request Gruha Seva')}</div></section>}
       {page === 'contact' && <section className="seva-container"><PageHeading eyebrow="CONTACT MVST" title="We’re here for your seva.">Questions about a visit, an existing request or a community programme? Speak with the MVST team.</PageHeading><div className="seva-contact-layout"><div className="seva-contact-primary"><Phone size={28} /><span className="seva-eyebrow">CALL THE TRUST</span><a href="tel:+919986287555" className="seva-contact-number">99862 87555 <ArrowUpRight size={28} /></a><p>Manemanege Vasavi Seva Trust (R.)</p><span className="seva-contact-location"><MapPin size={17} /> Bengaluru, Karnataka</span></div><div className="seva-contact-help"><h2>How can we help?</h2><button onClick={() => openPage('book-seva')}><CalendarDays /><span>Plan a Gruha Seva<small>Choose your preferred date and time</small></span><ArrowRight /></button><button onClick={() => openPage('booking-status')}><Check /><span>Track an existing request<small>Use your booking reference and mobile</small></span><ArrowRight /></button><p>Please wait for Office approval before making arrangements for a requested date.</p></div></div></section>}
     </main>
-    <footer className="seva-site-footer"><div className="seva-container"><div className="seva-footer-top"><div><div className="seva-footer-wordmark">MVST <em>Seva</em></div><p>Manemanege Vasavi Seva Trust (R.)<br />Bengaluru · In devotion, together.</p></div><div className="seva-footer-links"><button onClick={() => openPage('gruha-seva')}>Gruha Seva</button><button onClick={() => openPage('booking-status')}>My Booking</button><button onClick={() => openPage('contact')}>Contact MVST</button><button onClick={() => setOfficeLogin(true)}>Office Login <ArrowUpRight size={14} /></button></div></div><div className="seva-footer-bottom"><span>© {new Date().getFullYear()} Manemanege Vasavi Seva Trust (R.)</span><span>॥ Jai Vasavi ॥</span></div></div></footer>
+    <footer className="seva-site-footer"><div className="seva-container"><div className="seva-footer-top"><div><div className="seva-footer-wordmark">MVST <em>Seva</em></div><TrustTagline /><p>Manemanege Vasavi Seva Trust (R.)<br />Bengaluru · In devotion, together.</p></div><div className="seva-footer-links"><button onClick={() => openPage('gruha-seva')}>Gruha Seva</button><button onClick={() => openPage('booking-status')}>My Booking</button><button onClick={() => openPage('contact')}>Contact MVST</button><button onClick={() => setOfficeLogin(true)}>Office Login <ArrowUpRight size={14} /></button></div></div><div className="seva-footer-bottom"><span>© {new Date().getFullYear()} Manemanege Vasavi Seva Trust (R.)</span><span>॥ Jai Vasavi ॥</span></div></div></footer>
     {page !== 'book-seva' && <div className="seva-mobile-dock"><button onClick={() => openPage('booking-status')}><CalendarDays size={17} />My Booking</button>{bookAction('Book Seva')}</div>}
   </div>;
 }

@@ -71,7 +71,7 @@ import mangalyaDonorReceiptTemplate from '../assets/Mangalya Donors Receipt/Mang
 import shashtipoorthiReceiptTemplate from '../assets/receipts/shastipoorthi-receipt.jpeg';
 import trusteeInvitationCard from '../assets/invitations/mvst-samoohika-shanti-invitation-2026.jpg';
 import './styles.css';
-import SevaPortal from './SevaPortal.jsx';
+import SevaPortal, { TrustTagline } from './SevaPortal.jsx';
 import './portal-theme.css';
 
 const EVENT_DATE = 'Sunday, 02-Aug-2026';
@@ -6971,7 +6971,7 @@ function LoginPage({ auth, onBack }) {
   return (
     <main className="login-page seva-office-login">
       <div className="login-shell">
-        <aside className="login-welcome"><img src="/MVST_Logo.jpg" alt="MVST Trust logo" /><span>MVST SEVA · OFFICE</span><h2>Behind every seva,<br />a caring team.</h2><p>Your workspace for seva requests, event registrations and Trust operations.</p><small>Authorised access · Manemanege Vasavi Seva Trust (R.)</small></aside>
+        <aside className="login-welcome"><img src="/MVST_Logo.jpg" alt="MVST Trust logo" /><span>MVST SEVA · OFFICE</span><h2>Behind every seva,<br />a caring team.</h2><p>Your workspace for seva requests, event registrations and Trust operations.</p><TrustTagline /><small>Authorised access · Manemanege Vasavi Seva Trust (R.)</small></aside>
         <form className="login-card" onSubmit={submit}>
           {onBack ? <button className="login-back-button" type="button" onClick={onBack}>← Back to MVST Seva</button> : null}
           <img className="login-header-image" src="/mvst-login-header.jpg" alt="Mane Manege Vasavi Seva Trust" />
